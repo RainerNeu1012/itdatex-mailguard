@@ -8,6 +8,8 @@ import VerifyEmail    from './views/VerifyEmail.jsx';
 import ForgotPassword from './views/ForgotPassword.jsx';
 import ResetPassword  from './views/ResetPassword.jsx';
 import Dashboard      from './views/Dashboard.jsx';
+import Accounts       from './views/Accounts.jsx';
+import AccountForm    from './views/AccountForm.jsx';
 
 export default function App() {
   const route = useRoute();
@@ -28,7 +30,7 @@ export default function App() {
     return <div className="mg-shell"><div className="mg-card">Lade …</div></div>;
   }
 
-  const requiresAuth   = [ 'dashboard' ];
+  const requiresAuth   = [ 'dashboard', 'accounts', 'account-new', 'account-edit' ];
   const requiresAnon   = [ 'login', 'register', 'forgot-password' ];
 
   if (requiresAuth.includes(route.name) && !me) {
@@ -51,6 +53,8 @@ export default function App() {
         </a>
         {me && (
           <nav className="mg-nav">
+            <button className="mg-nav__btn" onClick={() => navigate('dashboard')}>Dashboard</button>
+            <button className="mg-nav__btn" onClick={() => navigate('accounts')}>Postfächer</button>
             <span className="mg-nav__email">{me.email}</span>
             <button className="mg-nav__btn" onClick={() => navigate('logout')}>Logout</button>
           </nav>
@@ -74,6 +78,9 @@ function pickView(name) {
     case 'forgot-password': return ForgotPassword;
     case 'reset-password':  return ResetPassword;
     case 'dashboard':       return Dashboard;
+    case 'accounts':        return Accounts;
+    case 'account-new':     return AccountForm;
+    case 'account-edit':    return AccountForm;
     case 'logout':          return Empty;
     default:                return NotFound;
   }

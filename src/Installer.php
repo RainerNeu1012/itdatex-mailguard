@@ -7,9 +7,10 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 1;
+	public const CURRENT_DB_VERSION = 2;
 
-	public const TABLE_CUSTOMERS = 'mg_customers';
+	public const TABLE_CUSTOMERS     = 'mg_customers';
+	public const TABLE_IMAP_ACCOUNTS = 'mg_imap_accounts';
 
 	public static function activate() : void {
 		$defaults = [
@@ -46,10 +47,11 @@ final class Installer {
 			return;
 		}
 
-		$charset = $wpdb->get_charset_collate();
-		$table   = $wpdb->prefix . self::TABLE_CUSTOMERS;
+		$charset    = $wpdb->get_charset_collate();
+		$t_cust     = $wpdb->prefix . self::TABLE_CUSTOMERS;
+		$t_imap     = $wpdb->prefix . self::TABLE_IMAP_ACCOUNTS;
 
-		$sql = "CREATE TABLE {$table} (
+		$sql_customers = "CREATE TABLE {$t_cust} (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			email VARCHAR(190) NOT NULL,
 			password_hash VARCHAR(255) NOT NULL,
@@ -68,8 +70,30 @@ final class Installer {
 			KEY idx_reset_token (password_reset_token)
 		) {$charset};";
 
+		$sql_imap = "CREATE TABLE {$t_imap} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			label VARCHAR(120) NOT NULL DEFAULT '',
+			host VARCHAR(255) NOT NULL DEFAULT '',
+			port SMALLINT UNSIGNED NOT NULL DEFAULT 993,
+			encryption VARCHAR(8) NOT NULL DEFAULT 'ssl',
+			username VARCHAR(255) NOT NULL DEFAULT '',
+			password_enc TEXT NOT NULL,
+			folder VARCHAR(190) NOT NULL DEFAULT 'INBOX',
+			status VARCHAR(20) NOT NULL DEFAULT 'active',
+			last_uid BIGINT UNSIGNED NOT NULL DEFAULT 0,
+			last_test_at DATETIME NULL,
+			last_test_ok TINYINT(1) NULL,
+			last_test_detail VARCHAR(500) NULL,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			KEY idx_customer (customer_id),
+			KEY idx_status (status)
+		) {$charset};";
+
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-		dbDelta( $sql );
+		dbDelta( $sql_customers );
+		dbDelta( $sql_imap );
 
 		update_option( self::OPTION_DB_VERSION, self::CURRENT_DB_VERSION, false );
 	}

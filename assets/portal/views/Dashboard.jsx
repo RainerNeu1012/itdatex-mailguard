@@ -1,4 +1,5 @@
 import React from 'react';
+import { navigate } from '../router.js';
 
 export default function Dashboard({ me }) {
   return (
@@ -12,7 +13,8 @@ export default function Dashboard({ me }) {
         <FeatureCard
           title="📬 Postfächer"
           desc="Verbinde deine IMAP-Konten und lass sie automatisch auf Phishing prüfen."
-          status="Phase 3 in Vorbereitung"
+          status="aktiv"
+          cta={{ label: 'Postfächer verwalten →', onClick: () => navigate('accounts') }}
         />
         <FeatureCard
           title="🛡 Phishing-Warnungen"
@@ -34,12 +36,17 @@ export default function Dashboard({ me }) {
   );
 }
 
-function FeatureCard({ title, desc, status }) {
+function FeatureCard({ title, desc, status, cta }) {
   return (
     <div className="mg-card mg-card--feature">
       <h3>{title}</h3>
       <p>{desc}</p>
       <p className="mg-muted mg-tiny">{status}</p>
+      {cta && (
+        <p style={{ marginBottom: 0 }}>
+          <button className="mg-btn mg-btn--primary" onClick={cta.onClick}>{cta.label}</button>
+        </p>
+      )}
     </div>
   );
 }
