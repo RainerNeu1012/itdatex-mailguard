@@ -216,3 +216,45 @@ html, body {
 @media (max-width: 640px) {
   .mg-mail__head { grid-template-columns: 1fr; }
 }
+
+/* ---- Verdict-Badges + Reasons ---- */
+.mg-verdict {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #fff;
+  background: #777;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.mg-verdict--clean   { background: var(--mg-ok); }
+.mg-verdict--susp    { background: var(--mg-warn); color: #1d2327; }
+.mg-verdict--danger  { background: var(--mg-err); }
+.mg-verdict--pending { background: #c3c4c7; color: #1d2327; }
+.mg-verdict--err     { background: #6b1d1e; }
+
+.mg-mail--danger {
+  border-color: var(--mg-err);
+  background: linear-gradient(180deg, #fff5f5 0%, #fff 80%);
+}
+
+.mg-stat--ok      .mg-stat__value { color: var(--mg-ok); }
+.mg-stat--susp    .mg-stat__value { color: var(--mg-warn); }
+.mg-stat--danger  .mg-stat__value { color: var(--mg-err); }
+.mg-stat--muted   .mg-stat__value { color: var(--mg-muted); }
+
+.mg-reasons { list-style: none; padding: 0; margin: 0.25rem 0; }
+.mg-reasons li {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) 50px 1fr;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px dashed #e9eaeb;
+  font-size: 0.85rem;
+  align-items: baseline;
+}
+.mg-reasons li:last-child { border-bottom: 0; }
+.mg-reasons__score { color: var(--mg-err); font-weight: 600; text-align: right; }
+.mg-reasons code { background: #f6f7f7; padding: 0 0.3rem; border-radius: 3px; }

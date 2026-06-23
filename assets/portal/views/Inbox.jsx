@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiPost } from '../api.js';
+import { VerdictBadge, ReasonsList } from '../components/Verdict.jsx';
 
 export default function Inbox() {
   const [accounts, setAccounts] = useState([]);
-  const [filter, setFilter]     = useState({ account_id: 0, unsub_only: 0, q: '', page: 1 });
+  const [filter, setFilter]     = useState({ account_id: 0, unsub_only: 0, verdict: '', q: '', page: 1 });
+  const [busy, setBusy]         = useState({});
   const [data, setData]         = useState({ items: [], total: 0, per_page: 25 });
   const [stats, setStats]       = useState(null);
   const [loading, setLoading]   = useState(false);
@@ -22,6 +24,7 @@ export default function Inbox() {
       const qs = new URLSearchParams();
       if (filter.account_id) qs.set('account_id', filter.account_id);
       if (filter.unsub_only)  qs.set('unsub_only', '1');
+      if (filter.verdict)     qs.set('verdict', filter.verdict);
       if (filter.q)           qs.set('q', filter.q);
       qs.set('page', filter.page);
       qs.set('per_page', 25);
@@ -79,9 +82,12 @@ export default function Inbox() {
 
       {stats && (
         <div className="mg-card mg-stats">
-          <Stat label="Mails" value={stats.total} />
-          <Stat label="Mit Unsubscribe" value={stats.has_unsub} />
-          <Stat label="Scan offen" value={stats.pending_scan} />
+          <Stat label="Mails"          value={stats.total} />
+          <Stat label="Newsletter"     value={stats.has_unsub} />
+          <Stat label="Sauber"         value={stats.clean}      tone="ok" />
+          <Stat label="Verdächtig"     value={stats.suspicious} tone="susp" />
+          <Stat label="Gefährlich"     value={stats.dangerous}  tone="danger" />
+          <Stat label="Scan offen"     value={stats.pending_scan} tone="muted" />
         </div>
       )}
 
@@ -91,6 +97,16 @@ export default function Inbox() {
             <select value={filter.account_id} onChange={(e) => setFilter({ ...filter, account_id: parseInt(e.target.value, 10), page: 1 })}>
               <option value={0}>— alle —</option>
               {accounts.map((a) => <option key={a.id} value={a.id}>{a.label || a.host}</option>)}
+            </select>
+          </label>
+          <label style={{ flex: 1 }}>Verdict
+            <select value={filter.verdict} onChange={(e) => setFilter({ ...filter, verdict: e.target.value, page: 1 })}>
+              <option value="">— alle —</option>
+              <option value="risky">⚠ verdächtig/gefährlich</option>
+              <option value="dangerous">gefährlich</option>
+              <option value="suspicious">verdächtig</option>
+              <option value="clean">sauber</option>
+              <option value="unscanned">noch nicht gescannt</option>
             </select>
           </label>
           <label style={{ flex: 2 }}>Suche (Subject/Absender)
@@ -116,7 +132,22 @@ export default function Inbox() {
       {!loading && data.items.length > 0 && (
         <div className="mg-stack">
           {data.items.map((m) => (
-            <Row key={m.id} m={m} expanded={expanded === m.id} onToggle={() => setExpanded(expanded === m.id ? null : m.id)} />
+            <Row
+              key={m.id}
+              m={m}
+              expanded={expanded === m.id}
+              busy={busy[m.id]}
+              onToggle={() => setExpanded(expanded === m.id ? null : m.id)}
+              onRescan={async () => {
+                setBusy((b) => ({ ...b, [m.id]: 'rescan' }));
+                try {
+                  await apiPost(`inbox/messages/${m.id}/rescan`);
+                  loadInbox();
+                } finally {
+                  setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; });
+                }
+              }}
+            />
           ))}
         </div>
       )}
@@ -132,18 +163,19 @@ export default function Inbox() {
   );
 }
 
-function Stat({ label, value }) {
+function Stat({ label, value, tone }) {
   return (
-    <div className="mg-stat">
+    <div className={'mg-stat mg-stat--' + (tone || 'default')}>
       <div className="mg-stat__value">{value ?? 0}</div>
       <div className="mg-stat__label">{label}</div>
     </div>
   );
 }
 
-function Row({ m, expanded, onToggle }) {
+function Row({ m, expanded, busy, onToggle, onRescan }) {
+  const dangerous = m.scan_verdict === 'dangerous';
   return (
-    <div className="mg-card mg-mail">
+    <div className={'mg-card mg-mail' + (dangerous ? ' mg-mail--danger' : '')}>
       <div className="mg-mail__head" onClick={onToggle} role="button" tabIndex={0}>
         <div className="mg-mail__from">
           <strong>{m.from_name || m.from_addr || '(unbekannt)'}</strong>
@@ -151,6 +183,7 @@ function Row({ m, expanded, onToggle }) {
         </div>
         <div className="mg-mail__subject">{m.subject || '(kein Subject)'}</div>
         <div className="mg-mail__meta">
+          <VerdictBadge verdict={m.scan_verdict} score={m.scan_score} status={m.scan_status} />
           {m.has_unsub ? <span className="mg-pill mg-pill--ok">Newsletter</span> : null}
           <span className="mg-muted mg-tiny">{fmtDate(m.date_hdr || m.fetched_at)}</span>
         </div>
@@ -158,6 +191,17 @@ function Row({ m, expanded, onToggle }) {
       {expanded && (
         <div className="mg-mail__body">
           <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{m.body_preview || <em className="mg-muted">(keine Vorschau)</em>}</p>
+          {Array.isArray(m.scan_reasons) && m.scan_reasons.length > 0 && (
+            <>
+              <p className="mg-muted mg-tiny" style={{ margin: '0.75rem 0 0.25rem' }}>Scan-Treffer:</p>
+              <ReasonsList reasons={m.scan_reasons} />
+            </>
+          )}
+          <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+            <button className="mg-btn" disabled={!!busy} onClick={(e) => { e.stopPropagation(); onRescan(); }}>
+              {busy === 'rescan' ? '…' : '↻ Erneut scannen'}
+            </button>
+          </div>
           {m.has_unsub && (
             <p className="mg-muted mg-tiny" style={{ marginTop: '0.5rem' }}>
               List-Unsubscribe vorhanden → in Phase 6 kommt der Bulk-Unsubscribe-Button.

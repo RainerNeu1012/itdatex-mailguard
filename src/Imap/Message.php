@@ -31,6 +31,17 @@ final class Message {
 		if ( ! empty( $filter['unsub_only'] ) ) {
 			$where[] = 'has_unsub = 1';
 		}
+		if ( ! empty( $filter['verdict'] ) ) {
+			$v = (string) $filter['verdict'];
+			if ( in_array( $v, [ 'clean', 'suspicious', 'dangerous' ], true ) ) {
+				$where[]  = 'scan_verdict = %s';
+				$params[] = $v;
+			} elseif ( $v === 'unscanned' ) {
+				$where[] = "scan_status IN ('pending','scanning','error')";
+			} elseif ( $v === 'risky' ) {
+				$where[] = "scan_verdict IN ('suspicious','dangerous')";
+			}
+		}
 		if ( ! empty( $filter['q'] ) ) {
 			$q        = '%' . $wpdb->esc_like( (string) $filter['q'] ) . '%';
 			$where[]  = '(subject LIKE %s OR from_addr LIKE %s OR from_name LIKE %s)';
@@ -60,9 +71,12 @@ final class Message {
 		global $wpdb;
 		$t = self::table();
 		return [
-			'total'    => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $t WHERE customer_id = %d", $customer_id ) ),
-			'has_unsub'=> (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $t WHERE customer_id = %d AND has_unsub = 1", $customer_id ) ),
-			'pending_scan' => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $t WHERE customer_id = %d AND scan_status = 'pending'", $customer_id ) ),
+			'total'       => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $t WHERE customer_id = %d", $customer_id ) ),
+			'has_unsub'   => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $t WHERE customer_id = %d AND has_unsub = 1", $customer_id ) ),
+			'pending_scan'=> (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $t WHERE customer_id = %d AND scan_status IN ('pending','scanning')", $customer_id ) ),
+			'clean'       => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $t WHERE customer_id = %d AND scan_verdict = 'clean'", $customer_id ) ),
+			'suspicious'  => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $t WHERE customer_id = %d AND scan_verdict = 'suspicious'", $customer_id ) ),
+			'dangerous'   => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $t WHERE customer_id = %d AND scan_verdict = 'dangerous'", $customer_id ) ),
 		];
 	}
 

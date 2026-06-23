@@ -5,6 +5,7 @@ namespace Itdatex\Mailguard;
 
 use Itdatex\Mailguard\Installer;
 use Itdatex\Mailguard\Admin\Settings;
+use Itdatex\Mailguard\Antiphish\ScanService;
 use Itdatex\Mailguard\Imap\PullService;
 use Itdatex\Mailguard\Portal\Rewrite;
 use Itdatex\Mailguard\Rest\Controller as RestController;
@@ -31,6 +32,7 @@ final class Plugin {
 
 		add_filter( 'cron_schedules', [ __CLASS__, 'register_cron_schedule' ] );
 		add_action( Installer::CRON_PULL_HOOK, [ PullService::class, 'pull_all' ] );
+		add_action( Installer::CRON_SCAN_HOOK, [ ScanService::class, 'scan_pending_batch' ] );
 	}
 
 	public static function register_cron_schedule( array $schedules ) : array {
@@ -38,6 +40,12 @@ final class Plugin {
 			$schedules[ Installer::CRON_PULL_SCHEDULE ] = [
 				'interval' => 15 * MINUTE_IN_SECONDS,
 				'display'  => __( 'Alle 15 Minuten (MailGuard IMAP-Pull)', 'itdatex-mailguard' ),
+			];
+		}
+		if ( ! isset( $schedules[ Installer::CRON_SCAN_SCHEDULE ] ) ) {
+			$schedules[ Installer::CRON_SCAN_SCHEDULE ] = [
+				'interval' => 5 * MINUTE_IN_SECONDS,
+				'display'  => __( 'Alle 5 Minuten (MailGuard Phishing-Scan)', 'itdatex-mailguard' ),
 			];
 		}
 		return $schedules;

@@ -9,6 +9,7 @@ use Itdatex\Mailguard\Imap\Crypto as ImapCrypto;
 use Itdatex\Mailguard\Imap\ImapClient;
 use Itdatex\Mailguard\Imap\Message as ImapMessage;
 use Itdatex\Mailguard\Imap\PullService;
+use Itdatex\Mailguard\Antiphish\ScanService;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_Error;
@@ -134,6 +135,12 @@ final class Controller {
 				'callback'            => [ __CLASS__, 'inbox_delete' ],
 			],
 		] );
+
+		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/rescan', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_rescan' ],
+		] );
 	}
 
 	/**
@@ -245,6 +252,7 @@ final class Controller {
 		$filter = [
 			'account_id' => (int) $req->get_param( 'account_id' ),
 			'unsub_only' => (int) $req->get_param( 'unsub_only' ),
+			'verdict'    => trim( (string) $req->get_param( 'verdict' ) ),
 			'q'          => trim( (string) $req->get_param( 'q' ) ),
 		];
 		$page     = (int) $req->get_param( 'page' );
@@ -273,6 +281,19 @@ final class Controller {
 		if ( is_wp_error( $cid ) ) { return $cid; }
 		ImapMessage::delete( (int) $req['id'], $cid );
 		return new WP_REST_Response( [ 'ok' => true ], 200 );
+	}
+
+	public static function inbox_rescan( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req['id'];
+		if ( ! ImapMessage::find_for_customer( $id, $cid ) ) {
+			return new WP_Error( 'not_found', '', [ 'status' => 404 ] );
+		}
+		ScanService::reset_to_pending( $id, $cid );
+		$res = ScanService::scan_message( $id );
+		$row = ImapMessage::find_for_customer( $id, $cid );
+		return new WP_REST_Response( [ 'ok' => $res['ok'] ?? false, 'item' => $row ? ImapMessage::public_view( $row ) : null ], 200 );
 	}
 
 	private static function validate_account_payload( array $json, bool $is_create ) {

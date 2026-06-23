@@ -15,6 +15,8 @@ final class Installer {
 
 	public const CRON_PULL_HOOK     = 'itdatex_mailguard_pull_all';
 	public const CRON_PULL_SCHEDULE = 'itdatex_mailguard_15min';
+	public const CRON_SCAN_HOOK     = 'itdatex_mailguard_scan_pending';
+	public const CRON_SCAN_SCHEDULE = 'itdatex_mailguard_5min';
 
 	public static function activate() : void {
 		$defaults = [
@@ -28,6 +30,8 @@ final class Installer {
 			'rate_register_per_hour'       => 5,
 			'antiphish_api_url'            => 'https://mailsec.itdatex.support',
 			'antiphish_api_key'            => '',
+			'scan_deep'                    => 0,
+			'scan_batch_size'              => 10,
 		];
 		$existing = (array) get_option( self::OPTION_SETTINGS, [] );
 		update_option( self::OPTION_SETTINGS, array_merge( $defaults, $existing ), false );
@@ -42,13 +46,18 @@ final class Installer {
 		if ( ! wp_next_scheduled( self::CRON_PULL_HOOK ) ) {
 			wp_schedule_event( time() + 300, self::CRON_PULL_SCHEDULE, self::CRON_PULL_HOOK );
 		}
+		if ( ! wp_next_scheduled( self::CRON_SCAN_HOOK ) ) {
+			wp_schedule_event( time() + 120, self::CRON_SCAN_SCHEDULE, self::CRON_SCAN_HOOK );
+		}
 	}
 
 	public static function deactivate() : void {
 		flush_rewrite_rules();
-		$ts = wp_next_scheduled( self::CRON_PULL_HOOK );
-		if ( $ts ) {
-			wp_unschedule_event( $ts, self::CRON_PULL_HOOK );
+		foreach ( [ self::CRON_PULL_HOOK, self::CRON_SCAN_HOOK ] as $hook ) {
+			$ts = wp_next_scheduled( $hook );
+			if ( $ts ) {
+				wp_unschedule_event( $ts, $hook );
+			}
 		}
 	}
 

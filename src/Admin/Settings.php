@@ -47,6 +47,8 @@ final class Settings {
 		add_settings_section( 'mg_api', __( 'Anti-Phishing-API', 'itdatex-mailguard' ), '__return_false', self::PAGE_SLUG );
 		self::field_text( 'antiphish_api_url', __( 'API-URL', 'itdatex-mailguard' ), 'mg_api', [ 'placeholder' => 'https://mailsec.itdatex.support' ] );
 		self::field_password( 'antiphish_api_key', __( 'X-API-Key', 'itdatex-mailguard' ), 'mg_api' );
+		self::field_checkbox( 'scan_deep', __( 'LLM-Deep-Mode', 'itdatex-mailguard' ), 'mg_api', __( 'LLM-Tiefenanalyse erzwingen (~15–25 s/Mail; sonst nur Heuristik)', 'itdatex-mailguard' ) );
+		self::field_number( 'scan_batch_size', __( 'Scans pro Cron-Run', 'itdatex-mailguard' ), 'mg_api', 1, 100 );
 	}
 
 	public static function sanitize( $input ) : array {
@@ -59,8 +61,11 @@ final class Settings {
 				$out[ $k ] = $k === 'antiphish_api_url' ? esc_url_raw( (string) $input[ $k ] ) : sanitize_text_field( (string) $input[ $k ] );
 			}
 		}
-		foreach ( [ 'allow_registration', 'require_email_verification' ] as $k ) {
+		foreach ( [ 'allow_registration', 'require_email_verification', 'scan_deep' ] as $k ) {
 			$out[ $k ] = ! empty( $input[ $k ] ) ? 1 : 0;
+		}
+		if ( isset( $input['scan_batch_size'] ) ) {
+			$out['scan_batch_size'] = max( 1, min( 100, (int) $input['scan_batch_size'] ) );
 		}
 		if ( isset( $input['session_ttl_days'] ) ) {
 			$out['session_ttl_days'] = max( 1, min( 90, (int) $input['session_ttl_days'] ) );
