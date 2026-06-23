@@ -43,28 +43,49 @@ final class Rewrite {
 		$portal_url = home_url( '/' . self::slug() . '/' );
 		$rest_url   = esc_url_raw( rest_url( \Itdatex\Mailguard\Rest\Controller::NAMESPACE . '/' ) );
 
-		// Phase 1: HTML-Platzhalter. Die echte React-SPA kommt in Phase 2.
+		$config = [
+			'restUrl'   => $rest_url,
+			'portalUrl' => $portal_url,
+			'siteName'  => get_bloginfo( 'name' ),
+			'version'   => ITDATEX_MAILGUARD_VERSION,
+		];
+
+		[ $js, $css ] = self::asset_paths();
+
 		echo '<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">';
 		echo '<meta name="viewport" content="width=device-width, initial-scale=1">';
-		echo '<title>' . esc_html( get_bloginfo( 'name' ) ) . ' — Portal</title>';
+		echo '<title>' . esc_html( $config['siteName'] ) . ' — Portal</title>';
 		echo '<meta name="robots" content="noindex, nofollow">';
-		echo '<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;max-width:560px;margin:3rem auto;padding:0 1rem;color:#1d2327}h1{font-size:1.4rem}code{background:#f6f7f7;padding:0.15rem 0.4rem;border-radius:3px}</style>';
+		echo '<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23101830%22/%3E%3Ctext x=%2250%22 y=%2270%22 text-anchor=%22middle%22 font-size=%2270%22 font-family=%22sans-serif%22 font-weight=%22bold%22 fill=%22%233b82f6%22%3EM%3C/text%3E%3C/svg%3E">';
+		if ( $css ) {
+			foreach ( $css as $href ) {
+				echo '<link rel="stylesheet" href="' . esc_url( ITDATEX_MAILGUARD_URL . 'build/' . $href ) . '">';
+			}
+		}
 		echo '</head><body>';
-		echo '<h1>MailGuard Portal</h1>';
-		echo '<p>Aktuelle Route: <code>' . esc_html( (string) $route ) . '</code></p>';
-		echo '<p><strong>Phase 1:</strong> Auth-Backend ist verdrahtet, aber die SPA folgt in Phase 2. Solange nur per <code>curl</code> testbar:</p>';
-		echo '<pre style="background:#f6f7f7;padding:0.75rem;border-radius:4px;font-size:0.85rem;overflow:auto">';
-		echo 'POST ' . esc_html( $rest_url ) . "register      {email, password}\n";
-		echo 'POST ' . esc_html( $rest_url ) . "login         {email, password}\n";
-		echo 'POST ' . esc_html( $rest_url ) . "logout\n";
-		echo 'POST ' . esc_html( $rest_url ) . "verify-email  {token}\n";
-		echo 'POST ' . esc_html( $rest_url ) . "forgot-password {email}\n";
-		echo 'POST ' . esc_html( $rest_url ) . "reset-password  {token, password}\n";
-		echo 'GET  ' . esc_html( $rest_url ) . "me            (Cookie)\n";
-		echo '</pre>';
-		echo '<p>Portal-URL: <code>' . esc_html( $portal_url ) . '</code></p>';
+		echo '<div id="mg-portal"></div>';
+		echo '<script>window.itdatexMailguard=' . wp_json_encode( $config ) . ';</script>';
+		if ( $js ) {
+			echo '<script type="module" src="' . esc_url( ITDATEX_MAILGUARD_URL . 'build/' . $js ) . '"></script>';
+		} else {
+			echo '<noscript><p style="font-family:sans-serif;max-width:560px;margin:3rem auto;padding:0 1rem">Frontend-Build fehlt. Bitte <code>npm install &amp;&amp; npm run build</code> im Plugin-Verzeichnis ausführen.</p></noscript>';
+		}
 		echo '</body></html>';
 		exit;
+	}
+
+	private static function asset_paths() : array {
+		$manifest_file = ITDATEX_MAILGUARD_DIR . 'build/.vite/manifest.json';
+		if ( ! file_exists( $manifest_file ) ) {
+			return [ null, [] ];
+		}
+		$manifest = json_decode( (string) file_get_contents( $manifest_file ), true );
+		if ( ! is_array( $manifest ) ) { return [ null, [] ]; }
+		$entry = $manifest['assets/portal/main.jsx'] ?? null;
+		if ( ! is_array( $entry ) ) { return [ null, [] ]; }
+		$js  = $entry['file'] ?? null;
+		$css = is_array( $entry['css'] ?? null ) ? $entry['css'] : [];
+		return [ $js, $css ];
 	}
 
 	public static function slug() : string {

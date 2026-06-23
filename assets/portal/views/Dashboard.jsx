@@ -1,0 +1,51 @@
+import React from 'react';
+
+export default function Dashboard({ me }) {
+  return (
+    <div className="mg-stack">
+      <div className="mg-card">
+        <h2>Willkommen, {me.email}</h2>
+        <p className="mg-muted">Konto seit {fmtDate(me.created_at)} {me.last_login_at ? '· Letzter Login: ' + fmtDate(me.last_login_at) : ''}</p>
+      </div>
+
+      <div className="mg-grid">
+        <FeatureCard
+          title="📬 Postfächer"
+          desc="Verbinde deine IMAP-Konten und lass sie automatisch auf Phishing prüfen."
+          status="Phase 3 in Vorbereitung"
+        />
+        <FeatureCard
+          title="🛡 Phishing-Warnungen"
+          desc="Eingehende Mails werden gegen die Anti-Phishing-API geprüft, du siehst Verdict + Score direkt in der Inbox."
+          status="Phase 5 in Vorbereitung"
+        />
+        <FeatureCard
+          title="📰 Newsletter-Abmelden"
+          desc="Bulk-Unsubscribe per RFC-8058 (HTTP + mailto). Bounce-Status wird nachverfolgt."
+          status="Phase 6 in Vorbereitung"
+        />
+        <FeatureCard
+          title="🔍 URL-Scanner"
+          desc="Verdächtige Links manuell prüfen, ohne sie zu öffnen."
+          status="Phase 7 in Vorbereitung"
+        />
+      </div>
+    </div>
+  );
+}
+
+function FeatureCard({ title, desc, status }) {
+  return (
+    <div className="mg-card mg-card--feature">
+      <h3>{title}</h3>
+      <p>{desc}</p>
+      <p className="mg-muted mg-tiny">{status}</p>
+    </div>
+  );
+}
+
+function fmtDate(s) {
+  if (!s) return '';
+  const d = new Date((s.replace(' ', 'T')) + 'Z');
+  return isNaN(d) ? s : d.toLocaleString();
+}
