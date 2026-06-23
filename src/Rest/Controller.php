@@ -7,6 +7,8 @@ use Itdatex\Mailguard\Customer\Auth;
 use Itdatex\Mailguard\Imap\Account as ImapAccount;
 use Itdatex\Mailguard\Imap\Crypto as ImapCrypto;
 use Itdatex\Mailguard\Imap\ImapClient;
+use Itdatex\Mailguard\Imap\Message as ImapMessage;
+use Itdatex\Mailguard\Imap\PullService;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_Error;
@@ -93,6 +95,44 @@ final class Controller {
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'accounts_test' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/accounts/(?P<id>\d+)/pull', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'accounts_pull' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/inbox/messages', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_list' ],
+			'args'                => [
+				'account_id' => [ 'type' => 'integer' ],
+				'unsub_only' => [ 'type' => 'integer' ],
+				'q'          => [ 'type' => 'string' ],
+				'page'       => [ 'type' => 'integer', 'default' => 1 ],
+				'per_page'   => [ 'type' => 'integer', 'default' => 25 ],
+			],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/inbox/stats', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_stats' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)', [
+			[
+				'methods'             => 'GET',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'inbox_get' ],
+			],
+			[
+				'methods'             => 'DELETE',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'inbox_delete' ],
+			],
 		] );
 	}
 
@@ -188,6 +228,51 @@ final class Controller {
 			ImapAccount::record_test( $id, $cid, false, $e->getMessage() );
 			return new WP_REST_Response( [ 'ok' => false, 'error' => 'connect_failed', 'detail' => $e->getMessage() ], 200 );
 		}
+	}
+
+	public static function accounts_pull( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id  = (int) $req['id'];
+		$res = PullService::pull_account( $id, $cid );
+		$status = ! empty( $res['ok'] ) ? 200 : ( ( $res['error'] ?? '' ) === 'not_found' ? 404 : 502 );
+		return new WP_REST_Response( $res, $status );
+	}
+
+	public static function inbox_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$filter = [
+			'account_id' => (int) $req->get_param( 'account_id' ),
+			'unsub_only' => (int) $req->get_param( 'unsub_only' ),
+			'q'          => trim( (string) $req->get_param( 'q' ) ),
+		];
+		$page     = (int) $req->get_param( 'page' );
+		$per_page = (int) $req->get_param( 'per_page' );
+		$data = ImapMessage::list_for_customer( $cid, $filter, $page, $per_page );
+		$data['ok'] = true;
+		return new WP_REST_Response( $data, 200 );
+	}
+
+	public static function inbox_stats( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		return new WP_REST_Response( [ 'ok' => true, 'stats' => ImapMessage::stats_for_customer( $cid ) ], 200 );
+	}
+
+	public static function inbox_get( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$row = ImapMessage::find_for_customer( (int) $req['id'], $cid );
+		if ( ! $row ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
+		return new WP_REST_Response( [ 'ok' => true, 'item' => ImapMessage::public_view( $row ) ], 200 );
+	}
+
+	public static function inbox_delete( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		ImapMessage::delete( (int) $req['id'], $cid );
+		return new WP_REST_Response( [ 'ok' => true ], 200 );
 	}
 
 	private static function validate_account_payload( array $json, bool $is_create ) {

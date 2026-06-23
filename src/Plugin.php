@@ -3,7 +3,9 @@ declare( strict_types = 1 );
 
 namespace Itdatex\Mailguard;
 
+use Itdatex\Mailguard\Installer;
 use Itdatex\Mailguard\Admin\Settings;
+use Itdatex\Mailguard\Imap\PullService;
 use Itdatex\Mailguard\Portal\Rewrite;
 use Itdatex\Mailguard\Rest\Controller as RestController;
 
@@ -26,6 +28,19 @@ final class Plugin {
 		add_action( 'admin_menu',    [ Settings::class, 'add_menu' ] );
 
 		add_action( 'rest_api_init', [ RestController::class, 'register' ] );
+
+		add_filter( 'cron_schedules', [ __CLASS__, 'register_cron_schedule' ] );
+		add_action( Installer::CRON_PULL_HOOK, [ PullService::class, 'pull_all' ] );
+	}
+
+	public static function register_cron_schedule( array $schedules ) : array {
+		if ( ! isset( $schedules[ Installer::CRON_PULL_SCHEDULE ] ) ) {
+			$schedules[ Installer::CRON_PULL_SCHEDULE ] = [
+				'interval' => 15 * MINUTE_IN_SECONDS,
+				'display'  => __( 'Alle 15 Minuten (MailGuard IMAP-Pull)', 'itdatex-mailguard' ),
+			];
+		}
+		return $schedules;
 	}
 
 	public static function load_textdomain() : void {

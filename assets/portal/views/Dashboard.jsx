@@ -17,6 +17,12 @@ export default function Dashboard({ me }) {
           cta={{ label: 'Postfächer verwalten →', onClick: () => navigate('accounts') }}
         />
         <FeatureCard
+          title="📥 Inbox"
+          desc="Alle eingehenden Mails an einem Ort, mit Vorschau und Newsletter-Indikator."
+          status="aktiv"
+          cta={{ label: 'Zur Inbox →', onClick: () => navigate('inbox') }}
+        />
+        <FeatureCard
           title="🛡 Phishing-Warnungen"
           desc="Eingehende Mails werden gegen die Anti-Phishing-API geprüft, du siehst Verdict + Score direkt in der Inbox."
           status="Phase 5 in Vorbereitung"

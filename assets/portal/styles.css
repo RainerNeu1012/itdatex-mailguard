@@ -193,3 +193,26 @@ html, body {
 
 .mg-ok          { color: var(--mg-ok); }
 .mg-err-inline  { color: var(--mg-err); }
+
+/* ---- Inbox / Stats ---- */
+.mg-stats { display: flex; gap: 2rem; align-items: center; }
+.mg-stat  { text-align: center; min-width: 90px; }
+.mg-stat__value { font-size: 1.6rem; font-weight: 700; line-height: 1; }
+.mg-stat__label { font-size: 0.75rem; color: var(--mg-muted); margin-top: 0.15rem; }
+
+.mg-mail { padding: 0.75rem 1rem; cursor: default; }
+.mg-mail__head {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 2fr auto;
+  gap: 0.5rem 1rem;
+  align-items: baseline;
+  cursor: pointer;
+}
+.mg-mail__head:hover { background: #fafbfc; }
+.mg-mail__subject { font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mg-mail__meta { display: flex; gap: 0.5rem; align-items: center; }
+.mg-mail__body { margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #e9eaeb; font-size: 0.9rem; }
+
+@media (max-width: 640px) {
+  .mg-mail__head { grid-template-columns: 1fr; }
+}
