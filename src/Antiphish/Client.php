@@ -12,6 +12,10 @@ use WP_Error;
  */
 final class Client {
 
+	public static function scan_url( string $url, int $timeout = 12 ) {
+		return self::request( '/scan/url', [ 'url' => $url ], $timeout );
+	}
+
 	public static function scan_email( array $payload, int $timeout = 30 ) {
 		return self::request( '/scan/email', $payload, $timeout );
 	}

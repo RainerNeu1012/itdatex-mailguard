@@ -24,6 +24,7 @@ export function currentRoute() {
     case 'accounts/new':    return { name: 'account-new',      params };
     case 'inbox':           return { name: 'inbox',            params };
     case 'newsletters':     return { name: 'newsletters',      params };
+    case 'scanner':         return { name: 'scanner',          params };
   }
   // accounts/{id}/edit
   const m = rest.match(/^accounts\/(\d+)\/edit$/);

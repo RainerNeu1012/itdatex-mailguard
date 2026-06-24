@@ -33,6 +33,7 @@ final class Installer {
 			'antiphish_api_key'            => '',
 			'scan_deep'                    => 0,
 			'scan_batch_size'              => 10,
+			'manual_scan_quota'            => 50,
 		];
 		$existing = (array) get_option( self::OPTION_SETTINGS, [] );
 		update_option( self::OPTION_SETTINGS, array_merge( $defaults, $existing ), false );

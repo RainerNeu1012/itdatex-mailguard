@@ -108,6 +108,26 @@ final class ScanService {
 		);
 	}
 
+	/**
+	 * Per-Customer Quota fuer manuelle Scans (URL + Email).
+	 * Default 50 / 24h, ueber Settings einstellbar.
+	 */
+	public static function consume_manual_quota( int $customer_id ) : array {
+		$rate   = max( 1, (int) Settings::get( 'manual_scan_quota', 50 ) );
+		$window = DAY_IN_SECONDS;
+		$key    = 'itdatex_mg_quota_' . $customer_id;
+		$now    = time();
+		$entries = (array) get_transient( $key );
+		$entries = array_values( array_filter( $entries, static fn( $t ) => is_int( $t ) && ( $now - $t ) < $window ) );
+		if ( count( $entries ) >= $rate ) {
+			$oldest = (int) min( $entries );
+			return [ 'allowed' => false, 'retry_after' => max( 1, ( $oldest + $window ) - $now ), 'limit' => $rate, 'remaining' => 0 ];
+		}
+		$entries[] = $now;
+		set_transient( $key, $entries, $window );
+		return [ 'allowed' => true, 'limit' => $rate, 'remaining' => $rate - count( $entries ) ];
+	}
+
 	public static function reset_to_pending( int $id, int $customer_id ) : bool {
 		global $wpdb;
 		$t = $wpdb->prefix . Installer::TABLE_MESSAGES;

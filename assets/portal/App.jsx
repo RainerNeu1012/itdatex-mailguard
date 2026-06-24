@@ -12,6 +12,7 @@ import Accounts       from './views/Accounts.jsx';
 import AccountForm    from './views/AccountForm.jsx';
 import Inbox          from './views/Inbox.jsx';
 import Newsletters    from './views/Newsletters.jsx';
+import Scanner        from './views/Scanner.jsx';
 
 export default function App() {
   const route = useRoute();
@@ -32,7 +33,7 @@ export default function App() {
     return <div className="mg-shell"><div className="mg-card">Lade …</div></div>;
   }
 
-  const requiresAuth   = [ 'dashboard', 'accounts', 'account-new', 'account-edit', 'inbox', 'newsletters' ];
+  const requiresAuth   = [ 'dashboard', 'accounts', 'account-new', 'account-edit', 'inbox', 'newsletters', 'scanner' ];
   const requiresAnon   = [ 'login', 'register', 'forgot-password' ];
 
   if (requiresAuth.includes(route.name) && !me) {
@@ -58,6 +59,7 @@ export default function App() {
             <button className="mg-nav__btn" onClick={() => navigate('dashboard')}>Dashboard</button>
             <button className="mg-nav__btn" onClick={() => navigate('inbox')}>Inbox</button>
             <button className="mg-nav__btn" onClick={() => navigate('newsletters')}>Newsletter</button>
+            <button className="mg-nav__btn" onClick={() => navigate('scanner')}>Scanner</button>
             <button className="mg-nav__btn" onClick={() => navigate('accounts')}>Postfächer</button>
             <span className="mg-nav__email">{me.email}</span>
             <button className="mg-nav__btn" onClick={() => navigate('logout')}>Logout</button>
@@ -87,6 +89,7 @@ function pickView(name) {
     case 'account-edit':    return AccountForm;
     case 'inbox':           return Inbox;
     case 'newsletters':     return Newsletters;
+    case 'scanner':         return Scanner;
     case 'logout':          return Empty;
     default:                return NotFound;
   }

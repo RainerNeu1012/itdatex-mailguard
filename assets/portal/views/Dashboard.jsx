@@ -36,7 +36,8 @@ export default function Dashboard({ me }) {
         <FeatureCard
           title="🔍 URL-Scanner"
           desc="Verdächtige Links manuell prüfen, ohne sie zu öffnen."
-          status="Phase 7 in Vorbereitung"
+          status="aktiv"
+          cta={{ label: 'Scanner öffnen →', onClick: () => navigate('scanner') }}
         />
       </div>
     </div>

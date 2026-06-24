@@ -259,3 +259,16 @@ html, body {
 .mg-reasons li:last-child { border-bottom: 0; }
 .mg-reasons__score { color: var(--mg-err); font-weight: 600; text-align: right; }
 .mg-reasons code { background: #f6f7f7; padding: 0 0.3rem; border-radius: 3px; }
+
+/* ---- Mode-Pills (Scanner) ---- */
+.mg-modes { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.mg-mode {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.25rem 0.7rem; border: 1px solid var(--mg-border);
+  border-radius: 999px; cursor: pointer; background: #f6f7f7;
+  font-size: 0.85rem;
+}
+.mg-mode.is-active { background: var(--mg-accent); color: #fff; border-color: var(--mg-accent); }
+.mg-mode input { display: none; }
+.mg-form textarea { padding: 0.55rem 0.75rem; border: 1px solid #b4b9be; border-radius: 4px; font: inherit; background: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }
+.mg-form textarea:focus { outline: none; border-color: var(--mg-accent); box-shadow: 0 0 0 1px var(--mg-accent); }

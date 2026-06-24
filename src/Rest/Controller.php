@@ -9,6 +9,7 @@ use Itdatex\Mailguard\Imap\Crypto as ImapCrypto;
 use Itdatex\Mailguard\Imap\ImapClient;
 use Itdatex\Mailguard\Imap\Message as ImapMessage;
 use Itdatex\Mailguard\Imap\PullService;
+use Itdatex\Mailguard\Antiphish\Client as AntiphishClient;
 use Itdatex\Mailguard\Antiphish\ScanService;
 use Itdatex\Mailguard\Antiphish\Unsub;
 use Itdatex\Mailguard\Antiphish\UnsubService;
@@ -167,6 +168,24 @@ final class Controller {
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'unsubs_status' ],
 		] );
+
+		register_rest_route( self::NAMESPACE, '/scan/url', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'manual_scan_url' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/scan/email', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'manual_scan_email' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/scan/quota', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'scan_quota' ],
+		] );
 	}
 
 	/**
@@ -307,6 +326,86 @@ final class Controller {
 		if ( is_wp_error( $cid ) ) { return $cid; }
 		ImapMessage::delete( (int) $req['id'], $cid );
 		return new WP_REST_Response( [ 'ok' => true ], 200 );
+	}
+
+	public static function manual_scan_url( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json = (array) $req->get_json_params();
+		$url  = trim( (string) ( $json['url'] ?? '' ) );
+		if ( $url === '' || ! preg_match( '#^https?://#i', $url ) || strlen( $url ) > 4096 ) {
+			return new WP_Error( 'bad_url', __( 'Ungueltige URL.', 'itdatex-mailguard' ), [ 'status' => 400 ] );
+		}
+		$q = ScanService::consume_manual_quota( $cid );
+		if ( ! $q['allowed'] ) {
+			$resp = new WP_REST_Response( [ 'ok' => false, 'error' => 'rate_limited', 'retry_after' => $q['retry_after'], 'limit' => $q['limit'] ], 429 );
+			$resp->header( 'Retry-After', (string) $q['retry_after'] );
+			return $resp;
+		}
+		$res = AntiphishClient::scan_url( $url );
+		return self::scan_response( $res, $q );
+	}
+
+	public static function manual_scan_email( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json    = (array) $req->get_json_params();
+		$payload = [
+			'subject'   => (string) ( $json['subject'] ?? '' ),
+			'body'      => (string) ( $json['body'] ?? '' ),
+			'from_addr' => isset( $json['from_addr'] ) && $json['from_addr'] !== '' ? (string) $json['from_addr'] : null,
+			'deep'      => ! empty( $json['deep'] ),
+		];
+		if ( isset( $json['headers'] ) && is_array( $json['headers'] ) ) {
+			$h = [];
+			foreach ( $json['headers'] as $k => $v ) {
+				if ( is_string( $k ) && is_scalar( $v ) ) {
+					$h[ $k ] = (string) $v;
+				}
+			}
+			$payload['headers'] = $h;
+		}
+		if ( $payload['subject'] === '' && $payload['body'] === '' ) {
+			return new WP_Error( 'bad_input', __( 'Subject oder Body angeben.', 'itdatex-mailguard' ), [ 'status' => 400 ] );
+		}
+		$q = ScanService::consume_manual_quota( $cid );
+		if ( ! $q['allowed'] ) {
+			$resp = new WP_REST_Response( [ 'ok' => false, 'error' => 'rate_limited', 'retry_after' => $q['retry_after'], 'limit' => $q['limit'] ], 429 );
+			$resp->header( 'Retry-After', (string) $q['retry_after'] );
+			return $resp;
+		}
+		$res = AntiphishClient::scan_email( $payload );
+		return self::scan_response( $res, $q );
+	}
+
+	public static function scan_quota( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		global $wpdb;
+		$rate = max( 1, (int) \Itdatex\Mailguard\Admin\Settings::get( 'manual_scan_quota', 50 ) );
+		$entries = (array) get_transient( 'itdatex_mg_quota_' . $cid );
+		$now = time();
+		$active = array_filter( $entries, static fn( $t ) => is_int( $t ) && ( $now - $t ) < DAY_IN_SECONDS );
+		return new WP_REST_Response( [
+			'ok' => true,
+			'limit'     => $rate,
+			'used'      => count( $active ),
+			'remaining' => max( 0, $rate - count( $active ) ),
+		], 200 );
+	}
+
+	private static function scan_response( $res, array $quota ) : WP_REST_Response {
+		if ( is_wp_error( $res ) ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => $res->get_error_code(), 'detail' => $res->get_error_message() ], 502 );
+		}
+		$status = (int) ( $res['status'] ?? 500 );
+		$resp = new WP_REST_Response( [
+			'ok'        => $status < 400,
+			'result'    => $res['body'],
+			'remaining' => $quota['remaining'] ?? null,
+			'limit'     => $quota['limit'] ?? null,
+		], $status );
+		return $resp;
 	}
 
 	public static function inbox_unsub_options( WP_REST_Request $req ) {
