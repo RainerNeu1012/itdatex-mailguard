@@ -24,6 +24,10 @@ final class Auth {
 		if ( ! (int) Settings::get( 'allow_registration', 1 ) ) {
 			return [ 'ok' => false, 'error' => 'registration_disabled' ];
 		}
+		// Pro-Gate: ohne aktive Site-Owner-Lizenz keine neuen Endkunden.
+		if ( ! \Itdatex\Mailguard\License\Guard::is_active() ) {
+			return [ 'ok' => false, 'error' => 'license_required' ];
+		}
 		$rl = RateLimiter::check( RateLimiter::KEY_REGISTER );
 		if ( ! $rl['allowed'] ) {
 			return [ 'ok' => false, 'error' => self::ERR_RATE, 'retry_after' => $rl['retry_after'] ];

@@ -81,6 +81,8 @@ final class Customers {
 
 		echo '<div class="wrap"><h1>' . esc_html__( 'MailGuard — Endkunden', 'itdatex-mailguard' ) . '</h1>';
 
+		self::render_license_banner();
+
 		if ( $msg ) {
 			$labels = [
 				'suspended' => __( 'Konto wurde gesperrt.',     'itdatex-mailguard' ),
@@ -165,6 +167,53 @@ final class Customers {
 			echo '</div></div>';
 		}
 		echo '</div>';
+	}
+
+	private static function render_license_banner() : void {
+		$status = \Itdatex\Mailguard\License\Guard::status();
+		$state  = (string) ( $status['status'] ?? 'unset' );
+		$settings_url = admin_url( 'admin.php?page=' . Settings::PAGE_SLUG );
+
+		$tone_class = 'notice-info';
+		$msg = '';
+
+		switch ( $state ) {
+			case 'active':
+				$msg = '<strong>Lizenz aktiv.</strong>';
+				if ( ! empty( $status['expires_at'] ) ) {
+					$msg .= ' Gültig bis <code>' . esc_html( (string) $status['expires_at'] ) . '</code>.';
+				}
+				if ( ! empty( $status['cancel_at_period_end'] ) ) {
+					$msg .= ' <em>Wird zum Periodenende gekündigt.</em>';
+					$tone_class = 'notice-warning';
+				} else {
+					$tone_class = 'notice-success';
+				}
+				break;
+			case 'past_due':
+				$tone_class = 'notice-warning';
+				$msg = '<strong>Zahlung überfällig.</strong> Die letzte Stripe-Abrechnung schlug fehl. Endkunden-Portal läuft im Grace, neue Registrierungen sind gesperrt. <a href="https://wp.itdatex.support/konto/">→ Zahlung im Kundenkonto prüfen</a>';
+				break;
+			case 'canceled':
+			case 'expired':
+				$tone_class = 'notice-error';
+				$msg = '<strong>Lizenz nicht aktiv (' . esc_html( $state ) . ').</strong> Endkunden-Registrierung ist blockiert. <a href="' . esc_url( $settings_url ) . '">→ Neuen Schlüssel hinterlegen</a>';
+				break;
+			case 'invalid':
+				$tone_class = 'notice-error';
+				$msg = '<strong>Lizenzschlüssel ungültig.</strong> Bitte den Schlüssel in den <a href="' . esc_url( $settings_url ) . '">Einstellungen</a> prüfen.';
+				break;
+			case 'unknown':
+				$tone_class = 'notice-warning';
+				$msg = '<strong>Lizenz-Status unklar.</strong> Shop nicht erreichbar — wird beim nächsten Page-Load erneut probiert.';
+				break;
+			case 'unset':
+			default:
+				$tone_class = 'notice-warning';
+				$msg = '<strong>Kein Lizenzschlüssel hinterlegt.</strong> Bitte in den <a href="' . esc_url( $settings_url ) . '">Einstellungen → Lizenz</a> eintragen. Endkunden-Registrierung ist bis dahin gesperrt.';
+		}
+
+		echo '<div class="notice ' . esc_attr( $tone_class ) . '" style="margin-top:1em"><p>' . wp_kses_post( $msg ) . '</p></div>';
 	}
 
 	private static function action_url( string $action, int $cid ) : string {

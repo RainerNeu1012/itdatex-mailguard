@@ -74,6 +74,7 @@ function humanError(body, status) {
   const e = body && body.error;
   if (e === 'email_already_registered') return 'Diese E-Mail-Adresse ist bereits registriert.';
   if (e === 'registration_disabled')    return 'Registrierung ist auf dieser Seite nicht freigegeben.';
+  if (e === 'license_required')         return 'Der Site-Betreiber muss erst seine MailGuard-Lizenz aktivieren. Bitte später erneut versuchen.';
   if (e === 'bad_input')                return body.field === 'email' ? 'Bitte gültige E-Mail-Adresse eingeben.' : 'Eingabe ungültig.';
   if (e === 'rate_limited')             return 'Zu viele Versuche. Bitte später erneut.';
   return 'Fehler bei der Registrierung (HTTP ' + status + ').';

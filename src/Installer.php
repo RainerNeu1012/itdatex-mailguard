@@ -35,6 +35,7 @@ final class Installer {
 			'scan_deep'                    => 0,
 			'scan_batch_size'              => 10,
 			'manual_scan_quota'            => 50,
+			'license_key'                  => '',
 		];
 		$existing = (array) get_option( self::OPTION_SETTINGS, [] );
 		update_option( self::OPTION_SETTINGS, array_merge( $defaults, $existing ), false );

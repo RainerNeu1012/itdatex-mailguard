@@ -59,6 +59,32 @@ final class Settings {
 		self::field_checkbox( 'scan_deep', __( 'LLM-Deep-Mode', 'itdatex-mailguard' ), 'mg_api', __( 'LLM-Tiefenanalyse erzwingen (~15–25 s/Mail; sonst nur Heuristik)', 'itdatex-mailguard' ) );
 		self::field_number( 'scan_batch_size',    __( 'Scans pro Cron-Run', 'itdatex-mailguard' ), 'mg_api', 1, 100 );
 		self::field_number( 'manual_scan_quota',  __( 'Manuelle Scans / Endkunde / 24h', 'itdatex-mailguard' ), 'mg_api', 1, 1000 );
+
+		add_settings_section( 'mg_license', __( 'Lizenz', 'itdatex-mailguard' ), [ __CLASS__, 'license_intro' ], self::PAGE_SLUG );
+		self::field_text( 'license_key', __( 'Lizenzschlüssel', 'itdatex-mailguard' ), 'mg_license', [ 'placeholder' => 'XXXXX-XXXXX-…' ] );
+	}
+
+	public static function license_intro() : void {
+		$status = \Itdatex\Mailguard\License\Guard::status();
+		$state  = (string) ( $status['status'] ?? 'unset' );
+		$color  = match ( $state ) {
+			'active'   => '#00a32a',
+			'past_due' => '#dba617',
+			'invalid','canceled','expired' => '#d63638',
+			default    => '#646970',
+		};
+		echo '<p style="font-size:1.05em">Status: <strong style="color:' . esc_attr( $color ) . '">' . esc_html( $state ) . '</strong>';
+		if ( ! empty( $status['expires_at'] ) ) {
+			echo ' · gültig bis <code>' . esc_html( (string) $status['expires_at'] ) . '</code>';
+		}
+		if ( ! empty( $status['cancel_at_period_end'] ) ) {
+			echo ' <em>(Kündigung zum Periodenende)</em>';
+		}
+		if ( ! empty( $status['billing_mode'] ) ) {
+			echo ' · ' . esc_html( $status['billing_mode'] === 'subscription' ? 'Abo' : 'Einmalkauf' );
+		}
+		echo '</p>';
+		echo '<p class="description">' . esc_html__( 'Lizenz wird live gegen wp.itdatex.support geprüft (Cache 6h). Nach Eintragen + Speichern wird der Cache invalidiert.', 'itdatex-mailguard' ) . '</p>';
 	}
 
 	public static function sanitize( $input ) : array {
@@ -79,6 +105,14 @@ final class Settings {
 		}
 		if ( isset( $input['manual_scan_quota'] ) ) {
 			$out['manual_scan_quota'] = max( 1, min( 1000, (int) $input['manual_scan_quota'] ) );
+		}
+		if ( array_key_exists( 'license_key', $input ) ) {
+			$prev = (string) ( $current['license_key'] ?? '' );
+			$next = strtoupper( trim( (string) $input['license_key'] ) );
+			$out['license_key'] = $next;
+			if ( $next !== $prev ) {
+				\Itdatex\Mailguard\License\Guard::invalidate();
+			}
 		}
 		if ( isset( $input['session_ttl_days'] ) ) {
 			$out['session_ttl_days'] = max( 1, min( 90, (int) $input['session_ttl_days'] ) );

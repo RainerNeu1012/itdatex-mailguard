@@ -590,6 +590,7 @@ final class Controller {
 			Auth::ERR_INVALID_CREDS, Auth::ERR_UNVERIFIED  => 401,
 			Auth::ERR_SUSPENDED                            => 403,
 			Auth::ERR_TOKEN                                => 410,
+			'license_required'                             => 402,
 			Auth::ERR_BAD_INPUT, 'registration_disabled', 'create_failed' => 400,
 			default                                        => 500,
 		};
