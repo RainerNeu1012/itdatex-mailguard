@@ -13,6 +13,7 @@ use Itdatex\Mailguard\Antiphish\Client as AntiphishClient;
 use Itdatex\Mailguard\Antiphish\ScanService;
 use Itdatex\Mailguard\Antiphish\Unsub;
 use Itdatex\Mailguard\Antiphish\UnsubService;
+use Itdatex\Mailguard\Rules\Rule;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_Error;
@@ -185,6 +186,25 @@ final class Controller {
 			'methods'             => 'GET',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'scan_quota' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/rules', [
+			[
+				'methods'             => 'GET',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'rules_list' ],
+			],
+			[
+				'methods'             => 'POST',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'rules_create' ],
+			],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/rules/(?P<id>\d+)', [
+			'methods'             => 'DELETE',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'rules_delete' ],
 		] );
 	}
 
@@ -406,6 +426,35 @@ final class Controller {
 			'limit'     => $quota['limit'] ?? null,
 		], $status );
 		return $resp;
+	}
+
+	public static function rules_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		return new WP_REST_Response( [ 'ok' => true, 'items' => Rule::list_for_customer( $cid ) ], 200 );
+	}
+
+	public static function rules_create( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json = (array) $req->get_json_params();
+		$res = Rule::create( $cid, $json );
+		if ( empty( $res['ok'] ) ) {
+			return new WP_Error( 'bad_input', $res['error'] ?? '', [ 'status' => 400 ] );
+		}
+		$row = Rule::find_for_customer( (int) $res['id'], $cid );
+		return new WP_REST_Response( [ 'ok' => true, 'item' => Rule::public_view( $row ) ], 201 );
+	}
+
+	public static function rules_delete( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req['id'];
+		if ( ! Rule::find_for_customer( $id, $cid ) ) {
+			return new WP_Error( 'not_found', '', [ 'status' => 404 ] );
+		}
+		Rule::delete( $id, $cid );
+		return new WP_REST_Response( [ 'ok' => true ], 200 );
 	}
 
 	public static function inbox_unsub_options( WP_REST_Request $req ) {

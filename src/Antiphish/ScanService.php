@@ -5,6 +5,7 @@ namespace Itdatex\Mailguard\Antiphish;
 
 use Itdatex\Mailguard\Admin\Settings;
 use Itdatex\Mailguard\Installer;
+use Itdatex\Mailguard\Rules\Engine as RulesEngine;
 
 /**
  * Asynchron-Scan-Worker: nimmt scan_status='pending' Mails aus mg_messages,
@@ -84,6 +85,14 @@ final class ScanService {
 		$score   = (int)    ( $body['score']   ?? 0 );
 		$reasons = is_array( $body['reasons'] ?? null ) ? $body['reasons'] : [];
 
+		// Customer-Regeln koennen das Verdict ueberschreiben (Blacklist > Whitelist).
+		$override = RulesEngine::apply( (int) $row['customer_id'], $row );
+		if ( $override ) {
+			$verdict = $override['verdict'];
+			$score   = $override['score'];
+			array_unshift( $reasons, $override['reason'] );
+		}
+
 		$wpdb->update( $t, [
 			'scan_status'  => 'done',
 			'scan_verdict' => mb_substr( $verdict, 0, 20 ),
@@ -92,7 +101,7 @@ final class ScanService {
 			'scanned_at'   => current_time( 'mysql', true ),
 		], [ 'id' => $id ] );
 
-		return [ 'ok' => true, 'verdict' => $verdict, 'score' => $score ];
+		return [ 'ok' => true, 'verdict' => $verdict, 'score' => $score, 'override' => $override ? true : false ];
 	}
 
 	private static function mark_error( int $id, string $detail ) : void {

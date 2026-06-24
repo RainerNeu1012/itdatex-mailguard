@@ -272,3 +272,9 @@ html, body {
 .mg-mode input { display: none; }
 .mg-form textarea { padding: 0.55rem 0.75rem; border: 1px solid #b4b9be; border-radius: 4px; font: inherit; background: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }
 .mg-form textarea:focus { outline: none; border-color: var(--mg-accent); box-shadow: 0 0 0 1px var(--mg-accent); }
+
+/* ---- Rules-Tabelle ---- */
+.mg-rules { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.mg-rules th, .mg-rules td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid #e9eaeb; vertical-align: middle; }
+.mg-rules code { background: #f6f7f7; padding: 0 0.3rem; border-radius: 3px; word-break: break-all; }
+.mg-rules td:last-child { text-align: right; width: 60px; }
