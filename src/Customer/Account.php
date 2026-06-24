@@ -103,4 +103,59 @@ final class Account {
 		global $wpdb;
 		$wpdb->update( self::table(), [ 'status' => $status ], [ 'id' => $id ], [ '%s' ], [ '%d' ] );
 	}
+
+	/**
+	 * Admin-Listing mit Pagination + LIKE-Suche auf E-Mail.
+	 */
+	public static function list_paginated( int $page, int $per_page, string $search = '' ) : array {
+		global $wpdb;
+		$per_page = max( 1, min( 100, $per_page ) );
+		$page     = max( 1, $page );
+		$offset   = ( $page - 1 ) * $per_page;
+		$where    = '1=1';
+		$args     = [];
+		if ( $search !== '' ) {
+			$where  = 'email LIKE %s';
+			$args[] = '%' . $wpdb->esc_like( strtolower( $search ) ) . '%';
+		}
+		$args[] = $per_page;
+		$args[] = $offset;
+
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT * FROM " . self::table() . " WHERE {$where} ORDER BY id DESC LIMIT %d OFFSET %d",
+			$args
+		), ARRAY_A );
+
+		$total_args = $search !== '' ? [ '%' . $wpdb->esc_like( strtolower( $search ) ) . '%' ] : [];
+		$total = (int) ( $search !== ''
+			? $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM " . self::table() . " WHERE email LIKE %s", $total_args ) )
+			: $wpdb->get_var( "SELECT COUNT(*) FROM " . self::table() ) );
+
+		return [ 'items' => $rows ?: [], 'total' => $total ];
+	}
+
+	public static function counts_by_status() : array {
+		global $wpdb;
+		$t = self::table();
+		return [
+			'total'     => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$t}" ),
+			'active'    => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$t} WHERE status='active'" ),
+			'pending'   => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$t} WHERE status='pending'" ),
+			'suspended' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$t} WHERE status='suspended'" ),
+		];
+	}
+
+	/**
+	 * Komplett-Loeschung eines Customer-Datasets (kaskadiert).
+	 * Aufrufer muss Berechtigung pruefen.
+	 */
+	public static function purge( int $id ) : void {
+		global $wpdb;
+		$wpdb->delete( $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_RULES,         [ 'customer_id' => $id ] );
+		$wpdb->delete( $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_UNSUBS,        [ 'customer_id' => $id ] );
+		$wpdb->delete( $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_MESSAGES,      [ 'customer_id' => $id ] );
+		$wpdb->delete( $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_IMAP_ACCOUNTS, [ 'customer_id' => $id ] );
+		$wpdb->delete( self::table(), [ 'id' => $id ] );
+		delete_transient( 'itdatex_mg_quota_' . $id );
+	}
 }

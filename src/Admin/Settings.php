@@ -15,10 +15,19 @@ final class Settings {
 			__( 'MailGuard', 'itdatex-mailguard' ),
 			__( 'MailGuard', 'itdatex-mailguard' ),
 			'manage_options',
-			self::PAGE_SLUG,
-			[ __CLASS__, 'render_page' ],
+			Customers::PAGE_SLUG,
+			[ Customers::class, 'render' ],
 			'dashicons-email-alt2',
 			59
+		);
+		Customers::add_menu();
+		add_submenu_page(
+			Customers::PAGE_SLUG,
+			__( 'Einstellungen', 'itdatex-mailguard' ),
+			__( 'Einstellungen', 'itdatex-mailguard' ),
+			'manage_options',
+			self::PAGE_SLUG,
+			[ __CLASS__, 'render_page' ]
 		);
 	}
 

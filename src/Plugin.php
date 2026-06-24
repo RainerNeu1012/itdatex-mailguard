@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Itdatex\Mailguard;
 
 use Itdatex\Mailguard\Installer;
+use Itdatex\Mailguard\Admin\Customers;
 use Itdatex\Mailguard\Admin\Settings;
 use Itdatex\Mailguard\Antiphish\ScanService;
 use Itdatex\Mailguard\Imap\PullService;
@@ -27,6 +28,7 @@ final class Plugin {
 
 		add_action( 'admin_init',    [ Settings::class, 'register' ] );
 		add_action( 'admin_menu',    [ Settings::class, 'add_menu' ] );
+		add_action( 'admin_init',    [ Customers::class, 'handle_actions' ] );
 
 		add_action( 'rest_api_init', [ RestController::class, 'register' ] );
 
