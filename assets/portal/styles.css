@@ -189,6 +189,7 @@ html, body {
 
 .mg-pill { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
 .mg-pill--ok    { background: #d6efd9; color: #134e1c; }
+.mg-pill--err   { background: #fbecec; color: #6b1d1e; }
 .mg-pill--muted { background: #e9eaeb; color: #646970; }
 
 .mg-ok          { color: var(--mg-ok); }

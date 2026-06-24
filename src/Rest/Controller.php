@@ -10,6 +10,8 @@ use Itdatex\Mailguard\Imap\ImapClient;
 use Itdatex\Mailguard\Imap\Message as ImapMessage;
 use Itdatex\Mailguard\Imap\PullService;
 use Itdatex\Mailguard\Antiphish\ScanService;
+use Itdatex\Mailguard\Antiphish\Unsub;
+use Itdatex\Mailguard\Antiphish\UnsubService;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_Error;
@@ -140,6 +142,30 @@ final class Controller {
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'inbox_rescan' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/unsub-options', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_unsub_options' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/unsubscribe', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_unsubscribe' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/unsubs', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'unsubs_list' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/unsubs/(?P<id>\d+)/status', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'unsubs_status' ],
 		] );
 	}
 
@@ -281,6 +307,40 @@ final class Controller {
 		if ( is_wp_error( $cid ) ) { return $cid; }
 		ImapMessage::delete( (int) $req['id'], $cid );
 		return new WP_REST_Response( [ 'ok' => true ], 200 );
+	}
+
+	public static function inbox_unsub_options( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$res = UnsubService::extract_for_message( (int) $req['id'], $cid );
+		$status = ! empty( $res['ok'] ) ? 200 : ( ( $res['error'] ?? '' ) === 'not_found' ? 404 : 502 );
+		return new WP_REST_Response( $res, $status );
+	}
+
+	public static function inbox_unsubscribe( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json = (array) $req->get_json_params();
+		$idx  = isset( $json['option_idx'] ) ? (int) $json['option_idx'] : null;
+		$res  = UnsubService::execute_for_message( (int) $req['id'], $cid, $idx );
+		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
+	}
+
+	public static function unsubs_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$page     = (int) $req->get_param( 'page' );
+		$per_page = (int) $req->get_param( 'per_page' );
+		$data = Unsub::list_for_customer( $cid, $page ?: 1, $per_page ?: 25 );
+		$data['ok'] = true;
+		return new WP_REST_Response( $data, 200 );
+	}
+
+	public static function unsubs_status( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$res = UnsubService::status_refresh( (int) $req['id'], $cid );
+		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
 	}
 
 	public static function inbox_rescan( WP_REST_Request $req ) {

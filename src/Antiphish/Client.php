@@ -24,6 +24,23 @@ final class Client {
 		return self::request( '/unsubscribe/execute', $payload, $timeout );
 	}
 
+	public static function request_get( string $path, int $timeout = 8 ) {
+		$base = rtrim( (string) Settings::get( 'antiphish_api_url', '' ), '/' );
+		$key  = (string) Settings::get( 'antiphish_api_key', '' );
+		if ( $base === '' || $key === '' ) {
+			return new WP_Error( 'no_api_credentials', __( 'Antiphish-API nicht konfiguriert.', 'itdatex-mailguard' ) );
+		}
+		$res = wp_remote_get( $base . $path, [
+			'timeout' => $timeout,
+			'headers' => [ 'Accept' => 'application/json', 'X-API-Key' => $key ],
+		] );
+		if ( is_wp_error( $res ) ) { return $res; }
+		$code = (int) wp_remote_retrieve_response_code( $res );
+		$raw  = (string) wp_remote_retrieve_body( $res );
+		$json = json_decode( $raw, true );
+		return [ 'status' => $code, 'body' => $json !== null ? $json : $raw ];
+	}
+
 	private static function request( string $path, array $body, int $timeout ) {
 		$base = rtrim( (string) Settings::get( 'antiphish_api_url', '' ), '/' );
 		$key  = (string) Settings::get( 'antiphish_api_key', '' );

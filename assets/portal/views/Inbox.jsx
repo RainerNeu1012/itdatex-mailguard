@@ -147,6 +147,22 @@ export default function Inbox() {
                   setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; });
                 }
               }}
+              onUnsub={async () => {
+                if (m.scan_verdict === 'dangerous' && !window.confirm('Diese Mail ist als Phishing eingestuft. Trotzdem auf den Abmelde-Link klicken? (Empfehlung: NICHT)')) {
+                  return;
+                }
+                setBusy((b) => ({ ...b, [m.id]: 'unsub' }));
+                try {
+                  const { body } = await apiPost(`inbox/messages/${m.id}/unsubscribe`, {});
+                  const msg = body.ok
+                    ? `✔ Abgemeldet (${body.api && body.api.status})`
+                    : `Status: ${body.api && body.api.status || body.error || 'unbekannt'}`;
+                  alert(msg);
+                  loadInbox();
+                } finally {
+                  setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; });
+                }
+              }}
             />
           ))}
         </div>
@@ -172,7 +188,7 @@ function Stat({ label, value, tone }) {
   );
 }
 
-function Row({ m, expanded, busy, onToggle, onRescan }) {
+function Row({ m, expanded, busy, onToggle, onRescan, onUnsub }) {
   const dangerous = m.scan_verdict === 'dangerous';
   return (
     <div className={'mg-card mg-mail' + (dangerous ? ' mg-mail--danger' : '')}>
@@ -197,16 +213,16 @@ function Row({ m, expanded, busy, onToggle, onRescan }) {
               <ReasonsList reasons={m.scan_reasons} />
             </>
           )}
-          <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+          <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <button className="mg-btn" disabled={!!busy} onClick={(e) => { e.stopPropagation(); onRescan(); }}>
               {busy === 'rescan' ? '…' : '↻ Erneut scannen'}
             </button>
+            {m.has_unsub && (
+              <button className="mg-btn mg-btn--primary" disabled={!!busy} onClick={(e) => { e.stopPropagation(); onUnsub(); }}>
+                {busy === 'unsub' ? '…' : '✉ Newsletter abmelden'}
+              </button>
+            )}
           </div>
-          {m.has_unsub && (
-            <p className="mg-muted mg-tiny" style={{ marginTop: '0.5rem' }}>
-              List-Unsubscribe vorhanden → in Phase 6 kommt der Bulk-Unsubscribe-Button.
-            </p>
-          )}
         </div>
       )}
     </div>

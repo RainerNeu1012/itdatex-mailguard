@@ -30,7 +30,8 @@ export default function Dashboard({ me }) {
         <FeatureCard
           title="📰 Newsletter-Abmelden"
           desc="Bulk-Unsubscribe per RFC-8058 (HTTP + mailto). Bounce-Status wird nachverfolgt."
-          status="Phase 6 in Vorbereitung"
+          status="aktiv"
+          cta={{ label: 'Newsletter →', onClick: () => navigate('newsletters') }}
         />
         <FeatureCard
           title="🔍 URL-Scanner"

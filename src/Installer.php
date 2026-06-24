@@ -7,11 +7,12 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 3;
+	public const CURRENT_DB_VERSION = 4;
 
 	public const TABLE_CUSTOMERS     = 'mg_customers';
 	public const TABLE_IMAP_ACCOUNTS = 'mg_imap_accounts';
 	public const TABLE_MESSAGES      = 'mg_messages';
+	public const TABLE_UNSUBS        = 'mg_unsubs';
 
 	public const CRON_PULL_HOOK     = 'itdatex_mailguard_pull_all';
 	public const CRON_PULL_SCHEDULE = 'itdatex_mailguard_15min';
@@ -141,10 +142,33 @@ final class Installer {
 			KEY idx_scan_status (scan_status)
 		) {$charset};";
 
+		$t_uns = $wpdb->prefix . self::TABLE_UNSUBS;
+		$sql_uns = "CREATE TABLE {$t_uns} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			message_id BIGINT UNSIGNED NOT NULL,
+			kind VARCHAR(10) NOT NULL DEFAULT '',
+			target VARCHAR(2048) NOT NULL DEFAULT '',
+			one_click TINYINT(1) NOT NULL DEFAULT 0,
+			api_status VARCHAR(40) NOT NULL DEFAULT '',
+			api_http_status SMALLINT UNSIGNED NULL,
+			api_message_id VARCHAR(255) NOT NULL DEFAULT '',
+			api_detail LONGTEXT NULL,
+			dsn_status VARCHAR(20) NOT NULL DEFAULT '',
+			dsn_detail TEXT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NULL,
+			PRIMARY KEY (id),
+			KEY idx_customer (customer_id),
+			KEY idx_message  (message_id),
+			KEY idx_status   (api_status)
+		) {$charset};";
+
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		dbDelta( $sql_customers );
 		dbDelta( $sql_imap );
 		dbDelta( $sql_msg );
+		dbDelta( $sql_uns );
 
 		update_option( self::OPTION_DB_VERSION, self::CURRENT_DB_VERSION, false );
 	}
