@@ -5,13 +5,21 @@ namespace Itdatex\Mailguard\Rest;
 
 use Itdatex\Mailguard\Customer\Auth;
 use Itdatex\Mailguard\Imap\Account as ImapAccount;
+use Itdatex\Mailguard\Imap\Action as ImapAction;
+use Itdatex\Mailguard\Imap\ClientFactory;
 use Itdatex\Mailguard\Imap\Crypto as ImapCrypto;
+use Itdatex\Mailguard\Imap\Folder as ImapFolder;
 use Itdatex\Mailguard\Imap\ImapClient;
 use Itdatex\Mailguard\Imap\Message as ImapMessage;
 use Itdatex\Mailguard\Imap\PullService;
+use Itdatex\Mailguard\Imap\QuarantineService;
+use Itdatex\Mailguard\Oauth\GoogleClient;
+use Itdatex\Mailguard\Oauth\MicrosoftClient;
+use Itdatex\Mailguard\Oauth\StateToken;
 use Itdatex\Mailguard\Antiphish\Client as AntiphishClient;
 use Itdatex\Mailguard\Antiphish\ScanService;
 use Itdatex\Mailguard\Antiphish\Unsub;
+use Itdatex\Mailguard\Antiphish\Subscriptions;
 use Itdatex\Mailguard\Antiphish\UnsubService;
 use Itdatex\Mailguard\Rules\Rule;
 use WP_REST_Request;
@@ -65,6 +73,12 @@ final class Controller {
 			'callback'            => [ __CLASS__, 'me' ],
 		] );
 
+		register_rest_route( self::NAMESPACE, '/me/cloud-consent', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_cloud_consent' ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/accounts', [
 			[
 				'methods'             => 'GET',
@@ -106,6 +120,98 @@ final class Controller {
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'accounts_pull' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/accounts/(?P<id>\d+)/folders', [
+			[
+				'methods'             => 'GET',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'folders_list' ],
+			],
+			[
+				'methods'             => 'POST',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'folders_create' ],
+			],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/accounts/(?P<id>\d+)/folders/discover', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'folders_discover' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/folders/(?P<id>\d+)', [
+			[
+				'methods'             => 'PATCH',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'folders_patch' ],
+			],
+			[
+				'methods'             => 'DELETE',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'folders_delete' ],
+			],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/folders/(?P<id>\d+)/test', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'folders_test' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/folders/(?P<id>\d+)/pull', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'folders_pull' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/oauth/microsoft/start', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'oauth_microsoft_start' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/oauth/microsoft/callback', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'oauth_microsoft_callback' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/oauth/google/start', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'oauth_google_start' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/oauth/google/callback', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'oauth_google_callback' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/accounts/(?P<id>\d+)/oauth/disconnect', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'oauth_disconnect' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/imap/discover', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'imap_discover' ],
+			'args'                => [
+				'email' => [ 'type' => 'string', 'required' => true ],
+			],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/imap/discover-public', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'imap_discover_public' ],
+			'args'                => [
+				'email' => [ 'type' => 'string', 'required' => true ],
+			],
 		] );
 
 		register_rest_route( self::NAMESPACE, '/inbox/messages', [
@@ -158,6 +264,28 @@ final class Controller {
 			'callback'            => [ __CLASS__, 'inbox_unsubscribe' ],
 		] );
 
+		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/quarantine', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_quarantine' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/actions', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'actions_list' ],
+			'args'                => [
+				'page'     => [ 'type' => 'integer', 'default' => 1 ],
+				'per_page' => [ 'type' => 'integer', 'default' => 50 ],
+			],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/actions/(?P<id>\d+)/undo', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'actions_undo' ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/unsubs', [
 			'methods'             => 'GET',
 			'permission_callback' => '__return_true',
@@ -168,6 +296,22 @@ final class Controller {
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'unsubs_status' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/subscriptions', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'subscriptions_list' ],
+			'args'                => [
+				'page'     => [ 'type' => 'integer', 'default' => 1 ],
+				'per_page' => [ 'type' => 'integer', 'default' => 50 ],
+			],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/subscriptions/unsubscribe', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'subscriptions_unsubscribe' ],
 		] );
 
 		register_rest_route( self::NAMESPACE, '/scan/url', [
@@ -239,13 +383,61 @@ final class Controller {
 	public static function accounts_create( WP_REST_Request $req ) {
 		$cid = self::require_customer();
 		if ( is_wp_error( $cid ) ) { return $cid; }
+
+		$quota_err = self::check_imap_quota( $cid );
+		if ( $quota_err ) { return $quota_err; }
+
 		$json = (array) $req->get_json_params();
 		$err = self::validate_account_payload( $json, true );
 		if ( $err ) { return $err; }
 		$id = ImapAccount::create( $cid, $json );
 		if ( ! $id ) { return new WP_Error( 'create_failed', __( 'Anlegen fehlgeschlagen.', 'itdatex-mailguard' ), [ 'status' => 500 ] ); }
+		// Default-Folder anlegen: aus dem POST-Feld 'folder' falls vorhanden, sonst INBOX
+		$default_folder = trim( (string) ( $json['folder'] ?? '' ) ) ?: 'INBOX';
+		ImapFolder::create( $id, $cid, $default_folder );
 		$row = ImapAccount::find_for_customer( $id, $cid );
 		return new WP_REST_Response( [ 'ok' => true, 'item' => ImapAccount::public_view( $row ) ], 201 );
+	}
+
+	/**
+	 * Prüft, ob der Customer noch ein weiteres IMAP-Postfach anlegen darf.
+	 * Pro-Gated nach Plan-Quota.
+	 * Bei past_due wird noch erlaubt (Grace), bei canceled+abgelaufenem grace blockiert.
+	 */
+	private static function check_imap_quota( int $cid ) : ?WP_Error {
+		global $wpdb;
+		$cust = $wpdb->get_row( $wpdb->prepare(
+			'SELECT plan_slug, plan_status, imap_quota, plan_grace_until FROM ' . $wpdb->prefix . 'mg_customers WHERE id = %d',
+			$cid
+		), ARRAY_A );
+		if ( ! $cust ) { return new WP_Error( 'unknown_customer', '', [ 'status' => 401 ] ); }
+
+		$status = (string) $cust['plan_status'];
+		if ( $status === 'canceled' ) {
+			$grace = (string) ( $cust['plan_grace_until'] ?? '' );
+			if ( $grace === '' || strtotime( $grace . ' UTC' ) < time() ) {
+				return new WP_Error( 'plan_canceled', __( 'Abo gekündigt. Postfach-Anlage ist deaktiviert. Bitte reaktivieren.', 'itdatex-mailguard' ), [ 'status' => 402 ] );
+			}
+		}
+
+		$quota = (int) $cust['imap_quota'];
+		if ( $quota <= 0 ) { $quota = 1; }
+
+		$active = (int) $wpdb->get_var( $wpdb->prepare(
+			'SELECT COUNT(*) FROM ' . $wpdb->prefix . "mg_imap_accounts WHERE customer_id = %d AND status != 'deleted'",
+			$cid
+		) );
+		if ( $active >= $quota ) {
+			return new WP_Error(
+				'quota_exceeded',
+				sprintf(
+					__( 'Plan-Limit erreicht: %d von %d Postfächern in Nutzung. Bitte Plan upgraden.', 'itdatex-mailguard' ),
+					$active, $quota
+				),
+				[ 'status' => 402, 'plan_slug' => $cust['plan_slug'], 'quota' => $quota, 'in_use' => $active ]
+			);
+		}
+		return null;
 	}
 
 	public static function accounts_update( WP_REST_Request $req ) {
@@ -279,20 +471,8 @@ final class Controller {
 		$id  = (int) $req['id'];
 		$row = ImapAccount::find_for_customer( $id, $cid );
 		if ( ! $row ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
-		$plain = ImapCrypto::decrypt( (string) $row['password_enc'] );
-		if ( $plain === '' ) {
-			ImapAccount::record_test( $id, $cid, false, 'no_password_stored' );
-			return new WP_REST_Response( [ 'ok' => false, 'error' => 'no_password_stored' ], 400 );
-		}
-		$client = new ImapClient(
-			(string) $row['host'],
-			(int)    $row['port'],
-			(string) $row['encryption'],
-			(string) $row['folder'],
-			(string) $row['username'],
-			$plain
-		);
 		try {
+			$client = \Itdatex\Mailguard\Imap\ClientFactory::for_account( $row );
 			$probe = $client->probe();
 			ImapAccount::record_test( $id, $cid, true, 'ok · messages=' . (int) $probe['messages'] );
 			return new WP_REST_Response( [ 'ok' => true, 'probe' => $probe ], 200 );
@@ -474,6 +654,47 @@ final class Controller {
 		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
 	}
 
+	public static function inbox_quarantine( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$res = QuarantineService::quarantine( (int) $req['id'], $cid );
+		$status = ! empty( $res['ok'] )
+			? 200
+			: match ( $res['error'] ?? '' ) {
+				'not_found', 'account_gone', 'source_mail_gone' => 404,
+				'already_quarantined'       => 409,
+				'connect_failed', 'create_folder_failed', 'move_failed' => 502,
+				default                     => 500,
+			};
+		return new WP_REST_Response( $res, $status );
+	}
+
+	public static function actions_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$page     = max( 1, (int) $req->get_param( 'page' ) );
+		$per_page = max( 1, min( 100, (int) $req->get_param( 'per_page' ) ) );
+		$data = ImapAction::list_for_customer( $cid, $page, $per_page );
+		$data['ok'] = true;
+		return new WP_REST_Response( $data, 200 );
+	}
+
+	public static function actions_undo( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$res = QuarantineService::undo( (int) $req['id'], $cid );
+		$status = ! empty( $res['ok'] )
+			? 200
+			: match ( $res['error'] ?? '' ) {
+				'not_found', 'account_gone'                                   => 404,
+				'not_undoable', 'already_undone_or_failed', 'undo_expired'    => 409,
+				'connect_failed', 'find_target_failed', 'move_failed',
+				'target_uid_unknown'                                          => 502,
+				default                                                       => 500,
+			};
+		return new WP_REST_Response( $res, $status );
+	}
+
 	public static function unsubs_list( WP_REST_Request $req ) {
 		$cid = self::require_customer();
 		if ( is_wp_error( $cid ) ) { return $cid; }
@@ -482,6 +703,162 @@ final class Controller {
 		$data = Unsub::list_for_customer( $cid, $page ?: 1, $per_page ?: 25 );
 		$data['ok'] = true;
 		return new WP_REST_Response( $data, 200 );
+	}
+
+	public static function folders_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$aid = (int) $req['id'];
+		if ( ! ImapAccount::find_for_customer( $aid, $cid ) ) {
+			return new WP_Error( 'not_found', '', [ 'status' => 404 ] );
+		}
+		return new WP_REST_Response( [ 'ok' => true, 'items' => ImapFolder::list_for_account( $aid, $cid ) ], 200 );
+	}
+
+	public static function folders_create( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$aid = (int) $req['id'];
+		$account = ImapAccount::find_for_customer( $aid, $cid );
+		if ( ! $account ) {
+			return new WP_Error( 'not_found', '', [ 'status' => 404 ] );
+		}
+		$json = (array) $req->get_json_params();
+		$names = $json['folders'] ?? null;
+		if ( ! is_array( $names ) ) {
+			$names = isset( $json['folder_name'] ) ? [ (string) $json['folder_name'] ] : [];
+		}
+		$quarantine = QuarantineService::quarantine_folder_for_account( $account );
+		$created = []; $skipped = [];
+		foreach ( $names as $n ) {
+			$nm = trim( (string) $n );
+			if ( $nm === '' ) { continue; }
+			if ( $nm === $quarantine ) {
+				$skipped[] = $nm;
+				continue;
+			}
+			$id = ImapFolder::create( $aid, $cid, $nm );
+			if ( $id ) { $created[] = $id; }
+		}
+		return new WP_REST_Response( [
+			'ok'      => true,
+			'created' => $created,
+			'skipped' => $skipped,
+			'items'   => ImapFolder::list_for_account( $aid, $cid ),
+		], 201 );
+	}
+
+	public static function folders_discover( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$aid = (int) $req['id'];
+		$row = ImapAccount::find_for_customer( $aid, $cid );
+		if ( ! $row ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
+		try {
+			$client = ClientFactory::for_account( $row );
+			$client->connect();
+			$folders = $client->list_folders();
+			$client->close();
+		} catch ( \Throwable $e ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'connect_failed', 'detail' => $e->getMessage() ], 502 );
+		}
+		// Bereits konfigurierte Folder markieren + Quarantäne-Folder kennzeichnen,
+		// damit das UI ihn nicht versehentlich als Pull-Ordner anbietet (sonst
+		// würde der nächste Pull die quarantänisierten Mails wieder als neue Mails
+		// einfangen).
+		$configured = array_column( ImapFolder::list_for_account( $aid, $cid ), 'folder_name' );
+		$cfg_set   = array_flip( $configured );
+		$quar_name = QuarantineService::quarantine_folder_for_account( $row );
+		foreach ( $folders as &$f ) {
+			$f['configured']    = isset( $cfg_set[ $f['name'] ] );
+			$f['is_quarantine'] = $f['name'] === $quar_name;
+		}
+		unset( $f );
+		return new WP_REST_Response( [ 'ok' => true, 'items' => $folders ], 200 );
+	}
+
+	public static function folders_patch( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$fid = (int) $req['id'];
+		if ( ! ImapFolder::find_for_customer( $fid, $cid ) ) {
+			return new WP_Error( 'not_found', '', [ 'status' => 404 ] );
+		}
+		$json = (array) $req->get_json_params();
+		if ( isset( $json['status'] ) ) {
+			ImapFolder::update_status( $fid, $cid, (string) $json['status'] );
+		}
+		$row = ImapFolder::find_for_customer( $fid, $cid );
+		return new WP_REST_Response( [ 'ok' => true, 'item' => ImapFolder::public_view( $row ) ], 200 );
+	}
+
+	public static function folders_delete( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$fid = (int) $req['id'];
+		if ( ! ImapFolder::find_for_customer( $fid, $cid ) ) {
+			return new WP_Error( 'not_found', '', [ 'status' => 404 ] );
+		}
+		ImapFolder::delete( $fid, $cid );
+		return new WP_REST_Response( [ 'ok' => true ], 200 );
+	}
+
+	public static function folders_test( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$fid = (int) $req['id'];
+		$f   = ImapFolder::find_for_customer( $fid, $cid );
+		if ( ! $f ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
+		$acc = ImapAccount::find_for_customer( (int) $f['account_id'], $cid );
+		if ( ! $acc ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
+		try {
+			$client = ClientFactory::for_account_folder( $acc, (string) $f['folder_name'] );
+			$probe = $client->probe();
+			ImapFolder::record_test( $fid, $cid, true, 'ok · messages=' . (int) $probe['messages'] );
+			return new WP_REST_Response( [ 'ok' => true, 'probe' => $probe ], 200 );
+		} catch ( \Throwable $e ) {
+			ImapFolder::record_test( $fid, $cid, false, $e->getMessage() );
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'connect_failed', 'detail' => $e->getMessage() ], 200 );
+		}
+	}
+
+	public static function folders_pull( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$fid = (int) $req['id'];
+		$res = PullService::pull_folder( $fid, $cid );
+		$status = ! empty( $res['ok'] ) ? 200 : ( ( $res['error'] ?? '' ) === 'not_found' ? 404 : 502 );
+		return new WP_REST_Response( $res, $status );
+	}
+
+	public static function subscriptions_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$page     = max( 1, (int) $req->get_param( 'page' ) );
+		$per_page = max( 1, min( 100, (int) $req->get_param( 'per_page' ) ) );
+		$data = Subscriptions::list_for_customer( $cid, $page, $per_page );
+		$data['ok']       = true;
+		$data['page']     = $page;
+		$data['per_page'] = $per_page;
+		return new WP_REST_Response( $data, 200 );
+	}
+
+	public static function subscriptions_unsubscribe( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json      = (array) $req->get_json_params();
+		$from_addr = strtolower( trim( (string) ( $json['from_addr'] ?? '' ) ) );
+		if ( $from_addr === '' || ! str_contains( $from_addr, '@' ) ) {
+			return new WP_Error( 'bad_input', __( 'from_addr fehlt.', 'itdatex-mailguard' ), [ 'status' => 400 ] );
+		}
+		$msg_id = Subscriptions::latest_message_for_sender( $cid, $from_addr );
+		if ( ! $msg_id ) {
+			return new WP_Error( 'not_found', __( 'Keine Newsletter-Mail dieses Senders gefunden.', 'itdatex-mailguard' ), [ 'status' => 404 ] );
+		}
+		$res = UnsubService::execute_for_message( $msg_id, $cid, null );
+		$res['from_addr']     = $from_addr;
+		$res['source_msg_id'] = $msg_id;
+		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
 	}
 
 	public static function unsubs_status( WP_REST_Request $req ) {
@@ -506,7 +883,9 @@ final class Controller {
 
 	private static function validate_account_payload( array $json, bool $is_create ) {
 		if ( $is_create ) {
-			foreach ( [ 'host', 'username', 'password' ] as $k ) {
+			$is_oauth = isset( $json['auth_type'] ) && str_starts_with( (string) $json['auth_type'], 'oauth_' );
+			$required = $is_oauth ? [ 'host', 'username' ] : [ 'host', 'username', 'password' ];
+			foreach ( $required as $k ) {
 				if ( empty( $json[ $k ] ) ) {
 					return new WP_Error( 'bad_input', sprintf( __( 'Feld %s ist erforderlich.', 'itdatex-mailguard' ), $k ), [ 'status' => 400 ] );
 				}
@@ -519,6 +898,19 @@ final class Controller {
 			$p = (int) $json['port'];
 			if ( $p < 1 || $p > 65535 ) {
 				return new WP_Error( 'bad_input', __( 'Ungueltiger Port.', 'itdatex-mailguard' ), [ 'status' => 400 ] );
+			}
+		}
+		if ( array_key_exists( 'auto_quarantine_min_score', $json ) ) {
+			$raw = $json['auto_quarantine_min_score'];
+			if ( $raw !== null && $raw !== '' && $raw !== 0 && $raw !== '0' ) {
+				$v   = (int) $raw;
+				$min = \Itdatex\Mailguard\Installer::AUTO_QUARANTINE_MIN_SCORE;
+				if ( $v < $min || $v > 100 ) {
+					return new WP_Error( 'bad_input', sprintf(
+						__( 'Auto-Quarantäne-Schwelle muss zwischen %d und 100 liegen.', 'itdatex-mailguard' ),
+						$min
+					), [ 'status' => 400 ] );
+				}
 			}
 		}
 		return null;
@@ -569,6 +961,341 @@ final class Controller {
 			return new WP_REST_Response( [ 'ok' => false, 'error' => 'not_authenticated' ], 401 );
 		}
 		return new WP_REST_Response( [ 'ok' => true, 'customer' => $me ], 200 );
+	}
+
+	/**
+	 * Cloud-LLM-Einwilligung erteilen oder widerrufen.
+	 * Body: {accept: true|false}
+	 * - accept=true:  cloud_consent_at = now, llm_enabled = 1 falls Plan llm_enabled
+	 * - accept=false: cloud_consent_at = NULL, llm_enabled = 0
+	 */
+	public static function me_cloud_consent( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json   = (array) $req->get_json_params();
+		$accept = ! empty( $json['accept'] );
+
+		if ( $accept ) {
+			\Itdatex\Mailguard\Customer\Account::set_cloud_consent(
+				$cid,
+				\Itdatex\Mailguard\Installer::CURRENT_CLOUD_CONSENT_VERSION
+			);
+			// llm_enabled wieder spiegeln zum Plan — set_cloud_consent allein
+			// reaktiviert es nicht, weil revoke es zuvor explizit auf 0 gesetzt
+			// hat. Plus/Pro-Customer erwarten aber sofortige Re-Aktivierung
+			// nach Re-Consent.
+			$row = \Itdatex\Mailguard\Customer\Account::find_by_id( $cid );
+			if ( $row && Auth::plan_has_llm( (string) ( $row['plan_slug'] ?? 'free' ) ) ) {
+				global $wpdb;
+				$wpdb->update( \Itdatex\Mailguard\Customer\Account::table(),
+					[ 'llm_enabled' => 1 ],
+					[ 'id' => $cid ], [ '%d' ], [ '%d' ]
+				);
+			}
+		} else {
+			\Itdatex\Mailguard\Customer\Account::revoke_cloud_consent( $cid );
+		}
+		return new WP_REST_Response( [ 'ok' => true, 'customer' => Auth::current() ], 200 );
+	}
+
+	public static function oauth_microsoft_start( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		if ( ! MicrosoftClient::is_configured() ) {
+			return new WP_Error( 'oauth_not_configured', __( 'Microsoft-OAuth ist im Site-Setup nicht konfiguriert.', 'itdatex-mailguard' ), [ 'status' => 503 ] );
+		}
+		$json       = (array) $req->get_json_params();
+		$aid        = isset( $json['account_id'] ) ? (int) $json['account_id'] : null;
+		$login_hint = trim( (string) ( $json['login_hint'] ?? '' ) );
+		if ( $aid ) {
+			$row = ImapAccount::find_for_customer( $aid, $cid );
+			if ( ! $row ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
+		} else {
+			// Quota nur beim Neuanlegen pruefen
+			$quota_err = self::check_imap_quota( $cid );
+			if ( $quota_err ) { return $quota_err; }
+		}
+		$state = StateToken::create( $cid, $aid );
+		$url   = MicrosoftClient::authorize_url( $state, $login_hint );
+		return new WP_REST_Response( [ 'ok' => true, 'authorize_url' => $url ], 200 );
+	}
+
+	public static function oauth_microsoft_callback( WP_REST_Request $req ) {
+		$state = (string) $req->get_param( 'state' );
+		$code  = (string) $req->get_param( 'code' );
+		$err   = (string) $req->get_param( 'error' );
+
+		if ( $err !== '' ) {
+			return self::oauth_html( false, sprintf( '%s: %s', $err, (string) $req->get_param( 'error_description' ) ) );
+		}
+		$claims = StateToken::verify( $state );
+		if ( ! $claims ) {
+			return self::oauth_html( false, 'state_invalid_or_expired' );
+		}
+		if ( $code === '' ) {
+			return self::oauth_html( false, 'no_code' );
+		}
+		$tok = MicrosoftClient::exchange_code( $code );
+		if ( empty( $tok['ok'] ) ) {
+			return self::oauth_html( false, ( $tok['error'] ?? 'token_error' ) . ': ' . ( $tok['detail'] ?? '' ) );
+		}
+		$email = (string) ( $tok['email'] ?? '' );
+		if ( $email === '' ) {
+			return self::oauth_html( false, 'no_email_in_token' );
+		}
+
+		$cid = (int) $claims['cid'];
+		$aid = $claims['aid'];
+
+		if ( $aid ) {
+			$row = ImapAccount::find_for_customer( $aid, $cid );
+			if ( ! $row ) { return self::oauth_html( false, 'account_gone' ); }
+			ImapAccount::store_oauth_tokens( $aid, $cid, $tok );
+			ImapAccount::record_test( $aid, $cid, true, 'oauth reconnected ' . $email );
+			return self::oauth_html( true, 'Verbindung erneuert: ' . $email );
+		}
+
+		// Existierendes Konto fuer gleichen User+Provider wiederverwenden, sonst neu
+		$existing = ImapAccount::find_oauth_by_username( $cid, 'microsoft', $email );
+		if ( $existing ) {
+			ImapAccount::store_oauth_tokens( (int) $existing['id'], $cid, $tok );
+			ImapAccount::record_test( (int) $existing['id'], $cid, true, 'oauth reauth ' . $email );
+			return self::oauth_html( true, 'Bestehende Verbindung erneuert: ' . $email );
+		}
+
+		$new_id = ImapAccount::create( $cid, [
+			'label'         => 'Microsoft · ' . $email,
+			'host'          => 'outlook.office365.com',
+			'port'          => 993,
+			'encryption'    => 'ssl',
+			'username'      => $email,
+			'folder'        => 'INBOX',
+			'status'        => 'active',
+			'auth_type'     => 'oauth_microsoft',
+		] );
+		if ( ! $new_id ) {
+			return self::oauth_html( false, 'account_create_failed' );
+		}
+		// oauth_provider + Tokens patchen
+		global $wpdb;
+		$wpdb->update(
+			ImapAccount::table(),
+			[ 'oauth_provider' => 'microsoft' ],
+			[ 'id' => $new_id, 'customer_id' => $cid ]
+		);
+		ImapAccount::store_oauth_tokens( $new_id, $cid, $tok );
+		ImapAccount::record_test( $new_id, $cid, true, 'oauth verbunden ' . $email );
+		ImapFolder::create( $new_id, $cid, 'INBOX' );
+
+		return self::oauth_html( true, 'Postfach verbunden: ' . $email );
+	}
+
+	public static function imap_discover( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+
+		// Rate-Limit: 10/min/Customer — generös für Autocomplete-Debounce, sperrt aber Loop-Bombing.
+		$bucket  = 'mg_disc_' . $cid;
+		$counts  = (array) get_transient( $bucket );
+		$now     = time();
+		$counts  = array_values( array_filter( $counts, static fn( $t ) => is_int( $t ) && $now - $t < 60 ) );
+		if ( count( $counts ) >= 10 ) {
+			return new WP_Error( 'rate_limited', '', [ 'status' => 429 ] );
+		}
+		$counts[] = $now;
+		set_transient( $bucket, $counts, 60 );
+
+		$email = trim( (string) $req->get_param( 'email' ) );
+		if ( $email === '' || ! is_email( $email ) ) {
+			return new WP_Error( 'bad_input', __( 'Ungueltige Email.', 'itdatex-mailguard' ), [ 'status' => 400 ] );
+		}
+		$hit = \Itdatex\Mailguard\Imap\Autoconfig\Resolver::for_email( $email );
+		if ( ! $hit ) {
+			return new WP_REST_Response( [ 'ok' => true, 'found' => false ], 200 );
+		}
+		return new WP_REST_Response( [ 'ok' => true, 'found' => true, 'config' => $hit ], 200 );
+	}
+
+	/**
+	 * Public-Variante des Discover-Endpoints — fuer Register-Page nutzbar,
+	 * BEVOR ein Customer-Account existiert. Rate-Limit pro Client-IP
+	 * (10/min) statt pro Customer. Nur ProviderRegistry + Mozilla werden
+	 * konsultiert, KEIN MS-Autodiscover und KEIN LLM (DSGVO-Schutz —
+	 * keine Domain-Uebermittlung an Dritte bevor User einwilligen kann).
+	 */
+	public static function imap_discover_public( WP_REST_Request $req ) {
+		$ip = self::client_ip();
+		$bucket = 'mg_disc_pub_' . md5( $ip );
+		$counts = (array) get_transient( $bucket );
+		$now    = time();
+		$counts = array_values( array_filter( $counts, static fn( $t ) => is_int( $t ) && $now - $t < 60 ) );
+		if ( count( $counts ) >= 10 ) {
+			return new WP_Error( 'rate_limited', '', [ 'status' => 429 ] );
+		}
+		$counts[] = $now;
+		set_transient( $bucket, $counts, 60 );
+
+		$email = trim( (string) $req->get_param( 'email' ) );
+		if ( $email === '' || ! is_email( $email ) ) {
+			return new WP_Error( 'bad_input', __( 'Ungueltige Email.', 'itdatex-mailguard' ), [ 'status' => 400 ] );
+		}
+		$pos = strrpos( $email, '@' );
+		$domain = $pos !== false ? strtolower( substr( $email, $pos + 1 ) ) : '';
+
+		// Nur datenschutzfreundliche Quellen vor Account-Anlage: Static + Mozilla.
+		$hit = \Itdatex\Mailguard\Imap\Autoconfig\ProviderRegistry::lookup_by_domain( $domain )
+			?? \Itdatex\Mailguard\Imap\Autoconfig\MozillaAutoconfig::lookup( $domain );
+		if ( ! $hit ) {
+			return new WP_REST_Response( [ 'ok' => true, 'found' => false ], 200 );
+		}
+		return new WP_REST_Response( [ 'ok' => true, 'found' => true, 'config' => $hit ], 200 );
+	}
+
+	private static function client_ip() : string {
+		$ip = (string) ( $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0' );
+		// Vertraue nur eigenen Reverse-Proxy-Headern (nginx auf 127.0.0.1)
+		if ( $ip === '127.0.0.1' && ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+			$fwd = explode( ',', (string) $_SERVER['HTTP_X_FORWARDED_FOR'] );
+			$ip  = trim( $fwd[0] );
+		}
+		return $ip;
+	}
+
+	public static function oauth_google_start( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		if ( ! GoogleClient::is_configured() ) {
+			return new WP_Error( 'oauth_not_configured', __( 'Google-OAuth ist im Site-Setup nicht konfiguriert.', 'itdatex-mailguard' ), [ 'status' => 503 ] );
+		}
+		$json       = (array) $req->get_json_params();
+		$aid        = isset( $json['account_id'] ) ? (int) $json['account_id'] : null;
+		$login_hint = trim( (string) ( $json['login_hint'] ?? '' ) );
+		if ( $aid ) {
+			$row = ImapAccount::find_for_customer( $aid, $cid );
+			if ( ! $row ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
+		} else {
+			$quota_err = self::check_imap_quota( $cid );
+			if ( $quota_err ) { return $quota_err; }
+		}
+		$state = StateToken::create( $cid, $aid );
+		$url   = GoogleClient::authorize_url( $state, $login_hint );
+		return new WP_REST_Response( [ 'ok' => true, 'authorize_url' => $url ], 200 );
+	}
+
+	public static function oauth_google_callback( WP_REST_Request $req ) {
+		$state = (string) $req->get_param( 'state' );
+		$code  = (string) $req->get_param( 'code' );
+		$err   = (string) $req->get_param( 'error' );
+
+		if ( $err !== '' ) {
+			return self::oauth_html( false, sprintf( '%s: %s', $err, (string) $req->get_param( 'error_description' ) ) );
+		}
+		$claims = StateToken::verify( $state );
+		if ( ! $claims ) {
+			return self::oauth_html( false, 'state_invalid_or_expired' );
+		}
+		if ( $code === '' ) {
+			return self::oauth_html( false, 'no_code' );
+		}
+		$tok = GoogleClient::exchange_code( $code );
+		if ( empty( $tok['ok'] ) ) {
+			return self::oauth_html( false, ( $tok['error'] ?? 'token_error' ) . ': ' . ( $tok['detail'] ?? '' ) );
+		}
+		$email = (string) ( $tok['email'] ?? '' );
+		if ( $email === '' ) {
+			return self::oauth_html( false, 'no_email_in_token' );
+		}
+
+		$cid = (int) $claims['cid'];
+		$aid = $claims['aid'];
+
+		if ( $aid ) {
+			$row = ImapAccount::find_for_customer( $aid, $cid );
+			if ( ! $row ) { return self::oauth_html( false, 'account_gone' ); }
+			ImapAccount::store_oauth_tokens( $aid, $cid, $tok );
+			ImapAccount::record_test( $aid, $cid, true, 'google oauth reconnected ' . $email );
+			return self::oauth_html( true, 'Verbindung erneuert: ' . $email );
+		}
+
+		$existing = ImapAccount::find_oauth_by_username( $cid, 'google', $email );
+		if ( $existing ) {
+			ImapAccount::store_oauth_tokens( (int) $existing['id'], $cid, $tok );
+			ImapAccount::record_test( (int) $existing['id'], $cid, true, 'google oauth reauth ' . $email );
+			return self::oauth_html( true, 'Bestehende Verbindung erneuert: ' . $email );
+		}
+
+		$new_id = ImapAccount::create( $cid, [
+			'label'         => 'Google · ' . $email,
+			'host'          => 'imap.gmail.com',
+			'port'          => 993,
+			'encryption'    => 'ssl',
+			'username'      => $email,
+			'folder'        => 'INBOX',
+			'status'        => 'active',
+			'auth_type'     => 'oauth_google',
+		] );
+		if ( ! $new_id ) {
+			return self::oauth_html( false, 'account_create_failed' );
+		}
+		global $wpdb;
+		$wpdb->update(
+			ImapAccount::table(),
+			[ 'oauth_provider' => 'google' ],
+			[ 'id' => $new_id, 'customer_id' => $cid ]
+		);
+		ImapAccount::store_oauth_tokens( $new_id, $cid, $tok );
+		ImapAccount::record_test( $new_id, $cid, true, 'google oauth verbunden ' . $email );
+		ImapFolder::create( $new_id, $cid, 'INBOX' );
+
+		return self::oauth_html( true, 'Gmail-Postfach verbunden: ' . $email );
+	}
+
+	public static function oauth_disconnect( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id  = (int) $req['id'];
+		$row = ImapAccount::find_for_customer( $id, $cid );
+		if ( ! $row ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
+		global $wpdb;
+		$wpdb->update( ImapAccount::table(), [
+			'oauth_access_token_enc'  => '',
+			'oauth_refresh_token_enc' => '',
+			'oauth_token_expires_at'  => null,
+			'status'                  => 'disabled',
+		], [ 'id' => $id, 'customer_id' => $cid ] );
+		return new WP_REST_Response( [ 'ok' => true ], 200 );
+	}
+
+	/**
+	 * Schlanker HTML-Response fuer den Popup-Callback. Sendet Header + Body
+	 * direkt und beendet PHP, weil WP_REST_Response nur JSON/Data sauber
+	 * serialisiert. Das Popup macht postMessage zum Opener + window.close.
+	 */
+	private static function oauth_html( bool $ok, string $msg ) : void {
+		$color   = $ok ? '#1f883d' : '#cf222e';
+		$title   = $ok ? 'Erfolgreich verbunden' : 'Verbindung fehlgeschlagen';
+		$detail  = esc_html( $msg );
+		$ok_js   = $ok ? 'true' : 'false';
+		$body    = <<<HTML
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><title>{$title}</title>
+<style>body{margin:0;font:14px/1.5 system-ui,sans-serif;background:#0d1117;color:#e6edf3;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:32px;max-width:480px;text-align:center}
+h1{margin:0 0 8px;color:{$color};font-size:1.4em}
+.msg{color:#8b949e;margin:0 0 16px;word-break:break-word}
+button{background:#2f81f7;color:#fff;border:0;border-radius:6px;padding:8px 18px;font-weight:600;cursor:pointer}</style>
+</head><body><div class="card"><h1>{$title}</h1><p class="msg">{$detail}</p>
+<button onclick="notifyAndClose()">Fenster schliessen</button>
+<script>
+function notifyAndClose(){try{window.opener&&window.opener.postMessage({type:'mg-oauth',ok:{$ok_js}},'*');}catch(e){}window.close();}
+setTimeout(notifyAndClose,800);
+</script>
+</div></body></html>
+HTML;
+		nocache_headers();
+		header( 'Content-Type: text/html; charset=utf-8' );
+		echo $body;
+		exit;
 	}
 
 	private static function respond( array $res ) : WP_REST_Response {
