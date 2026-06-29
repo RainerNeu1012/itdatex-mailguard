@@ -59,8 +59,30 @@ final class Message {
 			$params
 		) );
 
+		$items = array_map( [ __CLASS__, 'public_view' ], $rows ?: [] );
+
+		// "Bereits abgemeldet"-Marker: pro from_addr der Seite einmal in mg_unsubs
+		// nachschauen, ob ein erfolgreicher Unsub existiert. Eine Query, kein
+		// N+1, customer-scoped.
+		$senders = array_unique( array_filter( array_map( static fn( $r ) => strtolower( (string) $r['from_addr'] ), $rows ?: [] ) ) );
+		if ( $senders ) {
+			$u  = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_UNSUBS;
+			$ph = implode( ',', array_fill( 0, count( $senders ), '%s' ) );
+			$sql = "SELECT LOWER(m2.from_addr) AS fa FROM {$u} u
+				JOIN " . self::table() . " m2 ON u.message_id = m2.id
+				WHERE u.customer_id = %d AND u.api_status = 'unsubscribed' AND LOWER(m2.from_addr) IN ({$ph})
+				GROUP BY fa";
+			$prepared_params = array_merge( [ $customer_id ], $senders );
+			$unsub_rows = $wpdb->get_col( $wpdb->prepare( $sql, $prepared_params ) );
+			$unsub_set = array_flip( $unsub_rows ?: [] );
+			foreach ( $items as &$it ) {
+				$it['sender_unsubscribed'] = isset( $unsub_set[ strtolower( $it['from_addr'] ) ] );
+			}
+			unset( $it );
+		}
+
 		return [
-			'items'    => array_map( [ __CLASS__, 'public_view' ], $rows ?: [] ),
+			'items'    => $items,
 			'total'    => $total,
 			'page'     => $page,
 			'per_page' => $per_page,
@@ -115,6 +137,28 @@ final class Message {
 		return (bool) $wpdb->delete( self::table(), [ 'id' => $id, 'customer_id' => $customer_id ] );
 	}
 
+	public static function set_quarantine_action( int $id, int $customer_id, ?int $action_id ) : bool {
+		global $wpdb;
+		return (bool) $wpdb->update( self::table(),
+			[ 'quarantine_action_id' => $action_id ],
+			[ 'id' => $id, 'customer_id' => $customer_id ]
+		);
+	}
+
+	/**
+	 * Aktualisiert die IMAP-UID einer Mail. Nötig nach jedem MOVE — jedes
+	 * COPY+DELETE auf dem Server vergibt eine neue UID, und ein veralteter
+	 * Wert in mg_messages würde künftige MOVE/UID-FETCH-Operationen still ins
+	 * Leere laufen lassen (siehe Quarantine-UID-Drift-Bug 2026-06-29).
+	 */
+	public static function update_uid( int $id, int $customer_id, int $new_uid ) : bool {
+		global $wpdb;
+		return (bool) $wpdb->update( self::table(),
+			[ 'imap_uid' => $new_uid ],
+			[ 'id' => $id, 'customer_id' => $customer_id ]
+		);
+	}
+
 	public static function find_for_customer( int $id, int $customer_id ) : ?array {
 		global $wpdb;
 		$row = $wpdb->get_row( $wpdb->prepare(
@@ -144,6 +188,9 @@ final class Message {
 			'scan_score'      => $row['scan_score'] !== null ? (int) $row['scan_score'] : null,
 			'scan_reasons'    => is_array( $reasons ) ? $reasons : [],
 			'scanned_at'      => $row['scanned_at'] ?: null,
+			'sender_unsubscribed'  => false,  // wird in list_for_customer angereichert
+			'quarantine_action_id' => isset( $row['quarantine_action_id'] ) && $row['quarantine_action_id'] !== null
+				? (int) $row['quarantine_action_id'] : null,
 		];
 	}
 }

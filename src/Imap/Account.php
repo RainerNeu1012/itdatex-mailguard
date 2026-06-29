@@ -105,6 +105,14 @@ final class Account {
 			'folder'     => 'INBOX',
 			'status'     => 'active',
 			'last_uid'   => 0,
+			'auth_type'  => 'basic',
+			'oauth_provider'         => '',
+			'oauth_access_token_enc' => '',
+			'oauth_refresh_token_enc'=> '',
+			'oauth_token_expires_at' => null,
+			'oauth_scope'            => '',
+			'quarantine_folder'      => '',
+			'auto_quarantine_min_score' => null,
 		];
 	}
 
@@ -124,13 +132,68 @@ final class Account {
 			$st = (string) $in['status'];
 			$allowed['status'] = in_array( $st, [ 'active', 'disabled' ], true ) ? $st : 'active';
 		}
+		if ( isset( $in['auth_type'] ) ) {
+			$at = (string) $in['auth_type'];
+			$allowed['auth_type'] = in_array( $at, [ 'basic', 'oauth_microsoft', 'oauth_google' ], true ) ? $at : 'basic';
+		}
+		if ( array_key_exists( 'auto_quarantine_min_score', $in ) ) {
+			// null / "" / "0" → Feature aus. Sonst Range-Check gegen
+			// Installer::AUTO_QUARANTINE_MIN_SCORE..100.
+			$raw = $in['auto_quarantine_min_score'];
+			if ( $raw === null || $raw === '' || $raw === 0 || $raw === '0' ) {
+				$allowed['auto_quarantine_min_score'] = null;
+			} else {
+				$v = (int) $raw;
+				$min = \Itdatex\Mailguard\Installer::AUTO_QUARANTINE_MIN_SCORE;
+				$allowed['auto_quarantine_min_score'] = max( $min, min( 100, $v ) );
+			}
+		}
+		if ( isset( $in['quarantine_folder'] ) ) {
+			$allowed['quarantine_folder'] = sanitize_text_field( (string) $in['quarantine_folder'] );
+		}
 		return $allowed;
+	}
+
+	/**
+	 * Speichert OAuth-Tokens (Access + Refresh) verschluesselt im Account-Row.
+	 * Refresh-Token wird nur ueberschrieben, wenn ein neues geliefert wurde —
+	 * Microsoft schickt im Refresh-Response sonst nichts und wir wuerden
+	 * das alte Long-lived-Token loeschen.
+	 */
+	public static function store_oauth_tokens( int $id, int $customer_id, array $tokens ) : bool {
+		global $wpdb;
+		$set = [];
+		if ( isset( $tokens['access_token'] ) && $tokens['access_token'] !== '' ) {
+			$set['oauth_access_token_enc'] = Crypto::encrypt( (string) $tokens['access_token'] );
+		}
+		if ( ! empty( $tokens['refresh_token'] ) ) {
+			$set['oauth_refresh_token_enc'] = Crypto::encrypt( (string) $tokens['refresh_token'] );
+		}
+		if ( isset( $tokens['expires_in'] ) ) {
+			$set['oauth_token_expires_at'] = gmdate( 'Y-m-d H:i:s', time() + max( 60, (int) $tokens['expires_in'] - 30 ) );
+		}
+		if ( isset( $tokens['scope'] ) ) {
+			$set['oauth_scope'] = (string) $tokens['scope'];
+		}
+		if ( ! $set ) { return true; }
+		return (bool) $wpdb->update( self::table(), $set, [ 'id' => $id, 'customer_id' => $customer_id ] );
+	}
+
+	/** Findet ein OAuth-Konto fuer einen Customer anhand Provider + Username. */
+	public static function find_oauth_by_username( int $customer_id, string $provider, string $username ) : ?array {
+		global $wpdb;
+		$row = $wpdb->get_row( $wpdb->prepare(
+			'SELECT * FROM ' . self::table() . ' WHERE customer_id = %d AND oauth_provider = %s AND username = %s LIMIT 1',
+			$customer_id, $provider, $username
+		), ARRAY_A );
+		return $row ?: null;
 	}
 
 	/**
 	 * Sicheres Public-View ohne Passwort/Internal-Felder.
 	 */
 	public static function public_view( array $row ) : array {
+		$auth_type = (string) ( $row['auth_type'] ?? 'basic' );
 		return [
 			'id'               => (int) $row['id'],
 			'label'            => (string) $row['label'],
@@ -145,7 +208,15 @@ final class Account {
 			'last_test_ok'     => isset( $row['last_test_ok'] ) ? (int) $row['last_test_ok'] : null,
 			'last_test_detail' => $row['last_test_detail'] ?: null,
 			'created_at'       => (string) $row['created_at'],
-			'has_password'     => $row['password_enc'] !== '',
+			'has_password'     => ( $row['password_enc'] ?? '' ) !== '',
+			'auth_type'        => $auth_type,
+			'oauth_provider'   => (string) ( $row['oauth_provider'] ?? '' ),
+			'oauth_connected'  => $auth_type !== 'basic' && ! empty( $row['oauth_refresh_token_enc'] ),
+			'oauth_expires_at' => $row['oauth_token_expires_at'] ?? null,
+			'quarantine_folder'         => (string) ( $row['quarantine_folder'] ?? '' ),
+			'auto_quarantine_min_score' => isset( $row['auto_quarantine_min_score'] ) && $row['auto_quarantine_min_score'] !== null
+				? (int) $row['auto_quarantine_min_score']
+				: null,
 		];
 	}
 }
