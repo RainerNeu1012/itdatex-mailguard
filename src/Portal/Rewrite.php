@@ -46,6 +46,7 @@ final class Rewrite {
 		$config = [
 			'restUrl'   => $rest_url,
 			'portalUrl' => $portal_url,
+			'pluginUrl' => ITDATEX_MAILGUARD_URL,
 			'siteName'  => get_bloginfo( 'name' ),
 			'version'   => ITDATEX_MAILGUARD_VERSION,
 		];
@@ -54,9 +55,14 @@ final class Rewrite {
 
 		echo '<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">';
 		echo '<meta name="viewport" content="width=device-width, initial-scale=1">';
-		echo '<title>' . esc_html( $config['siteName'] ) . ' — Portal</title>';
+		echo '<title>MailGuard SaaS — Portal</title>';
 		echo '<meta name="robots" content="noindex, nofollow">';
-		echo '<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23101830%22/%3E%3Ctext x=%2250%22 y=%2270%22 text-anchor=%22middle%22 font-size=%2270%22 font-family=%22sans-serif%22 font-weight=%22bold%22 fill=%22%233b82f6%22%3EM%3C/text%3E%3C/svg%3E">';
+		echo '<meta name="theme-color" content="#0d1117">';
+		echo '<link rel="icon" type="image/svg+xml" href="' . esc_url( ITDATEX_MAILGUARD_URL . 'assets/img/mark.svg' ) . '">';
+		// Webfonts — exakt der itdatex-Standard-Stack (Bebas Neue, IBM Plex Sans, JetBrains Mono).
+		echo '<link rel="preconnect" href="https://fonts.googleapis.com">';
+		echo '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>';
+		echo '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans:wght@400;600&family=JetBrains+Mono:wght@400;500;700&display=swap">';
 		if ( $css ) {
 			foreach ( $css as $href ) {
 				echo '<link rel="stylesheet" href="' . esc_url( ITDATEX_MAILGUARD_URL . 'build/' . $href ) . '">';

@@ -3,8 +3,10 @@ import { apiPost } from '../api.js';
 import { refreshMe } from '../auth.js';
 import { navigate } from '../router.js';
 
-export default function Login() {
-  const [email, setEmail]       = useState('');
+export default function Login({ route }) {
+  const initialEmail = (route && route.params && route.params.email) || '';
+  const next         = (route && route.params && route.params.next)  || 'dashboard';
+  const [email, setEmail]       = useState(initialEmail);
   const [password, setPassword] = useState('');
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
@@ -16,7 +18,12 @@ export default function Login() {
       const { status, body } = await apiPost('login', { email, password });
       if (status === 200 && body.ok) {
         await refreshMe();
-        navigate('dashboard');
+        // next=accounts/new + email → Account-Form mit pre-filled Username
+        if (next === 'accounts/new' && email) {
+          navigate('accounts/new?email=' + encodeURIComponent(email));
+        } else {
+          navigate(next);
+        }
         return;
       }
       setError(humanError(body, status));

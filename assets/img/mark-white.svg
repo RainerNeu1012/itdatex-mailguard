@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 550 1230" role="img" aria-label="!TDATEX agent mark white">
+  <title>!TDATEX Agent Mark — White</title>
+  <path fill="#fff" d="M 140 50 Q 275 0 410 50 Q 480 90 480 180 L 480 310 Q 460 470 275 470 Q 90 470 70 310 L 70 180 Q 70 90 140 50 Z"></path>
+  <rect x="20" y="170" width="510" height="140" rx="20" fill="#fff"></rect>
+  <rect x="55" y="195" width="175" height="90" rx="14" fill="#000"></rect>
+  <rect x="320" y="195" width="175" height="90" rx="14" fill="#000"></rect>
+  <rect x="260" y="215" width="30" height="18" fill="#fff"></rect>
+  <path fill="#fff" d="M 150 520 Q 150 515 160 515 L 390 515 Q 400 515 400 520 L 385 640 Q 385 645 390 660 L 410 700 Q 420 730 420 760 L 420 930 Q 420 960 410 990 L 290 1190 Q 275 1210 260 1190 L 140 990 Q 130 960 130 930 L 130 760 Q 130 730 140 700 L 160 660 Q 165 645 165 640 Z"></path>
+  <path fill="#000" d="M 230 515 L 275 625 L 320 515 Z"></path>
+  <path fill="#000" d="M 270 700 L 283 700 Q 290 850 288 1000 L 275 1060 L 263 1000 Q 260 850 267 700 Z"></path>
+</svg>

@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react';
 
-const PORTAL_BASE = ((window.itdatexMailguard || {}).portalUrl || '/portal/').replace(/\/$/, '');
+const PORTAL_BASE = (((window.itdatexMailguard || {}).portalUrl || '/portal/')
+  .replace(/^https?:\/\/[^/]+/, '')
+  .replace(/\/$/, ''));
 
 export function currentRoute() {
   const path = window.location.pathname;
@@ -26,6 +28,8 @@ export function currentRoute() {
     case 'newsletters':     return { name: 'newsletters',      params };
     case 'scanner':         return { name: 'scanner',          params };
     case 'rules':           return { name: 'rules',            params };
+    case 'plan':            return { name: 'plan',             params };
+    case 'actions':         return { name: 'actions',          params };
   }
   // accounts/{id}/edit
   const m = rest.match(/^accounts\/(\d+)\/edit$/);

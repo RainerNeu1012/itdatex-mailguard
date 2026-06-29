@@ -2,12 +2,26 @@ import React from 'react';
 import { navigate } from '../router.js';
 
 export default function Dashboard({ me }) {
+  const isFirstLogin = !me.last_login_at;
   return (
     <div className="mg-stack">
       <div className="mg-card">
         <h2>Willkommen, {me.email}</h2>
         <p className="mg-muted">Konto seit {fmtDate(me.created_at)} {me.last_login_at ? '· Letzter Login: ' + fmtDate(me.last_login_at) : ''}</p>
       </div>
+
+      {isFirstLogin && (
+        <div className="mg-card" style={{ borderLeft: '3px solid #3b82f6' }}>
+          <h3>Erste Schritte</h3>
+          <ol style={{ paddingLeft: '1.2rem', margin: 0 }}>
+            <li><strong>Postfach verbinden</strong> — unter <em>Postfächer</em> dein IMAP-Konto eintragen (SSL/STARTTLS). Das Passwort wird verschlüsselt gespeichert.</li>
+            <li><strong>Erste Synchronisation abwarten</strong> — der Pull-Cron läuft alle 15 Minuten und holt deine Mails.</li>
+            <li><strong>Inbox öffnen</strong> — Phishing-Mails sind rot markiert, Newsletter haben einen Abmelden-Button.</li>
+            <li><strong>Optional:</strong> unter <em>Regeln</em> Whitelist/Blacklist-Einträge pflegen.</li>
+          </ol>
+          <p className="mg-muted mg-tiny" style={{ marginTop: '0.8rem' }}>Diese Box verschwindet nach deinem nächsten Login.</p>
+        </div>
+      )}
 
       <div className="mg-grid">
         <FeatureCard
@@ -25,7 +39,8 @@ export default function Dashboard({ me }) {
         <FeatureCard
           title="🛡 Phishing-Warnungen"
           desc="Eingehende Mails werden gegen die Anti-Phishing-API geprüft, du siehst Verdict + Score direkt in der Inbox."
-          status="Phase 5 in Vorbereitung"
+          status="aktiv"
+          cta={{ label: 'Verdächtige Mails →', onClick: () => navigate('inbox') }}
         />
         <FeatureCard
           title="📰 Newsletter-Abmelden"

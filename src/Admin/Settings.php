@@ -60,8 +60,39 @@ final class Settings {
 		self::field_number( 'scan_batch_size',    __( 'Scans pro Cron-Run', 'itdatex-mailguard' ), 'mg_api', 1, 100 );
 		self::field_number( 'manual_scan_quota',  __( 'Manuelle Scans / Endkunde / 24h', 'itdatex-mailguard' ), 'mg_api', 1, 1000 );
 
+		add_settings_section( 'mg_oauth_ms', __( 'Microsoft 365 OAuth', 'itdatex-mailguard' ), [ __CLASS__, 'oauth_ms_intro' ], self::PAGE_SLUG );
+		self::field_text(     'oauth_microsoft_client_id',     __( 'Application (Client) ID', 'itdatex-mailguard' ), 'mg_oauth_ms', [ 'placeholder' => 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' ] );
+		self::field_password( 'oauth_microsoft_client_secret', __( 'Client Secret', 'itdatex-mailguard' ),           'mg_oauth_ms' );
+		self::field_text(     'oauth_microsoft_tenant',        __( 'Tenant', 'itdatex-mailguard' ),                  'mg_oauth_ms', [ 'placeholder' => 'common' ] );
+
+		add_settings_section( 'mg_oauth_google', __( 'Google / Gmail OAuth', 'itdatex-mailguard' ), [ __CLASS__, 'oauth_google_intro' ], self::PAGE_SLUG );
+		self::field_text(     'oauth_google_client_id',     __( 'Client ID', 'itdatex-mailguard' ),     'mg_oauth_google', [ 'placeholder' => 'xxxxxxxxxxxxxxx.apps.googleusercontent.com' ] );
+		self::field_password( 'oauth_google_client_secret', __( 'Client Secret', 'itdatex-mailguard' ), 'mg_oauth_google' );
+
 		add_settings_section( 'mg_license', __( 'Lizenz', 'itdatex-mailguard' ), [ __CLASS__, 'license_intro' ], self::PAGE_SLUG );
 		self::field_text( 'license_key', __( 'Lizenzschlüssel', 'itdatex-mailguard' ), 'mg_license', [ 'placeholder' => 'XXXXX-XXXXX-…' ] );
+	}
+
+	public static function oauth_ms_intro() : void {
+		$redirect = rest_url( 'itdatex-mailguard/v1/oauth/microsoft/callback' );
+		echo '<p>' . esc_html__( 'Damit Endkunden ihre Office-365- oder Outlook.com-Postfächer per OAuth verbinden können, brauchst du eine Azure-App-Registrierung.', 'itdatex-mailguard' ) . '</p>';
+		echo '<p><strong>' . esc_html__( 'Redirect-URI für die Azure-App:', 'itdatex-mailguard' ) . '</strong><br/>';
+		echo '<code style="user-select:all;background:#f0f0f1;padding:4px 8px;display:inline-block;margin-top:4px">' . esc_html( $redirect ) . '</code></p>';
+		echo '<p class="description">' . wp_kses(
+			__( 'Anleitung: <a href="https://portal.azure.com" target="_blank" rel="noopener">portal.azure.com</a> → <em>Microsoft Entra ID</em> → <em>App registrations</em> → <em>New registration</em>. Account-Types: „Accounts in any organizational directory and personal Microsoft accounts". Redirect URI (Web): die URL oben. Dann <em>API permissions</em> → <em>Office 365 Exchange Online</em> → Delegated → <code>IMAP.AccessAsUser.All</code> und Microsoft Graph → <code>offline_access</code>, <code>User.Read</code>. Schließlich <em>Certificates &amp; Secrets</em> → <em>New client secret</em>. Tenant <code>common</code> lassen für gemischten Privat-/Business-Betrieb.', 'itdatex-mailguard' ),
+			[ 'a' => [ 'href' => [], 'target' => [], 'rel' => [] ], 'em' => [], 'code' => [] ]
+		) . '</p>';
+	}
+
+	public static function oauth_google_intro() : void {
+		$redirect = rest_url( 'itdatex-mailguard/v1/oauth/google/callback' );
+		echo '<p>' . esc_html__( 'Damit Endkunden ihre Gmail/Google-Workspace-Postfächer per OAuth verbinden können, brauchst du ein Google-Cloud-Projekt mit OAuth-Client.', 'itdatex-mailguard' ) . '</p>';
+		echo '<p><strong>' . esc_html__( 'Autorisierte Weiterleitungs-URI:', 'itdatex-mailguard' ) . '</strong><br/>';
+		echo '<code style="user-select:all;background:#f0f0f1;padding:4px 8px;display:inline-block;margin-top:4px">' . esc_html( $redirect ) . '</code></p>';
+		echo '<p class="description">' . wp_kses(
+			__( 'Anleitung: <a href="https://console.cloud.google.com" target="_blank" rel="noopener">console.cloud.google.com</a> → neues Projekt → <em>APIs &amp; Services</em> → <em>Library</em> → <em>Gmail API</em> aktivieren. Dann <em>OAuth consent screen</em>: User type „External", App-Name, Developer-Email; eigene Email als <em>Test user</em> hinzufügen; Scope <code>https://mail.google.com/</code>. Schließlich <em>Credentials</em> → <em>+ Create credentials</em> → <em>OAuth client ID</em> → <em>Web application</em>, Redirect-URI = die URL oben. Hinweis: <code>mail.google.com</code> ist „restricted scope" — bis 100 Test-User reicht der Test-Modus, für Production später Google-Verifikation einreichen.', 'itdatex-mailguard' ),
+			[ 'a' => [ 'href' => [], 'target' => [], 'rel' => [] ], 'em' => [], 'code' => [] ]
+		) . '</p>';
 	}
 
 	public static function license_intro() : void {
@@ -92,7 +123,7 @@ final class Settings {
 		if ( ! is_array( $input ) ) { $input = []; }
 		$out = $current;
 
-		foreach ( [ 'portal_slug', 'mail_from_name', 'mail_from_address', 'antiphish_api_url' ] as $k ) {
+		foreach ( [ 'portal_slug', 'mail_from_name', 'mail_from_address', 'antiphish_api_url', 'oauth_microsoft_client_id', 'oauth_microsoft_tenant', 'oauth_google_client_id' ] as $k ) {
 			if ( isset( $input[ $k ] ) ) {
 				$out[ $k ] = $k === 'antiphish_api_url' ? esc_url_raw( (string) $input[ $k ] ) : sanitize_text_field( (string) $input[ $k ] );
 			}
@@ -126,6 +157,18 @@ final class Settings {
 			$key = trim( (string) $input['antiphish_api_key'] );
 			if ( $key !== '' ) {
 				$out['antiphish_api_key'] = $key;
+			}
+		}
+		if ( array_key_exists( 'oauth_microsoft_client_secret', $input ) ) {
+			$sec = trim( (string) $input['oauth_microsoft_client_secret'] );
+			if ( $sec !== '' ) {
+				$out['oauth_microsoft_client_secret'] = $sec;
+			}
+		}
+		if ( array_key_exists( 'oauth_google_client_secret', $input ) ) {
+			$sec = trim( (string) $input['oauth_google_client_secret'] );
+			if ( $sec !== '' ) {
+				$out['oauth_google_client_secret'] = $sec;
 			}
 		}
 

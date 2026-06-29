@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 550 1230" role="img" aria-label="!TDATEX agent mark">
+  <title>!TDATEX Agent Mark</title>
+
+  
+  <path fill="#000" d="&#xA;    M 140 50&#xA;    Q 275 0  410 50&#xA;    Q 480 90 480 180&#xA;    L 480 310&#xA;    Q 460 470 275 470&#xA;    Q 90 470 70 310&#xA;    L 70 180&#xA;    Q 70 90  140 50&#xA;    Z"></path>
+
+  
+  <rect x="20" y="170" width="510" height="140" rx="20" fill="#000"></rect>
+
+  
+  <rect x="55" y="195" width="175" height="90" rx="14" fill="#fff"></rect>
+  <rect x="320" y="195" width="175" height="90" rx="14" fill="#fff"></rect>
+
+  
+  <rect x="260" y="215" width="30" height="18" fill="#000"></rect>
+
+  
+  <path fill="#000" d="&#xA;    M 150 520&#xA;    Q 150 515  160 515&#xA;    L 390 515&#xA;    Q 400 515  400 520&#xA;    L 385 640&#xA;    Q 385 645  390 660&#xA;    L 410 700&#xA;    Q 420 730  420 760&#xA;    L 420 930&#xA;    Q 420 960  410 990&#xA;    L 290 1190&#xA;    Q 275 1210 260 1190&#xA;    L 140 990&#xA;    Q 130 960  130 930&#xA;    L 130 760&#xA;    Q 130 730  140 700&#xA;    L 160 660&#xA;    Q 165 645  165 640&#xA;    Z"></path>
+
+  
+  <path fill="#fff" d="M 230 515 L 275 625 L 320 515 Z"></path>
+
+  
+  <path fill="#fff" d="&#xA;    M 270 700&#xA;    L 283 700&#xA;    Q 290 850 288 1000&#xA;    L 275 1060&#xA;    L 263 1000&#xA;    Q 260 850  267 700&#xA;    Z"></path>
+</svg>
