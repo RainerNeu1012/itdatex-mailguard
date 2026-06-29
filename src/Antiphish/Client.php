@@ -45,6 +45,11 @@ final class Client {
 		return [ 'status' => $code, 'body' => $json !== null ? $json : $raw ];
 	}
 
+	/** Generischer POST-Helper (analog request_get). */
+	public static function request_post( string $path, array $body, int $timeout = 25 ) {
+		return self::request( $path, $body, $timeout );
+	}
+
 	private static function request( string $path, array $body, int $timeout ) {
 		$base = rtrim( (string) Settings::get( 'antiphish_api_url', '' ), '/' );
 		$key  = (string) Settings::get( 'antiphish_api_key', '' );

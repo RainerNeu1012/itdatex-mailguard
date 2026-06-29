@@ -5,6 +5,9 @@ namespace Itdatex\Mailguard\Antiphish;
 
 use Itdatex\Mailguard\Admin\Settings;
 use Itdatex\Mailguard\Installer;
+use Itdatex\Mailguard\Imap\Account as ImapAccount;
+use Itdatex\Mailguard\Imap\Action as ImapAction;
+use Itdatex\Mailguard\Imap\QuarantineService;
 use Itdatex\Mailguard\Rules\Engine as RulesEngine;
 
 /**
@@ -56,7 +59,19 @@ final class ScanService {
 		$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$t} WHERE id = %d", $id ), ARRAY_A );
 		if ( ! $row ) { return [ 'ok' => false, 'error' => 'not_found' ]; }
 
-		$deep = (int) Settings::get( 'scan_deep', 0 ) === 1;
+		// Deep-Mode: per-customer Plan-Flag UND globales Setting UND DSGVO-Consent.
+		// Free-Plan-Customer haben llm_enabled=0 → kein Deep-Mode unabhängig vom Setting.
+		// Außerdem: ohne `cloud_consent_at` darf KEIN Cloud-LLM-Call passieren,
+		// auch wenn der Plan llm_enabled=1 hat (Backwards-Safety für Bestands-Customer
+		// nach DB-v11-Migration und bei widerrufener Einwilligung).
+		$customer_id = (int) $row['customer_id'];
+		$cust = $wpdb->get_row( $wpdb->prepare(
+			'SELECT llm_enabled, cloud_consent_at FROM ' . $wpdb->prefix . 'mg_customers WHERE id = %d',
+			$customer_id
+		), ARRAY_A );
+		$customer_llm   = (int) ( $cust['llm_enabled'] ?? 0 );
+		$has_consent    = ! empty( $cust['cloud_consent_at'] );
+		$deep = $customer_llm === 1 && $has_consent && (int) Settings::get( 'scan_deep', 0 ) === 1;
 		$payload = [
 			'subject'   => (string) $row['subject'],
 			'body'      => (string) $row['body_preview'],
@@ -93,15 +108,54 @@ final class ScanService {
 			array_unshift( $reasons, $override['reason'] );
 		}
 
+		$score_capped = max( 0, min( 100, $score ) );
 		$wpdb->update( $t, [
 			'scan_status'  => 'done',
 			'scan_verdict' => mb_substr( $verdict, 0, 20 ),
-			'scan_score'   => max( 0, min( 100, $score ) ),
+			'scan_score'   => $score_capped,
 			'scan_reasons' => wp_json_encode( $reasons ),
 			'scanned_at'   => current_time( 'mysql', true ),
 		], [ 'id' => $id ] );
 
-		return [ 'ok' => true, 'verdict' => $verdict, 'score' => $score, 'override' => $override ? true : false ];
+		$auto = self::maybe_auto_quarantine( (int) $row['account_id'], $customer_id, $id, $verdict, $score_capped );
+
+		return [
+			'ok'              => true,
+			'verdict'         => $verdict,
+			'score'           => $score_capped,
+			'override'        => $override ? true : false,
+			'auto_quarantine' => $auto,
+		];
+	}
+
+	/**
+	 * Wenn der Account einen auto_quarantine_min_score gesetzt hat und das
+	 * Verdict eindeutig nicht-sauber ist (suspicious/dangerous) UND der Score
+	 * die Schwelle erreicht, wandert die Mail direkt in den Quarantäne-Ordner.
+	 *
+	 * Fehler werden absichtlich nur ins Audit-Log geschrieben (status=failed),
+	 * nicht hochgereicht — der Scan-Verdict ist bereits persistiert, ein
+	 * misslungener IMAP-MOVE soll den Scan nicht „rot" machen.
+	 *
+	 * @return array{ran:bool,ok?:bool,action_id?:int,error?:string}
+	 */
+	private static function maybe_auto_quarantine( int $account_id, int $customer_id, int $message_id, string $verdict, int $score ) : array {
+		if ( $verdict === '' || $verdict === 'clean' ) {
+			return [ 'ran' => false ];
+		}
+		$account = ImapAccount::find_for_customer( $account_id, $customer_id );
+		if ( ! $account ) {
+			return [ 'ran' => false ];
+		}
+		$threshold = $account['auto_quarantine_min_score'] ?? null;
+		if ( $threshold === null || $threshold === '' ) {
+			return [ 'ran' => false ];
+		}
+		if ( $score < (int) $threshold ) {
+			return [ 'ran' => false ];
+		}
+		$res = QuarantineService::quarantine( $message_id, $customer_id, ImapAction::ACTOR_AUTO );
+		return array_merge( [ 'ran' => true ], $res );
 	}
 
 	private static function mark_error( int $id, string $detail ) : void {
