@@ -163,6 +163,45 @@ export default function Inbox() {
                   setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; });
                 }
               }}
+              onQuarantine={async () => {
+                const score = m.scan_score;
+                // Sicherheitsdialog: bei Score < 70 oder unbekannt explizit bestätigen,
+                // damit ein versehentlicher Klick keine saubere Mail aus der Inbox kippt.
+                if ((score === null || score < 70) && !window.confirm(
+                  'Diese Mail ist NICHT eindeutig als gefährlich eingestuft (Score ' + (score ?? '–') + '). Trotzdem in den Quarantäne-Ordner verschieben?'
+                )) {
+                  return;
+                }
+                setBusy((b) => ({ ...b, [m.id]: 'quarantine' }));
+                try {
+                  const { body, status } = await apiPost(`inbox/messages/${m.id}/quarantine`);
+                  if (status === 200 && body.ok) {
+                    // Undo-Toast: 10 Sekunden zum sofortigen Rückgängig-Machen.
+                    const undo = window.confirm('Mail in Quarantäne verschoben.\n\nOK = Aktion belassen.\nAbbrechen = sofort rückgängig machen.');
+                    if (!undo && body.action_id) {
+                      await apiPost(`actions/${body.action_id}/undo`);
+                    }
+                  } else {
+                    alert('Quarantäne fehlgeschlagen: ' + (body.error || status) + (body.detail ? '\n' + body.detail : ''));
+                  }
+                  loadInbox();
+                } finally {
+                  setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; });
+                }
+              }}
+              onUndoQuarantine={async () => {
+                if (!m.quarantine_action_id) return;
+                setBusy((b) => ({ ...b, [m.id]: 'undo' }));
+                try {
+                  const { body, status } = await apiPost(`actions/${m.quarantine_action_id}/undo`);
+                  if (status !== 200 || !body.ok) {
+                    alert('Wiederherstellen fehlgeschlagen: ' + (body.error || status) + (body.detail ? '\n' + body.detail : ''));
+                  }
+                  loadInbox();
+                } finally {
+                  setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; });
+                }
+              }}
             />
           ))}
         </div>
@@ -188,10 +227,11 @@ function Stat({ label, value, tone }) {
   );
 }
 
-function Row({ m, expanded, busy, onToggle, onRescan, onUnsub }) {
-  const dangerous = m.scan_verdict === 'dangerous';
+function Row({ m, expanded, busy, onToggle, onRescan, onUnsub, onQuarantine, onUndoQuarantine }) {
+  const dangerous    = m.scan_verdict === 'dangerous';
+  const quarantined  = !!m.quarantine_action_id;
   return (
-    <div className={'mg-card mg-mail' + (dangerous ? ' mg-mail--danger' : '')}>
+    <div className={'mg-card mg-mail' + (dangerous ? ' mg-mail--danger' : '') + (quarantined ? ' mg-mail--quarantined' : '')}>
       <div className="mg-mail__head" onClick={onToggle} role="button" tabIndex={0}>
         <div className="mg-mail__from">
           <strong>{m.from_name || m.from_addr || '(unbekannt)'}</strong>
@@ -200,7 +240,10 @@ function Row({ m, expanded, busy, onToggle, onRescan, onUnsub }) {
         <div className="mg-mail__subject">{m.subject || '(kein Subject)'}</div>
         <div className="mg-mail__meta">
           <VerdictBadge verdict={m.scan_verdict} score={m.scan_score} status={m.scan_status} />
-          {m.has_unsub ? <span className="mg-pill mg-pill--ok">Newsletter</span> : null}
+          {quarantined && <span className="mg-pill mg-pill--muted" title="In Quarantäne verschoben">🛡 Quarantäne</span>}
+          {m.has_unsub && (m.sender_unsubscribed
+            ? <span className="mg-pill mg-pill--muted" title="Sender wurde bereits abgemeldet">✓ abgemeldet</span>
+            : <span className="mg-pill mg-pill--ok">Newsletter</span>)}
           <span className="mg-muted mg-tiny">{fmtDate(m.date_hdr || m.fetched_at)}</span>
         </div>
       </div>
@@ -217,9 +260,22 @@ function Row({ m, expanded, busy, onToggle, onRescan, onUnsub }) {
             <button className="mg-btn" disabled={!!busy} onClick={(e) => { e.stopPropagation(); onRescan(); }}>
               {busy === 'rescan' ? '…' : '↻ Erneut scannen'}
             </button>
-            {m.has_unsub && (
+            {m.has_unsub && !m.sender_unsubscribed && (
               <button className="mg-btn mg-btn--primary" disabled={!!busy} onClick={(e) => { e.stopPropagation(); onUnsub(); }}>
                 {busy === 'unsub' ? '…' : '✉ Newsletter abmelden'}
+              </button>
+            )}
+            {m.has_unsub && m.sender_unsubscribed && (
+              <span className="mg-muted mg-tiny" style={{ alignSelf: 'center' }}>Sender bereits abgemeldet — siehe Newsletter-Page</span>
+            )}
+            {!quarantined && (
+              <button className="mg-btn mg-btn--danger" disabled={!!busy} onClick={(e) => { e.stopPropagation(); onQuarantine(); }}>
+                {busy === 'quarantine' ? '…' : '🛡 In Quarantäne verschieben'}
+              </button>
+            )}
+            {quarantined && (
+              <button className="mg-btn" disabled={!!busy} onClick={(e) => { e.stopPropagation(); onUndoQuarantine(); }}>
+                {busy === 'undo' ? '…' : '↶ Aus Quarantäne wiederherstellen'}
               </button>
             )}
           </div>
