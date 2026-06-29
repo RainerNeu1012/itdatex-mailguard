@@ -76,7 +76,7 @@ final class Auth {
 			return [ 'ok' => false, 'error' => self::ERR_TOKEN ];
 		}
 		Account::mark_email_verified( (int) $row['id'] );
-		return [ 'ok' => true, 'customer_id' => (int) $row['id'] ];
+		return [ 'ok' => true, 'customer_id' => (int) $row['id'], 'email' => (string) $row['email'] ];
 	}
 
 	public static function login( string $email, string $password ) : array {
@@ -153,13 +153,36 @@ final class Auth {
 		if ( ! $row || (string) $row['status'] === 'suspended' ) {
 			return null;
 		}
+		$plan_has_llm   = self::plan_has_llm( (string) ( $row['plan_slug'] ?? 'free' ) );
+		$consent_at     = $row['cloud_consent_at'] ? (string) $row['cloud_consent_at'] : null;
+		// Bestands-Customer mit llm_enabled=1 aber NULL consent_at brauchen einen
+		// Modal-Prompt. Frische Free-/Solo-Pre-LLM-Customer haben plan_has_llm=false
+		// und sollen nicht belästigt werden.
+		$consent_needed = $plan_has_llm && $consent_at === null;
 		return [
-			'customer_id'    => (int) $row['id'],
-			'email'          => (string) $row['email'],
-			'email_verified' => (int) $row['email_verified'] === 1,
-			'status'         => (string) $row['status'],
-			'created_at'     => (string) $row['created_at'],
-			'last_login_at'  => $row['last_login_at'] ? (string) $row['last_login_at'] : null,
+			'customer_id'      => (int) $row['id'],
+			'email'            => (string) $row['email'],
+			'email_verified'   => (int) $row['email_verified'] === 1,
+			'status'           => (string) $row['status'],
+			'created_at'       => (string) $row['created_at'],
+			'last_login_at'    => $row['last_login_at'] ? (string) $row['last_login_at'] : null,
+			'plan_slug'        => (string) ( $row['plan_slug'] ?? 'free' ),
+			'plan_status'      => (string) ( $row['plan_status'] ?? 'active' ),
+			'imap_quota'       => (int) ( $row['imap_quota'] ?? 1 ),
+			'llm_enabled'      => (int) ( $row['llm_enabled'] ?? 0 ) === 1,
+			'has_stripe_sub'   => ! empty( $row['stripe_subscription_id'] ),
+			'plan_grace_until' => $row['plan_grace_until'] ? (string) $row['plan_grace_until'] : null,
+			'cloud_consent_at' => $consent_at,
+			'cloud_consent_required' => $consent_needed,
 		];
+	}
+
+	/**
+	 * Liefert true wenn der angegebene Plan-Slug die Cloud-LLM-Tiefenanalyse
+	 * beinhaltet — also vor LLM-Aktivierung eine DSGVO-Einwilligung verlangt.
+	 */
+	public static function plan_has_llm( string $slug ) : bool {
+		$plan = \Itdatex\Mailguard\Saas\Plans::get( $slug );
+		return $plan && ! empty( $plan['llm_enabled'] );
 	}
 }

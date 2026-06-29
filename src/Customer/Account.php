@@ -105,6 +105,34 @@ final class Account {
 	}
 
 	/**
+	 * Erteilt die Cloud-LLM-Einwilligung gem. Art. 6 Abs. 1 lit. a DSGVO.
+	 * Speichert Zeitstempel + die Version des Consent-Wortlauts, der zum
+	 * Zeitpunkt der Erteilung galt — damit bei späteren Text-Änderungen
+	 * jederzeit beweisbar bleibt, welcher Wortlaut Grundlage war.
+	 */
+	public static function set_cloud_consent( int $id, string $text_version ) : void {
+		global $wpdb;
+		$wpdb->update( self::table(), [
+			'cloud_consent_at'           => current_time( 'mysql', true ),
+			'cloud_consent_text_version' => $text_version,
+		], [ 'id' => $id ], [ '%s', '%s' ], [ '%d' ] );
+	}
+
+	/**
+	 * Widerruft die Cloud-LLM-Einwilligung mit Wirkung für die Zukunft.
+	 * llm_enabled wird automatisch auf 0 gesetzt — sonst würde der nächste
+	 * Scan trotz Widerruf noch in die Cloud gehen.
+	 */
+	public static function revoke_cloud_consent( int $id ) : void {
+		global $wpdb;
+		$wpdb->update( self::table(), [
+			'cloud_consent_at'           => null,
+			'cloud_consent_text_version' => null,
+			'llm_enabled'                => 0,
+		], [ 'id' => $id ], [ '%s', '%s', '%d' ], [ '%d' ] );
+	}
+
+	/**
 	 * Admin-Listing mit Pagination + LIKE-Suche auf E-Mail.
 	 */
 	public static function list_paginated( int $page, int $per_page, string $search = '' ) : array {

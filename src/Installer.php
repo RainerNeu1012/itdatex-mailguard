@@ -7,13 +7,31 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 5;
+	public const CURRENT_DB_VERSION = 11;
+
+	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
+	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
+	// dann aktuellen String festgeschrieben (cloud_consent_text_version).
+	public const CURRENT_CLOUD_CONSENT_VERSION = 'v1-2026-06-29';
+
+	// Minimal-Schwelle für Auto-Quarantäne — unter diesem Score lässt die UI/REST
+	// keine Konfiguration zu. 60 entspricht dem Übergang clean→suspicious aus
+	// dem Phishing-Tuning; alles darunter würde auch saubere Mails wegräumen.
+	public const AUTO_QUARANTINE_MIN_SCORE = 60;
 
 	public const TABLE_CUSTOMERS     = 'mg_customers';
 	public const TABLE_IMAP_ACCOUNTS = 'mg_imap_accounts';
+	public const TABLE_IMAP_FOLDERS  = 'mg_imap_folders';
 	public const TABLE_MESSAGES      = 'mg_messages';
 	public const TABLE_UNSUBS        = 'mg_unsubs';
 	public const TABLE_RULES         = 'mg_rules';
+	public const TABLE_ACTIONS       = 'mg_actions';
+
+	// Bewusst ASCII-only: IMAP-Mailbox-Namen mit Nicht-ASCII brauchen MUTF-7-Encoding
+	// (RFC 3501), das nicht jeder Server gleich handhabt. Englischer Name funktioniert
+	// überall; UI kann „Quarantäne" anzeigen, der Server-Name bleibt unverändert.
+	public const DEFAULT_QUARANTINE_FOLDER = 'MailGuard/Quarantine';
+	public const ACTION_UNDO_TTL_DAYS      = 7;
 
 	public const CRON_PULL_HOOK     = 'itdatex_mailguard_pull_all';
 	public const CRON_PULL_SCHEDULE = 'itdatex_mailguard_15min';
@@ -36,6 +54,11 @@ final class Installer {
 			'scan_batch_size'              => 10,
 			'manual_scan_quota'            => 50,
 			'license_key'                  => '',
+			'oauth_microsoft_client_id'    => '',
+			'oauth_microsoft_client_secret'=> '',
+			'oauth_microsoft_tenant'       => 'common',
+			'oauth_google_client_id'       => '',
+			'oauth_google_client_secret'   => '',
 		];
 		$existing = (array) get_option( self::OPTION_SETTINGS, [] );
 		update_option( self::OPTION_SETTINGS, array_merge( $defaults, $existing ), false );
@@ -88,11 +111,22 @@ final class Installer {
 			password_reset_expires DATETIME NULL,
 			created_at DATETIME NOT NULL,
 			last_login_at DATETIME NULL,
+			plan_slug VARCHAR(20) NOT NULL DEFAULT 'free',
+			plan_status VARCHAR(20) NOT NULL DEFAULT 'active',
+			imap_quota SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+			llm_enabled TINYINT(1) NOT NULL DEFAULT 0,
+			stripe_customer_id VARCHAR(64) NULL,
+			stripe_subscription_id VARCHAR(64) NULL,
+			plan_grace_until DATETIME NULL,
+			cloud_consent_at DATETIME NULL,
+			cloud_consent_text_version VARCHAR(20) NULL,
 			PRIMARY KEY (id),
 			UNIQUE KEY uniq_email (email),
 			KEY idx_status (status),
 			KEY idx_verif_token (verification_token),
-			KEY idx_reset_token (password_reset_token)
+			KEY idx_reset_token (password_reset_token),
+			KEY idx_stripe_sub (stripe_subscription_id),
+			KEY idx_plan (plan_slug, plan_status)
 		) {$charset};";
 
 		$sql_imap = "CREATE TABLE {$t_imap} (
@@ -111,9 +145,18 @@ final class Installer {
 			last_test_ok TINYINT(1) NULL,
 			last_test_detail VARCHAR(500) NULL,
 			created_at DATETIME NOT NULL,
+			auth_type VARCHAR(20) NOT NULL DEFAULT 'basic',
+			oauth_provider VARCHAR(20) NOT NULL DEFAULT '',
+			oauth_access_token_enc TEXT NULL,
+			oauth_refresh_token_enc TEXT NULL,
+			oauth_token_expires_at DATETIME NULL,
+			oauth_scope TEXT NULL,
+			quarantine_folder VARCHAR(190) NOT NULL DEFAULT '',
+			auto_quarantine_min_score TINYINT UNSIGNED NULL,
 			PRIMARY KEY (id),
 			KEY idx_customer (customer_id),
-			KEY idx_status (status)
+			KEY idx_status (status),
+			KEY idx_auth_type (auth_type)
 		) {$charset};";
 
 		$t_msg = $wpdb->prefix . self::TABLE_MESSAGES;
@@ -138,11 +181,13 @@ final class Installer {
 			scan_score TINYINT UNSIGNED NULL,
 			scan_reasons LONGTEXT NULL,
 			scanned_at DATETIME NULL,
+			quarantine_action_id BIGINT UNSIGNED NULL,
 			PRIMARY KEY (id),
 			UNIQUE KEY uniq_acct_uid_folder (account_id, imap_uid, folder),
 			KEY idx_customer (customer_id),
 			KEY idx_account_fetched (account_id, fetched_at),
-			KEY idx_scan_status (scan_status)
+			KEY idx_scan_status (scan_status),
+			KEY idx_quarantine (quarantine_action_id)
 		) {$charset};";
 
 		$t_uns = $wpdb->prefix . self::TABLE_UNSUBS;
@@ -180,12 +225,72 @@ final class Installer {
 			KEY idx_customer_kind (customer_id, kind)
 		) {$charset};";
 
+		$t_fol = $wpdb->prefix . self::TABLE_IMAP_FOLDERS;
+		$sql_fol = "CREATE TABLE {$t_fol} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			account_id BIGINT UNSIGNED NOT NULL,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			folder_name VARCHAR(190) NOT NULL,
+			display_name VARCHAR(190) NOT NULL DEFAULT '',
+			status VARCHAR(20) NOT NULL DEFAULT 'active',
+			last_uid BIGINT UNSIGNED NOT NULL DEFAULT 0,
+			last_test_at DATETIME NULL,
+			last_test_ok TINYINT(1) NULL,
+			last_test_detail VARCHAR(500) NULL,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			UNIQUE KEY uniq_acct_folder (account_id, folder_name),
+			KEY idx_customer_status (customer_id, status),
+			KEY idx_status (status)
+		) {$charset};";
+
+		$t_act = $wpdb->prefix . self::TABLE_ACTIONS;
+		$sql_act = "CREATE TABLE {$t_act} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			account_id BIGINT UNSIGNED NOT NULL,
+			message_id BIGINT UNSIGNED NOT NULL,
+			action VARCHAR(20) NOT NULL,
+			source_folder VARCHAR(190) NOT NULL DEFAULT '',
+			source_uid BIGINT UNSIGNED NOT NULL DEFAULT 0,
+			target_folder VARCHAR(190) NOT NULL DEFAULT '',
+			target_uid BIGINT UNSIGNED NOT NULL DEFAULT 0,
+			verdict_snap VARCHAR(20) NOT NULL DEFAULT '',
+			verdict_score_snap TINYINT UNSIGNED NULL,
+			subject_snap VARCHAR(500) NOT NULL DEFAULT '',
+			from_addr_snap VARCHAR(320) NOT NULL DEFAULT '',
+			status VARCHAR(20) NOT NULL DEFAULT 'done',
+			actor VARCHAR(10) NOT NULL DEFAULT 'user',
+			error_detail VARCHAR(500) NULL,
+			undo_until DATETIME NULL,
+			undone_at DATETIME NULL,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			KEY idx_customer_created (customer_id, created_at),
+			KEY idx_message (message_id),
+			KEY idx_action_status (action, status)
+		) {$charset};";
+
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		dbDelta( $sql_customers );
 		dbDelta( $sql_imap );
 		dbDelta( $sql_msg );
 		dbDelta( $sql_uns );
 		dbDelta( $sql_rul );
+		dbDelta( $sql_fol );
+		dbDelta( $sql_act );
+
+		// One-shot Migration: aus jedem bestehenden Account einen Folder-Eintrag
+		// erzeugen. Nur wenn die Folder-Tabelle leer ist UND mind. ein Account
+		// existiert, damit frische Installs nichts kaputt machen.
+		$folder_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$t_fol}" );
+		$account_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$t_imap}" );
+		if ( $folder_count === 0 && $account_count > 0 ) {
+			$wpdb->query( "INSERT INTO {$t_fol}
+				(account_id, customer_id, folder_name, display_name, status, last_uid, created_at)
+				SELECT id, customer_id, IFNULL(NULLIF(folder, ''), 'INBOX'), '', 'active', last_uid, COALESCE(created_at, UTC_TIMESTAMP())
+				FROM {$t_imap}" );
+		}
 
 		update_option( self::OPTION_DB_VERSION, self::CURRENT_DB_VERSION, false );
 	}

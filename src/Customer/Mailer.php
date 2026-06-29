@@ -22,6 +22,57 @@ final class Mailer {
 		return self::send( $email, $subject, $body );
 	}
 
+	/**
+	 * Welcome-Mail nach SaaS-Onboarding.
+	 *
+	 * Enthält bei Bedarf einen direkten Set-Password-Link (siehe Account::set_password_reset_token).
+	 * Damit muss der frisch angelegte Customer NICHT erst "Passwort vergessen" klicken.
+	 *
+	 * Bei Free-Plan zusätzlich der Verification-Link (Email-Ownership noch nicht bewiesen).
+	 * Bei Paid-Plan ist die Email durch Stripe-Checkout (Empfangs-Bestätigung) bereits verifiziert.
+	 */
+	public static function send_saas_welcome( string $email, array $plan, string $set_password_token = '', string $verification_token = '' ) : bool {
+		$portal = self::portal_url( '' );
+		$plan_line = $plan['is_paid']
+			? sprintf( '%s · %d Postfächer · LLM-Deep-Scan aktiviert', $plan['name'], (int) $plan['imap_quota'] )
+			: sprintf( '%s · %d Postfach · Heuristik-only', $plan['name'], (int) $plan['imap_quota'] );
+
+		$lines = [];
+		$lines[] = __( 'Willkommen bei MailGuard!', 'itdatex-mailguard' );
+		$lines[] = '';
+		$lines[] = sprintf( __( 'Dein Plan: %s', 'itdatex-mailguard' ), $plan_line );
+		$lines[] = '';
+
+		if ( $set_password_token !== '' ) {
+			$set_url = self::portal_url( 'reset-password?token=' . rawurlencode( $set_password_token ) );
+			$lines[] = __( 'Passwort setzen (gültig 7 Tage):', 'itdatex-mailguard' );
+			$lines[] = $set_url;
+			$lines[] = '';
+		}
+
+		if ( $verification_token !== '' ) {
+			$ver_url = self::portal_url( 'verify-email?token=' . rawurlencode( $verification_token ) );
+			$lines[] = __( 'Email bestätigen (gültig 24 Stunden):', 'itdatex-mailguard' );
+			$lines[] = $ver_url;
+			$lines[] = '';
+		}
+
+		$lines[] = __( 'Danach einloggen und Postfach verbinden:', 'itdatex-mailguard' );
+		$lines[] = $portal;
+		$lines[] = '';
+		$lines[] = __( "So geht's weiter:", 'itdatex-mailguard' );
+		$lines[] = __( '1. Passwort über den Link oben setzen.', 'itdatex-mailguard' );
+		$lines[] = __( '2. Im Tab "Postfächer" dein IMAP-Konto einrichten (Host, Port, Benutzer, Passwort).', 'itdatex-mailguard' );
+		$lines[] = __( '3. MailGuard pullt alle 15 Minuten neue Mails und scannt automatisch.', 'itdatex-mailguard' );
+		$lines[] = '';
+		$lines[] = __( 'Plan wechseln oder kündigen: im Portal unter "Plan".', 'itdatex-mailguard' );
+		$lines[] = '';
+		$lines[] = __( 'Fragen? Antworte einfach auf diese Mail.', 'itdatex-mailguard' );
+
+		$subject = sprintf( __( '[%s] Willkommen — dein MailGuard ist bereit', 'itdatex-mailguard' ), get_bloginfo( 'name' ) );
+		return self::send( $email, $subject, implode( "\n", $lines ) );
+	}
+
 	public static function send_password_reset( string $email, string $token ) : bool {
 		$url = self::portal_url( 'reset-password?token=' . rawurlencode( $token ) );
 		$subject = sprintf( __( '[%s] Passwort zuruecksetzen', 'itdatex-mailguard' ), get_bloginfo( 'name' ) );
