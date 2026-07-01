@@ -17,6 +17,7 @@ use Itdatex\Mailguard\Oauth\GoogleClient;
 use Itdatex\Mailguard\Oauth\MicrosoftClient;
 use Itdatex\Mailguard\Oauth\StateToken;
 use Itdatex\Mailguard\Antiphish\Client as AntiphishClient;
+use Itdatex\Mailguard\Antiphish\PurgeService;
 use Itdatex\Mailguard\Antiphish\ScanService;
 use Itdatex\Mailguard\Antiphish\Unsub;
 use Itdatex\Mailguard\Antiphish\Subscriptions;
@@ -286,6 +287,12 @@ final class Controller {
 			'callback'            => [ __CLASS__, 'actions_undo' ],
 		] );
 
+		register_rest_route( self::NAMESPACE, '/actions/(?P<id>\d+)/purge', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'actions_purge' ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/unsubs', [
 			'methods'             => 'GET',
 			'permission_callback' => '__return_true',
@@ -312,6 +319,12 @@ final class Controller {
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'subscriptions_unsubscribe' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/subscriptions/purge', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'subscriptions_purge' ],
 		] );
 
 		register_rest_route( self::NAMESPACE, '/scan/url', [
@@ -695,6 +708,22 @@ final class Controller {
 		return new WP_REST_Response( $res, $status );
 	}
 
+	public static function actions_purge( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$res = QuarantineService::purge( (int) $req['id'], $cid );
+		$status = ! empty( $res['ok'] )
+			? 200
+			: match ( $res['error'] ?? '' ) {
+				'not_found', 'account_gone'                => 404,
+				'not_quarantine_action', 'not_purgeable'   => 409,
+				'connect_failed', 'find_target_failed',
+				'expunge_failed', 'target_uid_unknown'     => 502,
+				default                                    => 500,
+			};
+		return new WP_REST_Response( $res, $status );
+	}
+
 	public static function unsubs_list( WP_REST_Request $req ) {
 		$cid = self::require_customer();
 		if ( is_wp_error( $cid ) ) { return $cid; }
@@ -858,6 +887,20 @@ final class Controller {
 		$res = UnsubService::execute_for_message( $msg_id, $cid, null );
 		$res['from_addr']     = $from_addr;
 		$res['source_msg_id'] = $msg_id;
+		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
+	}
+
+	public static function subscriptions_purge( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json      = (array) $req->get_json_params();
+		$from_addr = strtolower( trim( (string) ( $json['from_addr'] ?? '' ) ) );
+		if ( $from_addr === '' || ! str_contains( $from_addr, '@' ) ) {
+			return new WP_Error( 'bad_input', __( 'from_addr fehlt.', 'itdatex-mailguard' ), [ 'status' => 400 ] );
+		}
+		$auto_rule = ! empty( $json['auto_rule'] );
+		$res = PurgeService::purge_sender( $cid, $from_addr, $auto_rule );
+		$res['from_addr'] = $from_addr;
 		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
 	}
 

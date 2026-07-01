@@ -65,6 +65,28 @@ function Subscriptions() {
     }
   };
 
+  const purge = async (from_addr, msg_count) => {
+    const ok = window.confirm(
+      `${msg_count} Newsletter-Mail${msg_count === 1 ? '' : 's'} von ${from_addr} in den Papierkorb verschieben ` +
+      `und künftige Mails dieses Senders automatisch aussortieren?\n\n` +
+      `Die Mails bleiben im Papierkorb wiederherstellbar.`
+    );
+    if (!ok) return;
+    setBusy((b) => ({ ...b, [from_addr]: 'purge' }));
+    try {
+      const { body } = await apiPost('subscriptions/purge', { from_addr, auto_rule: true });
+      const parts = [];
+      if (body.moved)   parts.push(`${body.moved} verschoben`);
+      if (body.skipped) parts.push(`${body.skipped} übersprungen`);
+      if (body.failed)  parts.push(`${body.failed} fehlgeschlagen`);
+      const ruleTxt = body.rule_id ? ' · Auto-Regel aktiv' : '';
+      alert((body.ok ? '✔ ' : '⚠ ') + (parts.join(', ') || 'keine Änderung') + ruleTxt);
+      load();
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
+    }
+  };
+
   if (error)        return <div className="mg-card mg-error">{error}</div>;
   if (items === null) return <div className="mg-card">Lade …</div>;
   if (items.length === 0) {
@@ -97,7 +119,7 @@ function Subscriptions() {
                 {dsnPill && <span className={'mg-pill ' + dsnPill.cls}>DSN: {dsnPill.label}</span>}
               </div>
             </div>
-            <div className="mg-account__actions" style={{ marginTop: '0.5rem' }}>
+            <div className="mg-account__actions" style={{ marginTop: '0.5rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
               {unsubscribed ? (
                 <button className="mg-btn" disabled>✔ Bereits abgemeldet</button>
               ) : (
@@ -107,6 +129,18 @@ function Subscriptions() {
                   onClick={() => unsub(s.from_addr)}
                 >
                   {busy[s.from_addr] === 'unsub' ? '…' : '✉ Vom Newsletter abmelden'}
+                </button>
+              )}
+              {unsubscribed && s.msg_count > 0 && (
+                <button
+                  className="mg-btn"
+                  disabled={!!busy[s.from_addr]}
+                  onClick={() => purge(s.from_addr, s.msg_count)}
+                  title="Alle Mails dieses Absenders in den Papierkorb verschieben und künftige automatisch aussortieren"
+                >
+                  {busy[s.from_addr] === 'purge'
+                    ? '…'
+                    : `🗑 ${s.msg_count} aufräumen + blockieren`}
                 </button>
               )}
             </div>

@@ -258,6 +258,33 @@ final class ImapClient {
 	}
 
 	/**
+	 * Endgültiges Löschen einer Mail im aktuell selektierten Folder:
+	 * UID STORE +FLAGS \Deleted + EXPUNGE. Wird nur für Mails im Quarantäne-
+	 * Folder aufgerufen (Endgültig-löschen-Button nach Undo-Fenster).
+	 *
+	 * c-client kennt kein UID EXPUNGE — imap_expunge() räumt alle
+	 * \Deleted-Marker im Folder ab. Solange nur MailGuard in den Quarantäne-
+	 * Folder schreibt (siehe Installer::DEFAULT_QUARANTINE_FOLDER), ist das
+	 * ohne Kollateralschaden. Auf keinen Fall in normalen User-Ordnern
+	 * verwenden.
+	 */
+	public function expunge_uid( int $uid ) : void {
+		if ( ! $this->stream ) { $this->connect(); }
+		imap_errors();
+		$ok = @imap_delete( $this->stream, (string) $uid, FT_UID );
+		if ( ! $ok ) {
+			$errs = imap_errors() ?: [ 'unknown DELETE failure' ];
+			throw new \RuntimeException( 'UID STORE \Deleted fehlgeschlagen fuer UID ' . $uid . ': ' . implode( '; ', $errs ) );
+		}
+		imap_errors();
+		$ok = @imap_expunge( $this->stream );
+		if ( ! $ok ) {
+			$errs = imap_errors() ?: [ 'unknown EXPUNGE failure' ];
+			throw new \RuntimeException( 'EXPUNGE fehlgeschlagen: ' . implode( '; ', $errs ) );
+		}
+	}
+
+	/**
 	 * Prüft, ob eine UID im aktuell selektierten Folder existiert. Wird vom
 	 * QuarantineService vor jedem MOVE genutzt — IMAP MOVE auf einer nicht-
 	 * existenten UID liefert auf vielen Servern kommentarlos OK ohne Effekt,

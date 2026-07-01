@@ -254,6 +254,101 @@ final class QuarantineService {
 	}
 
 	/**
+	 * Löscht eine quarantänisierte Mail endgültig vom IMAP-Server:
+	 * EXPUNGE im Quarantäne-Folder + Löschen der mg_messages-Row +
+	 * ACTION_PURGE-Eintrag im Audit-Log (nicht undo-fähig).
+	 *
+	 * Sicherheitsschranke: nur wenn die zugrundeliegende Quarantäne-Action
+	 * status=done ist und die Mail noch in mg_messages steht. Undo bleibt
+	 * bis zum Purge möglich; nach Purge ist der Vorgang endgültig.
+	 *
+	 * @return array{ok:bool,error?:string,detail?:string}
+	 */
+	public static function purge( int $action_id, int $customer_id ) : array {
+		$row = Action::find_for_customer( $action_id, $customer_id );
+		if ( ! $row ) {
+			return [ 'ok' => false, 'error' => 'not_found' ];
+		}
+		if ( (string) $row['action'] !== Action::ACTION_QUARANTINE ) {
+			return [ 'ok' => false, 'error' => 'not_quarantine_action' ];
+		}
+		if ( (string) $row['status'] !== Action::STATUS_DONE ) {
+			return [ 'ok' => false, 'error' => 'not_purgeable' ];
+		}
+
+		$account = Account::find_for_customer( (int) $row['account_id'], $customer_id );
+		if ( ! $account ) {
+			return [ 'ok' => false, 'error' => 'account_gone' ];
+		}
+
+		$target_folder = (string) $row['target_folder'];
+		$target_uid    = (int) $row['target_uid'];
+		$message_id    = (int) $row['message_id'];
+
+		try {
+			$client = ClientFactory::for_account_folder( $account, $target_folder );
+			$client->connect();
+		} catch ( \Throwable $e ) {
+			return [ 'ok' => false, 'error' => 'connect_failed', 'detail' => $e->getMessage() ];
+		}
+
+		// Wenn target_uid 0 (UIDPLUS fehlte beim Quarantine-Zeitpunkt), per Message-ID nachziehen.
+		if ( $target_uid === 0 ) {
+			$msg = Message::find_for_customer( $message_id, $customer_id );
+			$msg_id_hdr = $msg ? (string) $msg['msg_id_hdr'] : '';
+			if ( $msg_id_hdr !== '' ) {
+				try {
+					$target_uid = $client->find_uid_by_message_id( $msg_id_hdr );
+				} catch ( \Throwable $e ) {
+					$client->close();
+					return [ 'ok' => false, 'error' => 'find_target_failed', 'detail' => $e->getMessage() ];
+				}
+			}
+		}
+		if ( $target_uid === 0 ) {
+			$client->close();
+			return [ 'ok' => false, 'error' => 'target_uid_unknown' ];
+		}
+
+		try {
+			$client->expunge_uid( $target_uid );
+		} catch ( \Throwable $e ) {
+			$client->close();
+			return [ 'ok' => false, 'error' => 'expunge_failed', 'detail' => $e->getMessage() ];
+		}
+		$client->close();
+
+		// Quarantine-Action als undone markieren, damit sie nicht mehr als
+		// "wiederherstellbar" angezeigt wird — der Zielzustand ist jetzt "weg".
+		Action::mark_undone( $action_id, $customer_id );
+
+		// Sekundärer Audit-Eintrag: Purge, endgueltig, kein undo.
+		Action::create( [
+			'customer_id'        => $customer_id,
+			'account_id'         => (int) $row['account_id'],
+			'message_id'         => $message_id,
+			'action'             => Action::ACTION_PURGE,
+			'source_folder'      => $target_folder,
+			'source_uid'         => $target_uid,
+			'target_folder'      => '',
+			'target_uid'         => 0,
+			'verdict_snap'       => (string) $row['verdict_snap'],
+			'verdict_score_snap' => $row['verdict_score_snap'] !== null ? (int) $row['verdict_score_snap'] : null,
+			'subject_snap'       => (string) $row['subject_snap'],
+			'from_addr_snap'     => (string) $row['from_addr_snap'],
+			'status'             => Action::STATUS_DONE,
+			'actor'              => Action::ACTOR_USER,
+			'undo_until'         => null,
+		] );
+
+		// mg_messages-Row entfernen — die Mail existiert nicht mehr, die
+		// Referenz waere nur noch Ballast in der Inbox-Liste.
+		Message::delete( $message_id, $customer_id );
+
+		return [ 'ok' => true ];
+	}
+
+	/**
 	 * Liefert den Quarantäne-Ordner-Namen für einen Account.
 	 * Default ist Installer::DEFAULT_QUARANTINE_FOLDER, kann pro
 	 * Account in mg_imap_accounts.quarantine_folder überschrieben werden.

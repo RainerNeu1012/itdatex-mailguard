@@ -368,6 +368,36 @@ final class XOauth2ImapClient {
 	}
 
 	/**
+	 * Endgültiges Löschen einer Mail im aktuell selektierten Folder:
+	 * UID STORE +FLAGS \Deleted + (UID) EXPUNGE. Für den Endgültig-löschen-
+	 * Button nach dem Undo-Fenster.
+	 *
+	 * Wenn der Server UIDPLUS supported, nutzen wir UID EXPUNGE (RFC 4315) —
+	 * das räumt nur die frisch \Deleted-markierte Mail ab. Sonst Fallback
+	 * auf folder-weites EXPUNGE, was in einem MailGuard-only-Quarantäne-
+	 * Folder unkritisch ist.
+	 */
+	public function expunge_uid( int $uid ) : void {
+		if ( ! $this->stream ) { $this->connect(); }
+		$stag  = $this->send( 'UID STORE ' . $uid . ' +FLAGS (\\Deleted)' );
+		$sresp = $this->read_until_tag( $stag );
+		if ( ! preg_match( '/^' . $stag . ' OK/m', $sresp ) ) {
+			throw new \RuntimeException( 'UID STORE \Deleted fehlgeschlagen fuer UID ' . $uid . ': ' . trim( $sresp ) );
+		}
+		if ( $this->has_capability( 'uidplus' ) ) {
+			$etag  = $this->send( 'UID EXPUNGE ' . $uid );
+			$eresp = $this->read_until_tag( $etag );
+			if ( preg_match( '/^' . $etag . ' OK/m', $eresp ) ) { return; }
+			// UID EXPUNGE abgelehnt — auf klassischen EXPUNGE zurueckfallen.
+		}
+		$etag  = $this->send( 'EXPUNGE' );
+		$eresp = $this->read_until_tag( $etag );
+		if ( ! preg_match( '/^' . $etag . ' OK/m', $eresp ) ) {
+			throw new \RuntimeException( 'EXPUNGE fehlgeschlagen: ' . trim( $eresp ) );
+		}
+	}
+
+	/**
 	 * Hilfsmethode für den QuarantineService: wechselt den selektierten
 	 * Folder ohne neuen Connect. Wird beim Undo gebraucht, wenn wir vom
 	 * Quarantäne-Folder zurück in die Source-Inbox müssen.

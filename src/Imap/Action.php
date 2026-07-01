@@ -17,6 +17,7 @@ final class Action {
 
 	public const ACTION_QUARANTINE      = 'quarantine';
 	public const ACTION_UNDO_QUARANTINE = 'undo_quarantine';
+	public const ACTION_PURGE           = 'purge';
 
 	public const STATUS_DONE   = 'done';
 	public const STATUS_UNDONE = 'undone';

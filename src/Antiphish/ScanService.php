@@ -107,6 +107,7 @@ final class ScanService {
 			$score   = $override['score'];
 			array_unshift( $reasons, $override['reason'] );
 		}
+		$blacklist_hit = $override && ( ( $override['reason']['rule'] ?? '' ) === 'customer_blacklist' );
 
 		$score_capped = max( 0, min( 100, $score ) );
 		$wpdb->update( $t, [
@@ -117,7 +118,7 @@ final class ScanService {
 			'scanned_at'   => current_time( 'mysql', true ),
 		], [ 'id' => $id ] );
 
-		$auto = self::maybe_auto_quarantine( (int) $row['account_id'], $customer_id, $id, $verdict, $score_capped );
+		$auto = self::maybe_auto_quarantine( (int) $row['account_id'], $customer_id, $id, $verdict, $score_capped, $blacklist_hit );
 
 		return [
 			'ok'              => true,
@@ -133,13 +134,18 @@ final class ScanService {
 	 * Verdict eindeutig nicht-sauber ist (suspicious/dangerous) UND der Score
 	 * die Schwelle erreicht, wandert die Mail direkt in den Quarantäne-Ordner.
 	 *
+	 * Ausnahme: Bei einem Blacklist-Treffer (customer_blacklist) ist der User
+	 * explizit "will das nicht sehen" — wir quarantänisieren dann immer,
+	 * unabhängig vom Schwellwert. Sonst wären die "Newsletter-aufräumen +
+	 * blockieren"-Regeln für Kunden ohne konfigurierten Schwellwert wirkungslos.
+	 *
 	 * Fehler werden absichtlich nur ins Audit-Log geschrieben (status=failed),
 	 * nicht hochgereicht — der Scan-Verdict ist bereits persistiert, ein
 	 * misslungener IMAP-MOVE soll den Scan nicht „rot" machen.
 	 *
 	 * @return array{ran:bool,ok?:bool,action_id?:int,error?:string}
 	 */
-	private static function maybe_auto_quarantine( int $account_id, int $customer_id, int $message_id, string $verdict, int $score ) : array {
+	private static function maybe_auto_quarantine( int $account_id, int $customer_id, int $message_id, string $verdict, int $score, bool $blacklist_hit = false ) : array {
 		if ( $verdict === '' || $verdict === 'clean' ) {
 			return [ 'ran' => false ];
 		}
@@ -147,12 +153,14 @@ final class ScanService {
 		if ( ! $account ) {
 			return [ 'ran' => false ];
 		}
-		$threshold = $account['auto_quarantine_min_score'] ?? null;
-		if ( $threshold === null || $threshold === '' ) {
-			return [ 'ran' => false ];
-		}
-		if ( $score < (int) $threshold ) {
-			return [ 'ran' => false ];
+		if ( ! $blacklist_hit ) {
+			$threshold = $account['auto_quarantine_min_score'] ?? null;
+			if ( $threshold === null || $threshold === '' ) {
+				return [ 'ran' => false ];
+			}
+			if ( $score < (int) $threshold ) {
+				return [ 'ran' => false ];
+			}
 		}
 		$res = QuarantineService::quarantine( $message_id, $customer_id, ImapAction::ACTOR_AUTO );
 		return array_merge( [ 'ran' => true ], $res );

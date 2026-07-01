@@ -202,6 +202,24 @@ export default function Inbox() {
                   setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; });
                 }
               }}
+              onPurge={async () => {
+                if (!m.quarantine_action_id) return;
+                const sure = window.confirm(
+                  'Mail ENDGÜLTIG vom Mailserver löschen?\n\n' +
+                  'Nach dem Klick ist sie nicht mehr wiederherstellbar — auch nicht über den Papierkorb.'
+                );
+                if (!sure) return;
+                setBusy((b) => ({ ...b, [m.id]: 'purge' }));
+                try {
+                  const { body, status } = await apiPost(`actions/${m.quarantine_action_id}/purge`);
+                  if (status !== 200 || !body.ok) {
+                    alert('Löschen fehlgeschlagen: ' + (body.error || status) + (body.detail ? '\n' + body.detail : ''));
+                  }
+                  loadInbox();
+                } finally {
+                  setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; });
+                }
+              }}
             />
           ))}
         </div>
@@ -227,7 +245,7 @@ function Stat({ label, value, tone }) {
   );
 }
 
-function Row({ m, expanded, busy, onToggle, onRescan, onUnsub, onQuarantine, onUndoQuarantine }) {
+function Row({ m, expanded, busy, onToggle, onRescan, onUnsub, onQuarantine, onUndoQuarantine, onPurge }) {
   const dangerous    = m.scan_verdict === 'dangerous';
   const quarantined  = !!m.quarantine_action_id;
   return (
@@ -276,6 +294,16 @@ function Row({ m, expanded, busy, onToggle, onRescan, onUnsub, onQuarantine, onU
             {quarantined && (
               <button className="mg-btn" disabled={!!busy} onClick={(e) => { e.stopPropagation(); onUndoQuarantine(); }}>
                 {busy === 'undo' ? '…' : '↶ Aus Quarantäne wiederherstellen'}
+              </button>
+            )}
+            {quarantined && (
+              <button
+                className="mg-btn mg-btn--danger"
+                disabled={!!busy}
+                onClick={(e) => { e.stopPropagation(); onPurge(); }}
+                title="Mail endgültig vom Server löschen — nicht wiederherstellbar"
+              >
+                {busy === 'purge' ? '…' : '🗑 Endgültig löschen'}
               </button>
             )}
           </div>
