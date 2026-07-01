@@ -13,7 +13,7 @@ set -euo pipefail
 WP_DIR="/var/www/wp.itdatex.support/html"
 ASSET_DIR="/opt/itdatex-plugins/itdatex-mailguard/branding"
 PLUGIN_SLUG="itdatex-mailguard"
-VERSION="0.5.0"
+VERSION="0.7.1"
 
 PRICE_CENTS="4900"             # 49 EUR / Monat
 BILLING_MODE="subscription"
@@ -62,6 +62,15 @@ HTML
 )
 
 CHANGELOG=$(cat <<'CL'
+= 0.7.1 — Quarantäne, Bulk-Cleanup und endgültiges Löschen (Rollup 0.6/0.7) =
+* NEU: Server-seitige IMAP-Quarantäne (RFC 6851 UID MOVE mit UIDPLUS-Fallback) — verdächtige Mails werden in einen dedizierten Quarantäne-Ordner auf dem Mailserver verschoben, KEIN EXPUNGE. Undo-Fenster via Audit-Log (mg_actions).
+* NEU: Auto-Quarantäne — pro Account einstellbarer Score-Schwellwert (Default aus), ab dem Scan-Verdicts eigenständig in Quarantäne wandern. Blacklist-Treffer übersteuern den Schwellwert und quarantänisieren immer.
+* NEU: Endgültig-löschen-Button für quarantänisierte Mails — IMAP EXPUNGE (UID EXPUNGE wo UIDPLUS supported) + Audit-Eintrag "purge" (nicht undo-fähig).
+* NEU: Newsletter-Bulk-Cleanup — nach erfolgter Abmeldung ein Klick "N Mails aufräumen + blockieren": alle Mails des Absenders in Quarantäne, Blacklist-Regel für künftige Mails wird automatisch angelegt.
+* NEU: DSGVO-Consent-Modal für Cloud-LLM-Scan — Endkunden willigen explizit ein, bevor Mail-Inhalte an Ollama Cloud gehen; Widerruf jederzeit möglich, ohne Consent kein Deep-Scan.
+* NEU: Customer REST API v1 (`/wp-json/itdatex-mailguard/v1/*`) — vollständige Portal-Backend-Endpoints, cookie-basierte Session-Auth.
+* SICHERHEIT: UID-Drift-Bug in Quarantäne behoben (2026-06-29) — nach COPY+DELETE vergibt IMAP eine neue UID; mg_messages.imap_uid wird jetzt konsistent nachgezogen, sonst false-positive Auto-Quarantänen.
+
 = 0.5.0 — Onboarding-Flow mit Auto-Pre-Fill =
 * NEU: Register-Page erkennt Mail-Provider schon während der Eingabe (Public-Discover-Endpoint, IP-Rate-Limit). Bei OAuth-Providern Hinweis "Nach Verifizierung mit einem Klick verbinden", bei IMAP-Providern Host/Port/SSL + Anbieter-spezifische Notes, bei ProtonMail/Tuta klare "kein IMAP"-Warnung.
 * NEU: Nach E-Mail-Verification automatischer Redirect zu Login mit pre-filled Email + Hinweis "next=accounts/new". Nach Login direkt im Account-Form mit Username pre-filled, Auto-Discovery feuert sofort.
