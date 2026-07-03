@@ -107,29 +107,36 @@ final class Message {
 	 */
 	public static function ingest( int $customer_id, int $account_id, string $folder, array $msg ) : string {
 		global $wpdb;
+		$attachments = is_array( $msg['attachments'] ?? null ) ? $msg['attachments'] : [];
 		$payload = [
-			'customer_id'     => $customer_id,
-			'account_id'      => $account_id,
-			'imap_uid'        => (int) $msg['uid'],
-			'folder'          => $folder,
-			'msg_id_hdr'      => mb_substr( (string) ( $msg['message_id'] ?? '' ), 0, 255 ),
-			'from_addr'       => mb_substr( (string) ( $msg['from_addr'] ?? '' ), 0, 320 ),
-			'from_name'       => mb_substr( (string) ( $msg['from_name'] ?? '' ), 0, 255 ),
-			'subject'         => mb_substr( (string) ( $msg['subject'] ?? '' ), 0, 500 ),
-			'date_hdr'        => $msg['date_hdr'] ?: null,
-			'fetched_at'      => current_time( 'mysql', true ),
-			'has_unsub'       => ! empty( $msg['list_unsub'] ) ? 1 : 0,
-			'list_unsub_raw'  => (string) ( $msg['list_unsub'] ?? '' ),
-			'list_unsub_post' => mb_substr( (string) ( $msg['list_unsub_post'] ?? '' ), 0, 255 ),
-			'body_preview'    => (string) ( $msg['body_preview'] ?? '' ),
-			'scan_status'     => 'pending',
+			'customer_id'      => $customer_id,
+			'account_id'       => $account_id,
+			'imap_uid'         => (int) $msg['uid'],
+			'folder'           => $folder,
+			'msg_id_hdr'       => mb_substr( (string) ( $msg['message_id'] ?? '' ), 0, 255 ),
+			'from_addr'        => mb_substr( (string) ( $msg['from_addr'] ?? '' ), 0, 320 ),
+			'from_name'        => mb_substr( (string) ( $msg['from_name'] ?? '' ), 0, 255 ),
+			'subject'          => mb_substr( (string) ( $msg['subject'] ?? '' ), 0, 500 ),
+			'date_hdr'         => $msg['date_hdr'] ?: null,
+			'fetched_at'       => current_time( 'mysql', true ),
+			'has_unsub'        => ! empty( $msg['list_unsub'] ) ? 1 : 0,
+			'list_unsub_raw'   => (string) ( $msg['list_unsub'] ?? '' ),
+			'list_unsub_post'  => mb_substr( (string) ( $msg['list_unsub_post'] ?? '' ), 0, 255 ),
+			'body_preview'     => (string) ( $msg['body_preview'] ?? '' ),
+			'has_attachments'  => ! empty( $attachments ) ? 1 : 0,
+			'attachment_count' => count( $attachments ),
+			'scan_status'      => 'pending',
 		];
 		$res = $wpdb->insert( self::table(), $payload );
-		if ( $res ) {
-			return 'inserted';
+		if ( ! $res ) {
+			// Duplicate-Key oder anderer Insert-Fehler — Unique Key (account_id, imap_uid, folder).
+			return $wpdb->last_error && str_contains( $wpdb->last_error, 'Duplicate' ) ? 'duplicate' : 'failed';
 		}
-		// Duplicate-Key oder anderer Insert-Fehler — Unique Key (account_id, imap_uid, folder).
-		return $wpdb->last_error && str_contains( $wpdb->last_error, 'Duplicate' ) ? 'duplicate' : 'failed';
+		$message_id = (int) $wpdb->insert_id;
+		if ( $attachments && $message_id > 0 ) {
+			Attachment::insert_batch( $customer_id, $message_id, $attachments );
+		}
+		return 'inserted';
 	}
 
 	public static function delete( int $id, int $customer_id ) : bool {
@@ -183,6 +190,8 @@ final class Message {
 			'has_unsub'       => (int) $row['has_unsub'],
 			'list_unsub_post' => (string) ( $row['list_unsub_post'] ?? '' ),
 			'body_preview'    => (string) ( $row['body_preview'] ?? '' ),
+			'has_attachments'  => isset( $row['has_attachments'] ) ? (int) $row['has_attachments'] : 0,
+			'attachment_count' => isset( $row['attachment_count'] ) ? (int) $row['attachment_count'] : 0,
 			'scan_status'     => (string) $row['scan_status'],
 			'scan_verdict'    => (string) $row['scan_verdict'],
 			'scan_score'      => $row['scan_score'] !== null ? (int) $row['scan_score'] : null,

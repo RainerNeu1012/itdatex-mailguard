@@ -6,6 +6,7 @@ namespace Itdatex\Mailguard\Rest;
 use Itdatex\Mailguard\Customer\Auth;
 use Itdatex\Mailguard\Imap\Account as ImapAccount;
 use Itdatex\Mailguard\Imap\Action as ImapAction;
+use Itdatex\Mailguard\Imap\Attachment as ImapAttachment;
 use Itdatex\Mailguard\Imap\ClientFactory;
 use Itdatex\Mailguard\Imap\Crypto as ImapCrypto;
 use Itdatex\Mailguard\Imap\Folder as ImapFolder;
@@ -251,6 +252,12 @@ final class Controller {
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'inbox_rescan' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/attachments', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_attachments' ],
 		] );
 
 		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/unsub-options', [
@@ -913,6 +920,16 @@ final class Controller {
 		if ( is_wp_error( $cid ) ) { return $cid; }
 		$res = UnsubService::status_refresh( (int) $req['id'], $cid );
 		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
+	}
+
+	public static function inbox_attachments( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req['id'];
+		if ( ! ImapMessage::find_for_customer( $id, $cid ) ) {
+			return new WP_Error( 'not_found', '', [ 'status' => 404 ] );
+		}
+		return new WP_REST_Response( [ 'ok' => true, 'items' => ImapAttachment::list_for_message( $id, $cid ) ], 200 );
 	}
 
 	public static function inbox_rescan( WP_REST_Request $req ) {

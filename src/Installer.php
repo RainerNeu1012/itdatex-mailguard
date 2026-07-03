@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 11;
+	public const CURRENT_DB_VERSION = 12;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -26,6 +26,7 @@ final class Installer {
 	public const TABLE_UNSUBS        = 'mg_unsubs';
 	public const TABLE_RULES         = 'mg_rules';
 	public const TABLE_ACTIONS       = 'mg_actions';
+	public const TABLE_ATTACHMENTS   = 'mg_attachments';
 
 	// Bewusst ASCII-only: IMAP-Mailbox-Namen mit Nicht-ASCII brauchen MUTF-7-Encoding
 	// (RFC 3501), das nicht jeder Server gleich handhabt. Englischer Name funktioniert
@@ -176,6 +177,8 @@ final class Installer {
 			list_unsub_raw TEXT NULL,
 			list_unsub_post VARCHAR(255) NULL,
 			body_preview TEXT NULL,
+			has_attachments TINYINT(1) NOT NULL DEFAULT 0,
+			attachment_count SMALLINT UNSIGNED NOT NULL DEFAULT 0,
 			scan_status VARCHAR(20) NOT NULL DEFAULT 'pending',
 			scan_verdict VARCHAR(20) NOT NULL DEFAULT '',
 			scan_score TINYINT UNSIGNED NULL,
@@ -271,6 +274,30 @@ final class Installer {
 			KEY idx_action_status (action, status)
 		) {$charset};";
 
+		$t_att = $wpdb->prefix . self::TABLE_ATTACHMENTS;
+		// Pro Mail-Anhang ein Eintrag. Wir speichern KEINE Bytes — nur die MIME-
+		// Metadaten aus IMAP BODYSTRUCTURE. Das reicht fuer Sichtbarkeits-Anzeige
+		// (Dateiname/Groesse/Typ) und heuristische Warnungen (gefaehrliche
+		// Extensions, doppelte Endungen, MIME/Extension-Mismatch). Fuer echte
+		// Deep-Scans muesste die Datei nachgeladen werden — separater Ausbau.
+		$sql_att = "CREATE TABLE {$t_att} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			message_id BIGINT UNSIGNED NOT NULL,
+			part_num VARCHAR(20) NOT NULL DEFAULT '',
+			filename VARCHAR(500) NOT NULL DEFAULT '',
+			mime_type VARCHAR(190) NOT NULL DEFAULT '',
+			size_bytes BIGINT UNSIGNED NOT NULL DEFAULT 0,
+			encoding VARCHAR(30) NOT NULL DEFAULT '',
+			is_suspicious TINYINT(1) NOT NULL DEFAULT 0,
+			suspicion_reasons LONGTEXT NULL,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			KEY idx_customer (customer_id),
+			KEY idx_message (message_id),
+			KEY idx_suspicious (is_suspicious)
+		) {$charset};";
+
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		dbDelta( $sql_customers );
 		dbDelta( $sql_imap );
@@ -279,6 +306,7 @@ final class Installer {
 		dbDelta( $sql_rul );
 		dbDelta( $sql_fol );
 		dbDelta( $sql_act );
+		dbDelta( $sql_att );
 
 		// One-shot Migration: aus jedem bestehenden Account einen Folder-Eintrag
 		// erzeugen. Nur wenn die Folder-Tabelle leer ist UND mind. ein Account

@@ -253,6 +253,8 @@ function Stat({ label, value, tone }) {
 function Row({ m, expanded, busy, onToggle, onRescan, onUnsub, onQuarantine, onUndoQuarantine, onPurge }) {
   const dangerous    = m.scan_verdict === 'dangerous';
   const quarantined  = !!m.quarantine_action_id;
+  const attachmentCount = (m.attachment_count | 0);
+  const hasAttachments  = attachmentCount > 0 || m.has_attachments === 1;
   return (
     <div className={'mg-card mg-mail' + (dangerous ? ' mg-mail--danger' : '') + (quarantined ? ' mg-mail--quarantined' : '')}>
       <div className="mg-mail__head" onClick={onToggle} role="button" tabIndex={0}>
@@ -264,6 +266,12 @@ function Row({ m, expanded, busy, onToggle, onRescan, onUnsub, onQuarantine, onU
         <div className="mg-mail__meta">
           <VerdictBadge verdict={m.scan_verdict} score={m.scan_score} status={m.scan_status} />
           {quarantined && <span className="mg-pill mg-pill--muted" title="In Quarantäne verschoben">🛡 Quarantäne</span>}
+          {hasAttachments && (
+            <span
+              className="mg-pill mg-pill--muted"
+              title={`${attachmentCount} Anhang${attachmentCount === 1 ? '' : 'e'} — Details in der aufgeklappten Ansicht`}
+            >📎 {attachmentCount || ''}</span>
+          )}
           {m.has_unsub && (m.sender_unsubscribed
             ? <span className="mg-pill mg-pill--muted" title="Sender wurde bereits abgemeldet">✓ abgemeldet</span>
             : <span className="mg-pill mg-pill--ok">Newsletter</span>)}
@@ -273,6 +281,7 @@ function Row({ m, expanded, busy, onToggle, onRescan, onUnsub, onQuarantine, onU
       {expanded && (
         <div className="mg-mail__body">
           <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{m.body_preview || <em className="mg-muted">(keine Vorschau)</em>}</p>
+          {hasAttachments && <AttachmentList messageId={m.id} />}
           {Array.isArray(m.scan_reasons) && m.scan_reasons.length > 0 && (
             <>
               <p className="mg-muted mg-tiny" style={{ margin: '0.75rem 0 0.25rem' }}>Scan-Treffer:</p>
@@ -316,6 +325,59 @@ function Row({ m, expanded, busy, onToggle, onRescan, onUnsub, onQuarantine, onU
       )}
     </div>
   );
+}
+
+function AttachmentList({ messageId }) {
+  const [items, setItems] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { body, status } = await apiGet(`inbox/messages/${messageId}/attachments`);
+        if (cancelled) return;
+        if (status >= 400) setError('HTTP ' + status);
+        else setItems(body.items || []);
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [messageId]);
+
+  if (error) return <p className="mg-muted mg-tiny" style={{ margin: '0.75rem 0 0' }}>Anhänge nicht ladbar: {error}</p>;
+  if (items === null) return <p className="mg-muted mg-tiny" style={{ margin: '0.75rem 0 0' }}>Lade Anhänge …</p>;
+  if (items.length === 0) return null;
+
+  return (
+    <div style={{ margin: '0.75rem 0 0' }}>
+      <p className="mg-muted mg-tiny" style={{ margin: '0 0 0.25rem' }}>Anhänge:</p>
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+        {items.map((a) => (
+          <li key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span>📎 <strong style={{ wordBreak: 'break-all' }}>{a.filename || '(ohne Namen)'}</strong></span>
+            <span className="mg-muted mg-tiny">· {a.mime_type || '?'} · {fmtSize(a.size_bytes)}</span>
+            {a.is_suspicious === 1 && (
+              <span
+                className="mg-pill mg-pill--warn"
+                title={a.reasons.map((r) => r.description).join(' | ')}
+              >⚠ verdächtig</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function fmtSize(bytes) {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  let n = bytes;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return (i === 0 ? n : n.toFixed(1)) + ' ' + units[i];
 }
 
 function fmtDate(s) {

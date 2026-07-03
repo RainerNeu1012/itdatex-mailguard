@@ -109,7 +109,42 @@ final class ScanService {
 		}
 		$blacklist_hit = $override && ( ( $override['reason']['rule'] ?? '' ) === 'customer_blacklist' );
 
+		// Attachment-Heuristik einweben: pro Anhang aus mg_attachments die
+		// gespeicherten suspicion_reasons in scan_reasons mergen und den
+		// hoechsten Attachment-Score dazuaddieren. Wir addieren NUR den max
+		// (nicht die Summe), damit 5 harmlose .docm nicht ein Volltreffer werden.
+		$att_max_score = 0;
+		if ( (int) ( $row['has_attachments'] ?? 0 ) === 1 ) {
+			$att_rows = $wpdb->get_results( $wpdb->prepare(
+				'SELECT filename, suspicion_reasons FROM ' . $wpdb->prefix . Installer::TABLE_ATTACHMENTS . '
+				 WHERE message_id = %d AND is_suspicious = 1',
+				$id
+			), ARRAY_A );
+			foreach ( $att_rows ?: [] as $ar ) {
+				$decoded = $ar['suspicion_reasons'] ? json_decode( (string) $ar['suspicion_reasons'], true ) : null;
+				if ( ! is_array( $decoded ) ) { continue; }
+				foreach ( $decoded as $r ) {
+					if ( ! is_array( $r ) ) { continue; }
+					$rs = (int) ( $r['score'] ?? 0 );
+					if ( $rs > $att_max_score ) { $att_max_score = $rs; }
+					$reasons[] = [
+						'rule'        => (string) ( $r['rule'] ?? 'attachment' ),
+						'description' => sprintf( '%s (Anhang: %s)', (string) ( $r['description'] ?? '' ), (string) ( $ar['filename'] ?? '' ) ),
+						'score'       => $rs,
+					];
+				}
+			}
+			$score += $att_max_score;
+		}
+
 		$score_capped = max( 0, min( 100, $score ) );
+		// Wenn Anhaenge selbst schon >= suspicious-Schwelle liefern und der
+		// Body-Verdict "clean" war, dann nachziehen — sonst blieben Malware-
+		// Anhaenge in einer sonst harmlos wirkenden Mail als "clean" markiert.
+		if ( $att_max_score >= 40 && in_array( $verdict, [ '', 'clean' ], true ) ) {
+			$verdict = $score_capped >= 70 ? 'dangerous' : 'suspicious';
+		}
+
 		$wpdb->update( $t, [
 			'scan_status'  => 'done',
 			'scan_verdict' => mb_substr( $verdict, 0, 20 ),

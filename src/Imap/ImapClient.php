@@ -305,10 +305,12 @@ final class ImapClient {
 		}
 		$parsed = self::parse_headers( $raw_headers );
 
-		$preview   = '';
-		$structure = @imap_fetchstructure( $this->stream, $uid, FT_UID );
+		$preview     = '';
+		$attachments = [];
+		$structure   = @imap_fetchstructure( $this->stream, $uid, FT_UID );
 		if ( $structure ) {
-			$preview = $this->extract_text_preview( $uid, $structure );
+			$preview     = $this->extract_text_preview( $uid, $structure );
+			$attachments = self::extract_attachments( $structure );
 		}
 
 		return [
@@ -322,7 +324,117 @@ final class ImapClient {
 			'list_unsub'      => $parsed['list_unsub'],
 			'list_unsub_post' => $parsed['list_unsub_post'],
 			'body_preview'    => $preview,
+			'attachments'     => $attachments,
 		];
+	}
+
+	/**
+	 * Extrahiert Anhang-Metadaten aus einer imap_fetchstructure-Rueckgabe.
+	 * KEINE Bytes — nur filename/mime/size/encoding, damit die DB schlank
+	 * bleibt und wir kein Malware-Risiko einlagern.
+	 *
+	 * Als "Anhang" zaehlt ein Part, wenn er:
+	 *  a) einen Dateinamen hat (in parameters name= oder dparameters filename=), ODER
+	 *  b) explizit Disposition ATTACHMENT/INLINE (mit Dateiname) traegt.
+	 *
+	 * Reiner text/plain und text/html ohne Disposition zaehlen NICHT als Anhang.
+	 *
+	 * @return array<int,array{part_num:string,filename:string,mime_type:string,size_bytes:int,encoding:string}>
+	 */
+	public static function extract_attachments( $structure ) : array {
+		$out = [];
+		if ( empty( $structure->parts ) ) {
+			// Single-Part-Mail: ist die ganze Mail ein Anhang?
+			$att = self::part_as_attachment( $structure, '1' );
+			if ( $att !== null ) { $out[] = $att; }
+			return $out;
+		}
+		$walk = function ( array $parts, string $prefix ) use ( &$walk, &$out ) {
+			foreach ( $parts as $i => $p ) {
+				$num = $prefix === '' ? (string) ( $i + 1 ) : ( $prefix . '.' . ( $i + 1 ) );
+				if ( ! empty( $p->parts ) ) { $walk( $p->parts, $num ); continue; }
+				$att = self::part_as_attachment( $p, $num );
+				if ( $att !== null ) { $out[] = $att; }
+			}
+		};
+		$walk( $structure->parts, '' );
+		return $out;
+	}
+
+	private static function part_as_attachment( $p, string $part_num ) : ?array {
+		$filename = self::part_filename( $p );
+		$disp     = strtoupper( (string) ( $p->disposition ?? '' ) );
+		$type     = (int) ( $p->type ?? 0 );
+		$subtype  = strtolower( (string) ( $p->subtype ?? '' ) );
+
+		// Reine Text-Bodies ohne Disposition ueberspringen — das ist der eigentliche
+		// Mail-Inhalt, kein Anhang.
+		$is_body_text = $type === 0 && in_array( $subtype, [ 'plain', 'html' ], true ) && $disp === '';
+		if ( $is_body_text && $filename === '' ) { return null; }
+
+		// Ohne Dateiname UND ohne Attachment-Disposition ist es fuer uns kein
+		// vorzeigbarer Anhang — z.B. eingebettete Bilder ohne Namen ignorieren wir.
+		if ( $filename === '' && $disp !== 'ATTACHMENT' && $disp !== 'INLINE' ) { return null; }
+
+		return [
+			'part_num'   => $part_num,
+			'filename'   => $filename,
+			'mime_type'  => self::mime_for_part( $type, $subtype ),
+			'size_bytes' => (int) ( $p->bytes ?? 0 ),
+			'encoding'   => self::encoding_name( (int) ( $p->encoding ?? 0 ) ),
+		];
+	}
+
+	private static function part_filename( $p ) : string {
+		// bevorzugt dparameters (Content-Disposition filename=), dann parameters (Content-Type name=).
+		if ( ! empty( $p->ifdparameters ) && ! empty( $p->dparameters ) ) {
+			foreach ( $p->dparameters as $param ) {
+				if ( strcasecmp( (string) $param->attribute, 'filename' ) === 0 ) {
+					return self::decode_mime_word( (string) $param->value );
+				}
+			}
+		}
+		if ( ! empty( $p->ifparameters ) && ! empty( $p->parameters ) ) {
+			foreach ( $p->parameters as $param ) {
+				if ( strcasecmp( (string) $param->attribute, 'name' ) === 0 ) {
+					return self::decode_mime_word( (string) $param->value );
+				}
+			}
+		}
+		return '';
+	}
+
+	private static function decode_mime_word( string $s ) : string {
+		if ( strpos( $s, '=?' ) === false ) { return $s; }
+		$decoded = imap_mime_header_decode( $s );
+		if ( ! is_array( $decoded ) ) { return $s; }
+		$out = '';
+		foreach ( $decoded as $part ) {
+			$text    = (string) ( $part->text ?? '' );
+			$charset = (string) ( $part->charset ?? 'default' );
+			if ( $charset !== 'default' && strcasecmp( $charset, 'utf-8' ) !== 0 ) {
+				$text = @mb_convert_encoding( $text, 'UTF-8', $charset ) ?: $text;
+			}
+			$out .= $text;
+		}
+		return $out;
+	}
+
+	private static function mime_for_part( int $type, string $subtype ) : string {
+		$primary = [
+			0 => 'text', 1 => 'multipart', 2 => 'message', 3 => 'application',
+			4 => 'audio', 5 => 'image', 6 => 'video', 7 => 'other',
+		];
+		$p = $primary[ $type ] ?? 'other';
+		return $p . '/' . ( $subtype !== '' ? $subtype : 'octet-stream' );
+	}
+
+	private static function encoding_name( int $enc ) : string {
+		$map = [
+			0 => '7bit', 1 => '8bit', 2 => 'binary',
+			3 => 'base64', 4 => 'quoted-printable', 5 => 'other',
+		];
+		return $map[ $enc ] ?? 'other';
 	}
 
 	public static function parse_headers( string $raw ) : array {
