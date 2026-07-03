@@ -59,7 +59,7 @@ final class Subscriptions {
 		foreach ( $rows ?: [] as $r ) {
 			$from_addr = (string) $r['from_addr'];
 			$last_unsub = $wpdb->get_row( $wpdb->prepare(
-				"SELECT u.id, u.api_status, u.kind, u.created_at, u.dsn_status
+				"SELECT u.id, u.api_status, u.kind, u.created_at, u.dsn_status, u.api_detail
 				 FROM {$u} u
 				 JOIN {$m} mm ON u.message_id = mm.id
 				 WHERE u.customer_id = %d AND mm.from_addr = %s
@@ -80,10 +80,30 @@ final class Subscriptions {
 					'dsn_status' => (string) ( $last_unsub['dsn_status'] ?? '' ),
 					'kind'       => (string) $last_unsub['kind'],
 					'created_at' => (string) $last_unsub['created_at'],
+					'manual_url' => self::extract_manual_url( (string) ( $last_unsub['api_detail'] ?? '' ) ),
 				] : null,
 			];
 		}
 		return [ 'items' => $items, 'total' => $total ];
+	}
+
+	/**
+	 * Extrahiert manual_url aus dem persistierten api_detail-Blob.
+	 * Wird gebraucht, damit die Newsletter-Liste einen 'Im Browser oeffnen'-Link
+	 * ohne extra Round-Trip zeigen kann, wenn der Provider One-Click abgelehnt hat.
+	 */
+	public static function extract_manual_url( string $api_detail ) : string {
+		if ( $api_detail === '' ) { return ''; }
+		$decoded = json_decode( $api_detail, true );
+		if ( ! is_array( $decoded ) ) { return ''; }
+		if ( isset( $decoded['manual_url'] ) && is_string( $decoded['manual_url'] ) ) {
+			return $decoded['manual_url'];
+		}
+		// Legacy-Struktur: raw-Body liegt eine Ebene tiefer.
+		if ( isset( $decoded['raw']['manual_url'] ) && is_string( $decoded['raw']['manual_url'] ) ) {
+			return $decoded['raw']['manual_url'];
+		}
+		return '';
 	}
 
 	/**

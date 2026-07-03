@@ -315,6 +315,7 @@ a:hover { color: var(--mg-accent); }
   letter-spacing: 0.04em;
 }
 .mg-pill--ok    { background: rgba(63,185,80,0.15);  color: var(--mg-ok); }
+.mg-pill--warn  { background: rgba(255,180,0,0.15);  color: #ffb400; }
 .mg-pill--err   { background: rgba(248,81,73,0.15);  color: var(--mg-err); }
 .mg-pill--muted { background: var(--mg-surface-2);   color: var(--mg-muted); }
 

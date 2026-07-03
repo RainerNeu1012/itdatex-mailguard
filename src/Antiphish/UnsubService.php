@@ -65,16 +65,24 @@ final class UnsubService {
 			'status'      => (string) ( $body['status'] ?? 'unknown' ),
 			'http_status' => $body['http_status'] ?? null,
 			'message_id'  => (string) ( $body['message_id'] ?? '' ),
+			'manual_url'  => (string) ( $body['manual_url'] ?? '' ),
 			'raw'         => $body,
 		];
 		$id = Unsub::create( $customer_id, $message_id, $option, $api );
 
+		$body_status = (string) ( $body['status'] ?? '' );
+		// needs_manual: Provider verlangt einen User-Klick im Browser (z.B. Benson &
+		// Hedges — One-Click-Header ohne funktionierenden POST-Endpoint). Fuer den
+		// Nutzer ist das ein Ergebnis, nicht ein Fehler; die manuelle URL wird nach
+		// oben gereicht, damit das UI sie oeffnen kann.
 		return [
-			'ok'        => $status_code < 400 && ( ( $body['status'] ?? '' ) === 'unsubscribed' ),
-			'unsub_id'  => $id,
-			'api'       => $api,
-			'option'    => $option,
-			'http_code' => $status_code,
+			'ok'           => $status_code < 400 && $body_status === 'unsubscribed',
+			'needs_manual' => $status_code < 400 && $body_status === 'needs_manual',
+			'unsub_id'     => $id,
+			'api'          => $api,
+			'option'       => $option,
+			'http_code'    => $status_code,
+			'manual_url'   => $api['manual_url'],
 		];
 	}
 

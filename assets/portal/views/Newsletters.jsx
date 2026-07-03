@@ -3,6 +3,7 @@ import { apiGet, apiPost } from '../api.js';
 
 const STATUS_TONE = {
   unsubscribed: { label: 'abgemeldet', cls: 'mg-pill--ok' },
+  needs_manual: { label: 'im Browser abschließen', cls: 'mg-pill--warn' },
   blocked:      { label: 'blockiert',  cls: 'mg-pill--err' },
   failed:       { label: 'fehler',     cls: 'mg-pill--err' },
   unknown:      { label: 'unbekannt',  cls: 'mg-pill--muted' },
@@ -55,10 +56,17 @@ function Subscriptions() {
     setBusy((b) => ({ ...b, [from_addr]: 'unsub' }));
     try {
       const { body } = await apiPost('subscriptions/unsubscribe', { from_addr });
-      const msg = body.ok
-        ? `✔ Abgemeldet (${body.api && body.api.status})`
-        : `Status: ${body.api && body.api.status || body.error || 'unbekannt'}`;
-      alert(msg);
+      const manualUrl = body.manual_url || (body.api && body.api.manual_url) || '';
+      if (body.needs_manual && manualUrl) {
+        // Direkt neuen Tab aufmachen — der User hat gerade explizit auf 'Abmelden' geklickt,
+        // der Popup-Blocker haelt das durch. Der Reload zeigt danach den persistenten Button.
+        window.open(manualUrl, '_blank', 'noopener');
+      } else {
+        const msg = body.ok
+          ? `✔ Abgemeldet (${body.api && body.api.status})`
+          : `Status: ${body.api && body.api.status || body.error || 'unbekannt'}`;
+        alert(msg);
+      }
       load();
     } finally {
       setBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
@@ -104,6 +112,7 @@ function Subscriptions() {
         const apiPill = lu ? (STATUS_TONE[lu.api_status] || { label: lu.api_status || '—', cls: 'mg-pill--muted' }) : null;
         const dsnPill = lu && lu.dsn_status ? (STATUS_TONE[lu.dsn_status] || { label: lu.dsn_status, cls: 'mg-pill--muted' }) : null;
         const unsubscribed = lu && lu.api_status === 'unsubscribed';
+        const needsManual  = lu && lu.api_status === 'needs_manual' && lu.manual_url;
         return (
           <div key={s.from_addr} className="mg-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
@@ -122,6 +131,16 @@ function Subscriptions() {
             <div className="mg-account__actions" style={{ marginTop: '0.5rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
               {unsubscribed ? (
                 <button className="mg-btn" disabled>✔ Bereits abgemeldet</button>
+              ) : needsManual ? (
+                <a
+                  className="mg-btn mg-btn--primary"
+                  href={lu.manual_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Anbieter akzeptiert keine 1-Klick-Abmeldung — Formular im Browser abschließen."
+                >
+                  ↗ Abmelde-Seite öffnen
+                </a>
               ) : (
                 <button
                   className="mg-btn mg-btn--primary"
@@ -192,6 +211,8 @@ function History() {
       {items.map((u) => {
         const apiPill = STATUS_TONE[u.api_status] || { label: u.api_status || '—', cls: 'mg-pill--muted' };
         const dsnPill = u.dsn_status ? (STATUS_TONE[u.dsn_status] || { label: u.dsn_status, cls: 'mg-pill--muted' }) : null;
+        const manualUrl = u.api_detail && typeof u.api_detail.manual_url === 'string' ? u.api_detail.manual_url : '';
+        const needsManual = u.api_status === 'needs_manual' && manualUrl;
         return (
           <div key={u.id} className="mg-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
@@ -208,11 +229,24 @@ function History() {
             <p className="mg-muted mg-tiny" style={{ margin: '0.5rem 0 0', wordBreak: 'break-all' }}>
               {u.target} · {fmtDate(u.created_at)}
             </p>
-            {(u.kind === 'mailto' || u.api_message_id) && (
-              <div style={{ marginTop: '0.5rem' }}>
-                <button className="mg-btn" disabled={!!busy[u.id]} onClick={() => refresh(u.id)}>
-                  {busy[u.id] === 'status' ? '…' : '↻ Status'}
-                </button>
+            {(needsManual || u.kind === 'mailto' || u.api_message_id) && (
+              <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                {needsManual && (
+                  <a
+                    className="mg-btn mg-btn--primary"
+                    href={manualUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Anbieter akzeptiert keine 1-Klick-Abmeldung — Formular im Browser abschließen."
+                  >
+                    ↗ Abmelde-Seite öffnen
+                  </a>
+                )}
+                {(u.kind === 'mailto' || u.api_message_id) && (
+                  <button className="mg-btn" disabled={!!busy[u.id]} onClick={() => refresh(u.id)}>
+                    {busy[u.id] === 'status' ? '…' : '↻ Status'}
+                  </button>
+                )}
               </div>
             )}
           </div>

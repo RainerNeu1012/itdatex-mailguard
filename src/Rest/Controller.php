@@ -664,7 +664,10 @@ final class Controller {
 		$json = (array) $req->get_json_params();
 		$idx  = isset( $json['option_idx'] ) ? (int) $json['option_idx'] : null;
 		$res  = UnsubService::execute_for_message( (int) $req['id'], $cid, $idx );
-		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
+		// needs_manual ist eine Aufforderung an den User (Provider braucht Browser-Klick),
+		// nicht ein Serverfehler — deshalb mit 200 statt 502 antworten.
+		$http = ( ! empty( $res['ok'] ) || ! empty( $res['needs_manual'] ) ) ? 200 : 502;
+		return new WP_REST_Response( $res, $http );
 	}
 
 	public static function inbox_quarantine( WP_REST_Request $req ) {
@@ -887,7 +890,8 @@ final class Controller {
 		$res = UnsubService::execute_for_message( $msg_id, $cid, null );
 		$res['from_addr']     = $from_addr;
 		$res['source_msg_id'] = $msg_id;
-		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
+		$http = ( ! empty( $res['ok'] ) || ! empty( $res['needs_manual'] ) ) ? 200 : 502;
+		return new WP_REST_Response( $res, $http );
 	}
 
 	public static function subscriptions_purge( WP_REST_Request $req ) {

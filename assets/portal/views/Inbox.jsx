@@ -154,10 +154,15 @@ export default function Inbox() {
                 setBusy((b) => ({ ...b, [m.id]: 'unsub' }));
                 try {
                   const { body } = await apiPost(`inbox/messages/${m.id}/unsubscribe`, {});
-                  const msg = body.ok
-                    ? `✔ Abgemeldet (${body.api && body.api.status})`
-                    : `Status: ${body.api && body.api.status || body.error || 'unbekannt'}`;
-                  alert(msg);
+                  const manualUrl = body.manual_url || (body.api && body.api.manual_url) || '';
+                  if (body.needs_manual && manualUrl) {
+                    window.open(manualUrl, '_blank', 'noopener');
+                  } else {
+                    const msg = body.ok
+                      ? `✔ Abgemeldet (${body.api && body.api.status})`
+                      : `Status: ${body.api && body.api.status || body.error || 'unbekannt'}`;
+                    alert(msg);
+                  }
                   loadInbox();
                 } finally {
                   setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; });
