@@ -69,6 +69,8 @@ a:hover { color: var(--mg-accent); }
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--mg-border);
+  /* Nav darf umbrechen, wenn zu breit — anstatt die Brand zu quetschen. */
+  flex-wrap: wrap;
 }
 .mg-brand {
   display: inline-flex;
@@ -76,10 +78,22 @@ a:hover { color: var(--mg-accent); }
   gap: 0.75rem;
   text-decoration: none;
   color: var(--mg-fg);
+  /* Nie schrumpfen — die Nav rechts darf umbrechen (flex-wrap), aber die Brand
+     bleibt in einem Stück. Ohne flex-shrink:0 wird der Brand-Text bei breiter
+     Nav gequetscht und (falls global overflow-wrap:anywhere aktiv ist) mitten
+     im Wort umgebrochen. */
+  flex-shrink: 0;
 }
 .mg-brand:hover { color: var(--mg-fg); }
-.mg-brand__logo { width: 28px; height: auto; display: block; }
-.mg-brand__txt { display: inline-flex; flex-direction: column; }
+.mg-brand__logo { width: 28px; height: auto; display: block; flex-shrink: 0; }
+.mg-brand__txt {
+  display: inline-flex;
+  flex-direction: column;
+  /* Overrides der globalen p/span/div-Regel oben — Brand darf niemals brechen. */
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
 .mg-brand__name {
   font-family: var(--mg-display);
   font-weight: 400;
@@ -87,6 +101,8 @@ a:hover { color: var(--mg-accent); }
   letter-spacing: 0.08em;
   line-height: 1;
   color: var(--mg-fg);
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 .mg-brand__accent { color: var(--mg-accent); }
 .mg-brand__sub {
@@ -96,6 +112,8 @@ a:hover { color: var(--mg-accent); }
   color: var(--mg-subtle);
   letter-spacing: 0.06em;
   margin-top: 0.1rem;
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 /* Backward-compat falls noch irgendwo verwendet */
 .mg-brand__mark { display: none; }
