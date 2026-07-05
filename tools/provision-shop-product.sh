@@ -13,7 +13,7 @@ set -euo pipefail
 WP_DIR="/var/www/wp.itdatex.support/html"
 ASSET_DIR="/opt/itdatex-plugins/itdatex-mailguard/branding"
 PLUGIN_SLUG="itdatex-mailguard"
-VERSION="0.7.2"
+VERSION="0.8.0"
 
 PRICE_CENTS="4900"             # 49 EUR / Monat
 BILLING_MODE="subscription"
@@ -62,6 +62,13 @@ HTML
 )
 
 CHANGELOG=$(cat <<'CL'
+= 0.8.0 — Postfach-Tabs in der Inbox =
+* NEU: Wer mehrere Postfächer verbunden hat, sieht in der Inbox ganz oben eine Tab-Leiste — ein Tab pro Postfach. Mails aus verschiedenen Konten werden nicht mehr in einer Liste vermischt.
+* CHANGE: Standardansicht der Inbox zeigt immer nur EIN Postfach. Beim ersten Aufruf wird das erste aktive Konto gewählt; die Wahl wird pro Browser gespeichert und beim nächsten Besuch wiederhergestellt.
+* CHANGE: "Jetzt abholen"-Button holt gezielt das aktive Postfach ab (statt aller Konten in einer Schleife) — Anzeige und Aktion sind wieder in Deckung.
+* CHANGE: Kontenfilter aus dem Filter-Sheet entfernt (implizit im Tab). Stats-Karte oben zählt jetzt nur Mails des aktiven Postfachs.
+* API: GET /inbox/stats akzeptiert optional account_id für Per-Postfach-Kennzahlen.
+
 = 0.7.2 — Absender-Blockieren, iCloud-Autoconfig, Newsletter-Endpoints-Ausfallhandling =
 * NEU: Ein-Klick-Absender-Blockieren in der Sender-View — legt eine Blacklist-Regel für die From-Adresse an (dedup), zeigt "⛔ blockiert"-Pill in der Meta-Zeile. Neuer Endpoint POST /inbox/senders/block.
 * NEU: iCloud+ Custom-Domain-Erkennung — Auto-Discovery findet Postfächer, deren MX-Records auf mx01/mx02.mail.icloud.com zeigen (User @meinedomain.de wird als iCloud erkannt, IMAP-Settings automatisch gesetzt). Auch @mac.com bekommt den korrekten App-Passwort-Hinweis.

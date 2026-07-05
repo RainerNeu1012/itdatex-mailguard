@@ -2,7 +2,8 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { apiGet, apiPost } from '../api.js';
 import { VerdictBadge, ReasonsList } from '../components/Verdict.jsx';
 
-const TAB_STORAGE_KEY = 'mg_inbox_tab';
+const TAB_STORAGE_KEY     = 'mg_inbox_tab';
+const ACCOUNT_STORAGE_KEY = 'mg_inbox_account_id';
 
 function loadTab() {
   try {
@@ -12,6 +13,13 @@ function loadTab() {
 }
 function saveTab(v) {
   try { localStorage.setItem(TAB_STORAGE_KEY, v); } catch { /* ignore */ }
+}
+function loadAccountId() {
+  try { return parseInt(localStorage.getItem(ACCOUNT_STORAGE_KEY) || '0', 10) || 0; }
+  catch { return 0; }
+}
+function saveAccountId(id) {
+  try { localStorage.setItem(ACCOUNT_STORAGE_KEY, String(id || 0)); } catch { /* ignore */ }
 }
 
 const EMPTY_FILTER = { account_id: 0, unsub_only: 0, verdict: '', q: '', page: 1 };
@@ -29,13 +37,33 @@ export default function Inbox() {
     if (body && body.ok) setAccounts(body.items);
   }, []);
 
-  const loadStats = useCallback(async () => {
-    const { body } = await apiGet('inbox/stats');
+  const loadStats = useCallback(async (accountId) => {
+    const qs = accountId ? `?account_id=${accountId}` : '';
+    const { body } = await apiGet('inbox/stats' + qs);
     if (body && body.ok) setStats(body.stats);
   }, []);
 
   useEffect(() => { loadAccounts(); }, [loadAccounts]);
-  useEffect(() => { loadStats();    }, [loadStats]);
+
+  // Sobald Accounts geladen sind: aktives Konto festlegen — gespeicherte Auswahl,
+  // sonst erstes aktives Konto. Kein "alle Konten"-Modus mehr, damit Mails aus
+  // verschiedenen Postfaechern nicht vermischt in einer Ansicht auftauchen.
+  useEffect(() => {
+    if (!accounts.length) return;
+    if (filter.account_id && accounts.some((a) => a.id === filter.account_id)) return;
+    const stored  = loadAccountId();
+    const preferred = stored && accounts.some((a) => a.id === stored) ? stored : (accounts.find((a) => a.status === 'active') || accounts[0]).id;
+    setFilter((f) => ({ ...f, account_id: preferred, page: 1 }));
+  }, [accounts]);
+
+  // Stats folgen dem aktiven Konto.
+  useEffect(() => { loadStats(filter.account_id); }, [loadStats, filter.account_id]);
+
+  const switchAccount = (id) => {
+    if (id === filter.account_id) return;
+    saveAccountId(id);
+    setFilter((f) => ({ ...f, account_id: id, page: 1 }));
+  };
 
   const switchTab = (t) => {
     if (t === tab) return;
@@ -44,20 +72,20 @@ export default function Inbox() {
     setFilter((f) => ({ ...f, page: 1 }));
   };
 
+  const activeAccount     = accounts.find((a) => a.id === filter.account_id) || null;
   const activeFilterCount = countActive(filter);
 
   const pullAll = async () => {
     if (!accounts.length) { alert('Erst ein Postfach anlegen.'); return; }
     setPulling(true);
     try {
-      const results = [];
-      for (const a of accounts.filter((x) => x.status === 'active')) {
-        const { body } = await apiPost(`accounts/${a.id}/pull`);
-        results.push(`${a.label || a.host}: ` + (body.ok ? `+${body.fetched} (dup ${body.duplicates})` : `Fehler ${body.error}`));
-      }
-      alert(results.join('\n'));
-      loadStats();
-      // Trigger reload of active tab data
+      // Nur das aktive Konto pullen, sonst waere der Button irrefuehrend:
+      // Anzeige zeigt Postfach A, Button holt auch B, C, D ab.
+      const active = accounts.find((a) => a.id === filter.account_id);
+      if (!active) { alert('Kein Konto ausgewaehlt.'); return; }
+      const { body } = await apiPost(`accounts/${active.id}/pull`);
+      alert(`${active.label || active.host}: ` + (body.ok ? `+${body.fetched} (dup ${body.duplicates})` : `Fehler ${body.error}`));
+      loadStats(filter.account_id);
       setFilter((f) => ({ ...f }));
     } finally {
       setPulling(false);
@@ -70,13 +98,35 @@ export default function Inbox() {
         <div className="mg-inbox__head">
           <div>
             <h2 style={{ margin: '0 0 0.25rem' }}>Inbox</h2>
-            <p className="mg-muted" style={{ margin: 0 }}>Eingehende Mails aller verbundenen Postfächer.</p>
+            <p className="mg-muted" style={{ margin: 0 }}>
+              {activeAccount
+                ? <>Eingehende Mails von <strong>{activeAccount.label || activeAccount.host}</strong>.</>
+                : 'Eingehende Mails der verbundenen Postfächer.'}
+            </p>
           </div>
-          <button className="mg-btn mg-btn--primary" disabled={pulling} onClick={pullAll}>
+          <button className="mg-btn mg-btn--primary" disabled={pulling || !filter.account_id} onClick={pullAll}>
             {pulling ? '…' : '↓ Jetzt abholen'}
           </button>
         </div>
       </div>
+
+      {accounts.length >= 2 && (
+        <div className="mg-card mg-account-tabs" role="tablist" aria-label="Postfach auswaehlen">
+          {accounts.map((a) => (
+            <button
+              key={a.id}
+              className={'mg-account-tab' + (a.id === filter.account_id ? ' mg-account-tab--active' : '')}
+              role="tab"
+              aria-selected={a.id === filter.account_id}
+              title={a.username || a.label || a.host}
+              onClick={() => switchAccount(a.id)}
+            >
+              📬 {a.label || a.host}
+              {a.status !== 'active' && <span className="mg-pill mg-pill--muted mg-account-tab__status">{a.status}</span>}
+            </button>
+          ))}
+        </div>
+      )}
 
       {stats && (
         <div className="mg-card mg-stats">
@@ -112,12 +162,6 @@ export default function Inbox() {
 
         <div className={'mg-filter-sheet' + (filtersOpen ? ' mg-filter-sheet--open' : '')}>
           <div className="mg-form__row">
-            <label style={{ flex: 1 }}>Konto
-              <select value={filter.account_id} onChange={(e) => setFilter({ ...filter, account_id: parseInt(e.target.value, 10), page: 1 })}>
-                <option value={0}>— alle —</option>
-                {accounts.map((a) => <option key={a.id} value={a.id}>{a.label || a.host}</option>)}
-              </select>
-            </label>
             <label style={{ flex: 1 }}>Verdict
               <select value={filter.verdict} onChange={(e) => setFilter({ ...filter, verdict: e.target.value, page: 1 })}>
                 <option value="">— alle —</option>
@@ -136,7 +180,7 @@ export default function Inbox() {
               {' '}Nur Newsletter (List-Unsubscribe vorhanden)
             </label>
             {activeFilterCount > 0 && (
-              <button className="mg-btn mg-btn--ghost" onClick={() => setFilter(EMPTY_FILTER)}>
+              <button className="mg-btn mg-btn--ghost" onClick={() => setFilter((f) => ({ ...EMPTY_FILTER, account_id: f.account_id }))}>
                 Zurücksetzen
               </button>
             )}
@@ -152,8 +196,8 @@ export default function Inbox() {
 }
 
 function countActive(f) {
+  // account_id ist jetzt implizit im Tab, nicht mehr im Filter-Sheet — nicht zaehlen.
   let n = 0;
-  if (f.account_id) n++;
   if (f.verdict)    n++;
   if (f.q)          n++;
   if (f.unsub_only) n++;

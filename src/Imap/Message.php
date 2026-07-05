@@ -47,6 +47,10 @@ final class Message {
 			$where[]  = '(subject LIKE %s OR from_addr LIKE %s OR from_name LIKE %s)';
 			$params[] = $q; $params[] = $q; $params[] = $q;
 		}
+		if ( ! empty( $filter['from_addr'] ) ) {
+			$where[]  = 'LOWER(from_addr) = %s';
+			$params[] = strtolower( (string) $filter['from_addr'] );
+		}
 
 		$where_sql = 'WHERE ' . implode( ' AND ', $where );
 		$rows = $wpdb->get_results( $wpdb->prepare(
@@ -89,16 +93,22 @@ final class Message {
 		];
 	}
 
-	public static function stats_for_customer( int $customer_id ) : array {
+	public static function stats_for_customer( int $customer_id, int $account_id = 0 ) : array {
 		global $wpdb;
 		$t = self::table();
+		$scope = $account_id > 0 ? ' AND account_id = %d' : '';
+		$args  = $account_id > 0 ? [ $customer_id, $account_id ] : [ $customer_id ];
+		$q = static function ( string $extra_where ) use ( $wpdb, $t, $scope, $args ) {
+			$sql = "SELECT COUNT(*) FROM $t WHERE customer_id = %d" . $scope . ( $extra_where !== '' ? ' AND ' . $extra_where : '' );
+			return (int) $wpdb->get_var( $wpdb->prepare( $sql, $args ) );
+		};
 		return [
-			'total'       => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $t WHERE customer_id = %d", $customer_id ) ),
-			'has_unsub'   => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $t WHERE customer_id = %d AND has_unsub = 1", $customer_id ) ),
-			'pending_scan'=> (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $t WHERE customer_id = %d AND scan_status IN ('pending','scanning')", $customer_id ) ),
-			'clean'       => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $t WHERE customer_id = %d AND scan_verdict = 'clean'", $customer_id ) ),
-			'suspicious'  => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $t WHERE customer_id = %d AND scan_verdict = 'suspicious'", $customer_id ) ),
-			'dangerous'   => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $t WHERE customer_id = %d AND scan_verdict = 'dangerous'", $customer_id ) ),
+			'total'        => $q( '' ),
+			'has_unsub'    => $q( 'has_unsub = 1' ),
+			'pending_scan' => $q( "scan_status IN ('pending','scanning')" ),
+			'clean'        => $q( "scan_verdict = 'clean'" ),
+			'suspicious'   => $q( "scan_verdict = 'suspicious'" ),
+			'dangerous'    => $q( "scan_verdict = 'dangerous'" ),
 		];
 	}
 
@@ -178,25 +188,25 @@ final class Message {
 	public static function public_view( array $row ) : array {
 		$reasons = $row['scan_reasons'] ? json_decode( (string) $row['scan_reasons'], true ) : null;
 		return [
-			'id'              => (int) $row['id'],
-			'account_id'      => (int) $row['account_id'],
-			'folder'          => (string) $row['folder'],
-			'uid'             => (int) $row['imap_uid'],
-			'from_addr'       => (string) $row['from_addr'],
-			'from_name'       => (string) $row['from_name'],
-			'subject'         => (string) $row['subject'],
-			'date_hdr'        => $row['date_hdr'] ?: null,
-			'fetched_at'      => (string) $row['fetched_at'],
-			'has_unsub'       => (int) $row['has_unsub'],
-			'list_unsub_post' => (string) ( $row['list_unsub_post'] ?? '' ),
-			'body_preview'    => (string) ( $row['body_preview'] ?? '' ),
+			'id'               => (int) $row['id'],
+			'account_id'       => (int) $row['account_id'],
+			'folder'           => (string) $row['folder'],
+			'uid'              => (int) $row['imap_uid'],
+			'from_addr'        => (string) $row['from_addr'],
+			'from_name'        => (string) $row['from_name'],
+			'subject'          => (string) $row['subject'],
+			'date_hdr'         => $row['date_hdr'] ?: null,
+			'fetched_at'       => (string) $row['fetched_at'],
+			'has_unsub'        => (int) $row['has_unsub'],
+			'list_unsub_post'  => (string) ( $row['list_unsub_post'] ?? '' ),
+			'body_preview'     => (string) ( $row['body_preview'] ?? '' ),
 			'has_attachments'  => isset( $row['has_attachments'] ) ? (int) $row['has_attachments'] : 0,
 			'attachment_count' => isset( $row['attachment_count'] ) ? (int) $row['attachment_count'] : 0,
-			'scan_status'     => (string) $row['scan_status'],
-			'scan_verdict'    => (string) $row['scan_verdict'],
-			'scan_score'      => $row['scan_score'] !== null ? (int) $row['scan_score'] : null,
-			'scan_reasons'    => is_array( $reasons ) ? $reasons : [],
-			'scanned_at'      => $row['scanned_at'] ?: null,
+			'scan_status'      => (string) $row['scan_status'],
+			'scan_verdict'     => (string) $row['scan_verdict'],
+			'scan_score'       => $row['scan_score'] !== null ? (int) $row['scan_score'] : null,
+			'scan_reasons'     => is_array( $reasons ) ? $reasons : [],
+			'scanned_at'       => $row['scanned_at'] ?: null,
 			'sender_unsubscribed'  => false,  // wird in list_for_customer angereichert
 			'quarantine_action_id' => isset( $row['quarantine_action_id'] ) && $row['quarantine_action_id'] !== null
 				? (int) $row['quarantine_action_id'] : null,

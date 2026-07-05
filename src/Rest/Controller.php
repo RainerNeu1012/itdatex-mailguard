@@ -318,6 +318,9 @@ final class Controller {
 			'methods'             => 'GET',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'inbox_stats' ],
+			'args'                => [
+				'account_id' => [ 'type' => 'integer' ],
+			],
 		] );
 
 		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)', [
@@ -675,7 +678,8 @@ final class Controller {
 	public static function inbox_stats( WP_REST_Request $req ) {
 		$cid = self::require_customer();
 		if ( is_wp_error( $cid ) ) { return $cid; }
-		return new WP_REST_Response( [ 'ok' => true, 'stats' => ImapMessage::stats_for_customer( $cid ) ], 200 );
+		$aid = (int) $req->get_param( 'account_id' );
+		return new WP_REST_Response( [ 'ok' => true, 'stats' => ImapMessage::stats_for_customer( $cid, $aid ) ], 200 );
 	}
 
 	public static function inbox_get( WP_REST_Request $req ) {
