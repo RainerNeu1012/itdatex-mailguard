@@ -13,7 +13,7 @@ set -euo pipefail
 WP_DIR="/var/www/wp.itdatex.support/html"
 ASSET_DIR="/opt/itdatex-plugins/itdatex-mailguard/branding"
 PLUGIN_SLUG="itdatex-mailguard"
-VERSION="0.8.1"
+VERSION="0.8.2"
 
 PRICE_CENTS="4900"             # 49 EUR / Monat
 BILLING_MODE="subscription"
@@ -62,6 +62,11 @@ HTML
 )
 
 CHANGELOG=$(cat <<'CL'
+= 0.8.2 — Blockieren-Dialog fängt auch tote HTTP-Endpoints ab =
+* CHANGE: Der in 0.7.2 eingeführte "Sender blockieren"-Failsafe für tote Newsletter-Endpoints erkennt jetzt auch permanente HTTP-Fehler (404 Kampagne weg, 405 Method Not Allowed, 410 gone, 400/401/403 Token abgelaufen) — nicht mehr nur reine DNS-Ausfälle. Damit fängt der Dialog Fälle wie CM.com-Bulkmail-Kampagnen ab, deren URL nach Ablauf HTTP 404 liefert.
+* CHANGE: 5xx-Antworten und 429 (Rate-Limit) lösen den Blockieren-Dialog absichtlich NICHT aus — dort kann ein späterer Retry noch klappen.
+* CHANGE: Der Dialog-Text unterscheidet jetzt zwischen DNS-tot ("Adressen sind im DNS nicht mehr erreichbar") und HTTP-tot ("Abmelde-URL antwortet dauerhaft mit einem Fehler, Kampagne abgelaufen oder Endpoint zurückgezogen").
+
 = 0.8.1 — Postfach-Tabs in Newsletter- und Aktionen-Ansicht =
 * NEU: Die in 0.8.0 eingeführten Postfach-Tabs sind jetzt auch in der Newsletter-Ansicht (Abos + Historie) und im Aktionen-Log verfügbar — Absender, Abmelde-Historie und Quarantäne-Aktionen werden nicht mehr aus mehreren Postfächern in einer Liste vermischt.
 * CHANGE: Die Postfach-Auswahl ist über Inbox, Newsletter und Aktionen synchronisiert. Ein Wechsel in einer Ansicht wird beim Wechsel in die nächste beibehalten (localStorage-basiert).

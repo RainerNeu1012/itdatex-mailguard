@@ -306,11 +306,12 @@ function SenderList({ filter, setFilter, onReload }) {
       if (body.needs_manual && manualUrl) {
         window.open(manualUrl, '_blank', 'noopener');
       } else if (body.reason === 'endpoints_dead') {
+        const cause = body.dead_cause === 'http'
+          ? 'Die Abmelde-URL antwortet dauerhaft mit einem Fehler (Kampagne abgelaufen oder Endpoint zurückgezogen).'
+          : 'Die Abmelde-Adressen sind im DNS nicht mehr erreichbar.';
         if (window.confirm(
-          `Absender ${from_addr} hat die Newsletter-Abmelde-Adressen abgeschaltet ` +
-          `(kein DNS-Eintrag mehr für die List-Unsubscribe-Ziele).\n\n` +
-          `Weder ein One-Click-Abmelden noch die mailto-Adresse funktionieren. Direkt blockieren?\n\n` +
-          `Es wird eine Blacklist-Regel angelegt; bestehende Mails bleiben unverändert.`
+          `Absender ${from_addr} lässt sich nicht mehr regulär abmelden.\n\n${cause}\n\n` +
+          `Direkt blockieren? Es wird eine Blacklist-Regel angelegt; bestehende Mails bleiben unverändert.`
         )) {
           const { body: b2, status: s2 } = await apiPost('inbox/senders/block', { from_addr });
           if (s2 !== 200 || !b2.ok)     alert('Blockieren fehlgeschlagen: ' + (b2.error || s2));
@@ -532,11 +533,12 @@ function useRowHandlers(busy, setBusy, reload) {
             if (body.needs_manual && manualUrl) {
               window.open(manualUrl, '_blank', 'noopener');
             } else if (body.reason === 'endpoints_dead' && m.from_addr) {
+              const cause = body.dead_cause === 'http'
+                ? 'Die Abmelde-URL antwortet dauerhaft mit einem Fehler (Kampagne abgelaufen oder Endpoint zurückgezogen).'
+                : 'Die Abmelde-Adressen sind im DNS nicht mehr erreichbar.';
               if (window.confirm(
-                `Absender ${m.from_addr} hat die Newsletter-Abmelde-Adressen abgeschaltet ` +
-                `(kein DNS-Eintrag mehr für die List-Unsubscribe-Ziele).\n\n` +
-                `Weder ein One-Click-Abmelden noch die mailto-Adresse funktionieren. Direkt blockieren?\n\n` +
-                `Es wird eine Blacklist-Regel angelegt; bestehende Mails bleiben unverändert.`
+                `Absender ${m.from_addr} lässt sich nicht mehr regulär abmelden.\n\n${cause}\n\n` +
+                `Direkt blockieren? Es wird eine Blacklist-Regel angelegt; bestehende Mails bleiben unverändert.`
               )) {
                 const { body: b2, status: s2 } = await apiPost('inbox/senders/block', { from_addr: m.from_addr });
                 if (s2 !== 200 || !b2.ok)     alert('Blockieren fehlgeschlagen: ' + (b2.error || s2));

@@ -143,22 +143,29 @@ final class UnsubService {
 			'http_code' => $last_status,
 			'attempts'  => $attempts,
 		];
-		if ( self::attempts_all_dns_dead( $attempts ) ) {
-			$out['reason'] = 'endpoints_dead';
-			$out['detail'] = 'Absender hat die Newsletter-Abmelde-Endpoints stillgelegt (kein DNS-Eintrag mehr). Direkt-Blockieren empfohlen.';
+		$deadCause = self::attempts_all_permanently_dead( $attempts );
+		if ( $deadCause !== null ) {
+			$out['reason']  = 'endpoints_dead';
+			$out['detail']  = $deadCause === 'dns'
+				? 'Absender hat die Newsletter-Abmelde-Endpoints stillgelegt (kein DNS-Eintrag mehr). Direkt-Blockieren empfohlen.'
+				: 'Newsletter-Abmelde-Endpoint antwortet dauerhaft mit Fehler (Kampagnen-URL abgelaufen). Direkt-Blockieren empfohlen.';
+			$out['dead_cause'] = $deadCause;
 		}
 		return $out;
 	}
 
 	/**
-	 * Liefert true, wenn ALLE Unsub-Versuche an DNS-Aufloesung gescheitert sind —
-	 * typischer Fall: der Newsletter-Provider wurde vor Jahren gewechselt und die
-	 * List-Unsubscribe-Subdomains sind aus dem DNS entfernt worden. Kein User
-	 * kann sich in dem Zustand noch abmelden; Blockieren ist die einzige Option.
+	 * Liefert 'dns' | 'http' | null. Kein null heisst: alle Unsub-Versuche sind
+	 * gescheitert und keiner koennte durch spaeteres Nachladen noch klappen —
+	 * entweder war der Ziel-Host im DNS gar nicht mehr auffindbar, oder der
+	 * Endpoint antwortete mit einem permanenten HTTP-Fehler (404 Kampagne weg,
+	 * 405 Methode nicht erlaubt, 410 gone, 400/401/403 Token abgelaufen).
+	 *
+	 * 5xx und 429 gelten NICHT als permanent — dort koennte ein Retry helfen.
 	 */
-	private static function attempts_all_dns_dead( array $attempts ) : bool {
-		if ( ! $attempts ) { return false; }
-		$patterns = [
+	private static function attempts_all_permanently_dead( array $attempts ) : ?string {
+		if ( ! $attempts ) { return null; }
+		$dns_patterns = [
 			'name or service not known',
 			'name service error',
 			'host or domain name not found',
@@ -168,16 +175,37 @@ final class UnsubService {
 			'nxdomain',
 			'nodename nor servname',
 		];
+		$http_dead_codes = [ 400, 401, 403, 404, 405, 410 ];
+		// Text-Signale fuer HTTP-tote Endpunkte, falls die numerische http_status
+		// nicht durchgereicht wurde (z.B. wenn der Client GET-Fallback macht und
+		// nur den kombinierten Fehler ins detail schreibt).
+		$http_dead_text = [
+			'http 400', 'http 401', 'http 403', 'http 404', 'http 405', 'http 410',
+			'not found', 'method not allowed', 'gone',
+		];
+
+		$saw_dns  = false;
+		$saw_http = false;
 		foreach ( $attempts as $a ) {
-			$detail = strtolower( (string) ( $a['detail'] ?? $a['error'] ?? '' ) );
-			if ( $detail === '' ) { return false; }
-			$matched = false;
-			foreach ( $patterns as $p ) {
-				if ( str_contains( $detail, $p ) ) { $matched = true; break; }
-			}
-			if ( ! $matched ) { return false; }
+			$detail  = strtolower( (string) ( $a['detail'] ?? $a['error'] ?? '' ) );
+			$status  = isset( $a['http_status'] ) ? (int) $a['http_status'] : 0;
+			$is_dns  = $detail !== '' && self::any_substr( $detail, $dns_patterns );
+			$is_http = ( $status > 0 && in_array( $status, $http_dead_codes, true ) )
+				|| ( $detail !== '' && self::any_substr( $detail, $http_dead_text ) );
+			if ( ! $is_dns && ! $is_http ) { return null; }
+			if ( $is_dns )  { $saw_dns  = true; }
+			if ( $is_http ) { $saw_http = true; }
 		}
-		return true;
+		// Wenn beide Signale gemischt vorkommen: als "http" reporten — das ist
+		// die haeufigere Ursache und der Text passt fuer den User.
+		return $saw_http ? 'http' : ( $saw_dns ? 'dns' : null );
+	}
+
+	private static function any_substr( string $haystack, array $needles ) : bool {
+		foreach ( $needles as $n ) {
+			if ( str_contains( $haystack, $n ) ) { return true; }
+		}
+		return false;
 	}
 
 	public static function status_refresh( int $unsub_id, int $customer_id ) : array {
