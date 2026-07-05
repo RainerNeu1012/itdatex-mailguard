@@ -9,9 +9,10 @@ namespace Itdatex\Mailguard\Imap\Autoconfig;
  * Reihenfolge:
  *   1. ProviderRegistry        (offline, high)    — Top-Provider hardcoded
  *   2. MozillaAutoconfig       (HTTP, high)       — Thunderbird ISPDB
- *   3. MicrosoftAutodiscover   (HTTP+XML, medium) — Custom-Domains auf MS 365
- *   4. SrvDiscovery            (DNS, medium)      — RFC 6186 SRV-Records
- *   5. LlmDiscovery            (HTTPS, low)       — GLM-5.2 in der Cloud
+ *   3. AppleIcloudDetector     (DNS-MX, high)     — iCloud+ Custom-Domains
+ *   4. MicrosoftAutodiscover   (HTTP+XML, medium) — Custom-Domains auf MS 365
+ *   5. SrvDiscovery            (DNS, medium)      — RFC 6186 SRV-Records
+ *   6. LlmDiscovery            (HTTPS, low)       — GLM-5.2 in der Cloud
  *
  * Erstes nicht-leeres Match gewinnt. Wenn alles fehlschlägt → null.
  *
@@ -41,15 +42,19 @@ final class Resolver {
 		$hit = MozillaAutoconfig::lookup( $domain );
 		if ( $hit ) { return $hit; }
 
-		// 3. Microsoft Autodiscover (mit echter Email — manche Endpoints verlangen das)
+		// 3. Apple iCloud+ Custom Domain (DNS-MX)
+		$hit = AppleIcloudDetector::lookup( $domain );
+		if ( $hit ) { return $hit; }
+
+		// 4. Microsoft Autodiscover (mit echter Email — manche Endpoints verlangen das)
 		$hit = MicrosoftAutodiscover::lookup( $email );
 		if ( $hit ) { return $hit; }
 
-		// 4. DNS SRV
+		// 5. DNS SRV
 		$hit = SrvDiscovery::lookup( $domain );
 		if ( $hit ) { return $hit; }
 
-		// 5. LLM-Discovery (nur Domain, kein Mail-Inhalt)
+		// 6. LLM-Discovery (nur Domain, kein Mail-Inhalt)
 		$hit = LlmDiscovery::lookup( $domain );
 		if ( $hit ) { return $hit; }
 

@@ -3,7 +3,9 @@ declare( strict_types = 1 );
 
 namespace Itdatex\Mailguard\Rest;
 
+use Itdatex\Mailguard\Customer\ApiToken;
 use Itdatex\Mailguard\Customer\Auth;
+use Itdatex\Mailguard\Notify\Device as PushDevice;
 use Itdatex\Mailguard\Imap\Account as ImapAccount;
 use Itdatex\Mailguard\Imap\Action as ImapAction;
 use Itdatex\Mailguard\Imap\Attachment as ImapAttachment;
@@ -13,6 +15,7 @@ use Itdatex\Mailguard\Imap\Folder as ImapFolder;
 use Itdatex\Mailguard\Imap\ImapClient;
 use Itdatex\Mailguard\Imap\Message as ImapMessage;
 use Itdatex\Mailguard\Imap\PullService;
+use Itdatex\Mailguard\Imap\SenderIndex;
 use Itdatex\Mailguard\Imap\QuarantineService;
 use Itdatex\Mailguard\Oauth\GoogleClient;
 use Itdatex\Mailguard\Oauth\MicrosoftClient;
@@ -79,6 +82,55 @@ final class Controller {
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'me_cloud_consent' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/mobile/login', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'mobile_login' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/mobile/refresh', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'mobile_refresh' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/mobile/logout', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'mobile_logout' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/tokens', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_tokens_list' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/tokens/(?P<id>\d+)', [
+			'methods'             => 'DELETE',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_tokens_revoke' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/push-devices', [
+			[
+				'methods'             => 'GET',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'me_push_devices_list' ],
+			],
+			[
+				'methods'             => 'POST',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'me_push_devices_upsert' ],
+			],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/push-devices/(?P<id>\d+)', [
+			'methods'             => 'DELETE',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_push_devices_delete' ],
 		] );
 
 		register_rest_route( self::NAMESPACE, '/accounts', [
@@ -224,8 +276,41 @@ final class Controller {
 				'account_id' => [ 'type' => 'integer' ],
 				'unsub_only' => [ 'type' => 'integer' ],
 				'q'          => [ 'type' => 'string' ],
+				'from_addr'  => [ 'type' => 'string' ],
 				'page'       => [ 'type' => 'integer', 'default' => 1 ],
 				'per_page'   => [ 'type' => 'integer', 'default' => 25 ],
+			],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/inbox/senders/purge', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_senders_purge' ],
+			'args'                => [
+				'from_addr' => [ 'type' => 'string', 'required' => true ],
+			],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/inbox/senders/block', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_senders_block' ],
+			'args'                => [
+				'from_addr' => [ 'type' => 'string', 'required' => true ],
+			],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/inbox/senders', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_senders' ],
+			'args'                => [
+				'account_id' => [ 'type' => 'integer' ],
+				'unsub_only' => [ 'type' => 'integer' ],
+				'verdict'    => [ 'type' => 'string' ],
+				'q'          => [ 'type' => 'string' ],
+				'page'       => [ 'type' => 'integer', 'default' => 1 ],
+				'per_page'   => [ 'type' => 'integer', 'default' => 50 ],
 			],
 		] );
 
@@ -276,6 +361,12 @@ final class Controller {
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'inbox_quarantine' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/purge', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_purge' ],
 		] );
 
 		register_rest_route( self::NAMESPACE, '/actions', [
@@ -412,11 +503,20 @@ final class Controller {
 		if ( $err ) { return $err; }
 		$id = ImapAccount::create( $cid, $json );
 		if ( ! $id ) { return new WP_Error( 'create_failed', __( 'Anlegen fehlgeschlagen.', 'itdatex-mailguard' ), [ 'status' => 500 ] ); }
-		// Default-Folder anlegen: aus dem POST-Feld 'folder' falls vorhanden, sonst INBOX
-		$default_folder = trim( (string) ( $json['folder'] ?? '' ) ) ?: 'INBOX';
-		ImapFolder::create( $id, $cid, $default_folder );
+
 		$row = ImapAccount::find_for_customer( $id, $cid );
-		return new WP_REST_Response( [ 'ok' => true, 'item' => ImapAccount::public_view( $row ) ], 201 );
+
+		// Alle vorhandenen IMAP-Folder als aktive Pull-Folder mit uebernehmen.
+		// Fallback: wenn die IMAP-LIST fehlschlaegt (z.B. bei OAuth-Refresh-Delay),
+		// legen wir mindestens den vom User angegebenen Default-Folder / INBOX an,
+		// damit der User nicht mit einem leeren Folder-Set daneben steht.
+		$sync = ImapFolder::sync_from_imap( $row, $cid );
+		if ( empty( $sync['ok'] ) || (int) ( $sync['added'] ?? 0 ) === 0 && ImapFolder::list_for_account( $id, $cid ) === [] ) {
+			$default_folder = trim( (string) ( $json['folder'] ?? '' ) ) ?: 'INBOX';
+			ImapFolder::create( $id, $cid, $default_folder );
+		}
+
+		return new WP_REST_Response( [ 'ok' => true, 'item' => ImapAccount::public_view( $row ), 'folder_sync' => $sync ], 201 );
 	}
 
 	/**
@@ -519,10 +619,55 @@ final class Controller {
 			'unsub_only' => (int) $req->get_param( 'unsub_only' ),
 			'verdict'    => trim( (string) $req->get_param( 'verdict' ) ),
 			'q'          => trim( (string) $req->get_param( 'q' ) ),
+			'from_addr'  => trim( (string) $req->get_param( 'from_addr' ) ),
 		];
 		$page     = (int) $req->get_param( 'page' );
 		$per_page = (int) $req->get_param( 'per_page' );
 		$data = ImapMessage::list_for_customer( $cid, $filter, $page, $per_page );
+		$data['ok'] = true;
+		return new WP_REST_Response( $data, 200 );
+	}
+
+	public static function inbox_senders_purge( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json      = (array) $req->get_json_params();
+		$from_addr = trim( (string) ( $json['from_addr'] ?? '' ) );
+		if ( $from_addr === '' ) {
+			return new WP_Error( 'missing_from_addr', __( 'from_addr fehlt.', 'itdatex-mailguard' ), [ 'status' => 400 ] );
+		}
+		$res = PurgeService::hard_purge_sender( $cid, $from_addr );
+		$status = ! empty( $res['ok'] ) ? 200 : ( ( $res['error'] ?? '' ) === 'bad_from_addr' ? 400 : 502 );
+		return new WP_REST_Response( $res, $status );
+	}
+
+	public static function inbox_senders_block( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json      = (array) $req->get_json_params();
+		$from_addr = trim( (string) ( $json['from_addr'] ?? '' ) );
+		if ( $from_addr === '' ) {
+			return new WP_Error( 'missing_from_addr', __( 'from_addr fehlt.', 'itdatex-mailguard' ), [ 'status' => 400 ] );
+		}
+		$note = sanitize_text_field( (string) ( $json['note'] ?? 'Blockiert aus Portal' ) );
+		$res  = PurgeService::block_sender( $cid, $from_addr, $note );
+		$res['from_addr'] = strtolower( $from_addr );
+		$status = ! empty( $res['ok'] ) ? 200 : ( ( $res['error'] ?? '' ) === 'bad_from_addr' ? 400 : 502 );
+		return new WP_REST_Response( $res, $status );
+	}
+
+	public static function inbox_senders( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$filter = [
+			'account_id' => (int) $req->get_param( 'account_id' ),
+			'unsub_only' => (int) $req->get_param( 'unsub_only' ),
+			'verdict'    => trim( (string) $req->get_param( 'verdict' ) ),
+			'q'          => trim( (string) $req->get_param( 'q' ) ),
+		];
+		$page     = (int) $req->get_param( 'page' );
+		$per_page = (int) $req->get_param( 'per_page' );
+		$data = SenderIndex::list_for_customer( $cid, $filter, $page, $per_page );
 		$data['ok'] = true;
 		return new WP_REST_Response( $data, 200 );
 	}
@@ -688,6 +833,21 @@ final class Controller {
 				'already_quarantined'       => 409,
 				'connect_failed', 'create_folder_failed', 'move_failed' => 502,
 				default                     => 500,
+			};
+		return new WP_REST_Response( $res, $status );
+	}
+
+	public static function inbox_purge( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$res = QuarantineService::purge_message( (int) $req['id'], $cid );
+		$status = ! empty( $res['ok'] )
+			? 200
+			: match ( $res['error'] ?? '' ) {
+				'not_found', 'account_gone'                                    => 404,
+				'connect_failed', 'find_target_failed', 'expunge_failed',
+				'target_uid_unknown'                                           => 502,
+				default                                                        => 500,
 			};
 		return new WP_REST_Response( $res, $status );
 	}
@@ -922,16 +1082,6 @@ final class Controller {
 		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
 	}
 
-	public static function inbox_attachments( WP_REST_Request $req ) {
-		$cid = self::require_customer();
-		if ( is_wp_error( $cid ) ) { return $cid; }
-		$id = (int) $req['id'];
-		if ( ! ImapMessage::find_for_customer( $id, $cid ) ) {
-			return new WP_Error( 'not_found', '', [ 'status' => 404 ] );
-		}
-		return new WP_REST_Response( [ 'ok' => true, 'items' => ImapAttachment::list_for_message( $id, $cid ) ], 200 );
-	}
-
 	public static function inbox_rescan( WP_REST_Request $req ) {
 		$cid = self::require_customer();
 		if ( is_wp_error( $cid ) ) { return $cid; }
@@ -943,6 +1093,16 @@ final class Controller {
 		$res = ScanService::scan_message( $id );
 		$row = ImapMessage::find_for_customer( $id, $cid );
 		return new WP_REST_Response( [ 'ok' => $res['ok'] ?? false, 'item' => $row ? ImapMessage::public_view( $row ) : null ], 200 );
+	}
+
+	public static function inbox_attachments( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req['id'];
+		if ( ! ImapMessage::find_for_customer( $id, $cid ) ) {
+			return new WP_Error( 'not_found', '', [ 'status' => 404 ] );
+		}
+		return new WP_REST_Response( [ 'ok' => true, 'items' => ImapAttachment::list_for_message( $id, $cid ) ], 200 );
 	}
 
 	private static function validate_account_payload( array $json, bool $is_create ) {
@@ -1025,6 +1185,111 @@ final class Controller {
 			return new WP_REST_Response( [ 'ok' => false, 'error' => 'not_authenticated' ], 401 );
 		}
 		return new WP_REST_Response( [ 'ok' => true, 'customer' => $me ], 200 );
+	}
+
+	/**
+	 * Bearer-Token-Login fuer die mobile App. Verwendet dieselbe Passwort-
+	 * Validierung wie Auth::login(); zusaetzlich zur Cookie-Session (harmlos
+	 * fuer Nicht-Browser-Clients) wird ein DB-Backed Access/Refresh-Token-Paar
+	 * ausgegeben. Client speichert die Tokens in Preferences/Keychain.
+	 */
+	public static function mobile_login( WP_REST_Request $req ) {
+		$json     = (array) $req->get_json_params();
+		$email    = (string) ( $json['email'] ?? '' );
+		$password = (string) ( $json['password'] ?? '' );
+		$platform = (string) ( $json['platform'] ?? 'unknown' );
+		$name     = (string) ( $json['device_name'] ?? '' );
+
+		$res = Auth::login( $email, $password );
+		if ( empty( $res['ok'] ) ) {
+			return self::respond( $res );
+		}
+		$cid  = (int) $res['customer_id'];
+		$pair = ApiToken::issue( $cid, $platform, $name );
+		$me   = Auth::current();
+
+		return new WP_REST_Response( [
+			'ok'                 => true,
+			'token_id'           => $pair['token_id'],
+			'access_token'       => $pair['access_token'],
+			'refresh_token'      => $pair['refresh_token'],
+			'access_expires_at'  => gmdate( 'c', $pair['access_expires_at'] ),
+			'refresh_expires_at' => gmdate( 'c', $pair['refresh_expires_at'] ),
+			'customer'           => $me,
+		], 200 );
+	}
+
+	public static function mobile_refresh( WP_REST_Request $req ) {
+		$json  = (array) $req->get_json_params();
+		$token = (string) ( $json['refresh_token'] ?? '' );
+		if ( $token === '' ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'missing_refresh_token' ], 400 );
+		}
+		$pair = ApiToken::refresh( $token );
+		if ( ! $pair ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'invalid_refresh_token' ], 401 );
+		}
+		return new WP_REST_Response( [
+			'ok'                 => true,
+			'token_id'           => $pair['token_id'],
+			'access_token'       => $pair['access_token'],
+			'refresh_token'      => $pair['refresh_token'],
+			'access_expires_at'  => gmdate( 'c', $pair['access_expires_at'] ),
+			'refresh_expires_at' => gmdate( 'c', $pair['refresh_expires_at'] ),
+		], 200 );
+	}
+
+	public static function mobile_logout( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		// Der Bearer-Token in der aktuellen Request-Header wird revoked.
+		$hdr = $_SERVER['HTTP_AUTHORIZATION'] ?? ( $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '' );
+		if ( stripos( (string) $hdr, 'Bearer ' ) === 0 ) {
+			ApiToken::revoke_by_hash( trim( substr( (string) $hdr, 7 ) ), $cid );
+		}
+		return new WP_REST_Response( [ 'ok' => true ], 200 );
+	}
+
+	public static function me_tokens_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		return new WP_REST_Response( [ 'ok' => true, 'items' => ApiToken::list_for_customer( $cid ) ], 200 );
+	}
+
+	public static function me_tokens_revoke( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		ApiToken::revoke( (int) $req['id'], $cid );
+		return new WP_REST_Response( [ 'ok' => true ], 200 );
+	}
+
+	public static function me_push_devices_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		return new WP_REST_Response( [ 'ok' => true, 'items' => PushDevice::list_for_customer( $cid ) ], 200 );
+	}
+
+	public static function me_push_devices_upsert( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json = (array) $req->get_json_params();
+		$id   = PushDevice::upsert( $cid, [
+			'fcm_token'    => (string) ( $json['fcm_token'] ?? '' ),
+			'platform'     => (string) ( $json['platform'] ?? 'unknown' ),
+			'device_label' => (string) ( $json['device_label'] ?? '' ),
+			'events_mask'  => isset( $json['events_mask'] ) ? (int) $json['events_mask'] : 15,
+		] );
+		if ( ! $id ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'missing_fcm_token' ], 400 );
+		}
+		return new WP_REST_Response( [ 'ok' => true, 'id' => $id ], 200 );
+	}
+
+	public static function me_push_devices_delete( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		PushDevice::delete( (int) $req['id'], $cid );
+		return new WP_REST_Response( [ 'ok' => true ], 200 );
 	}
 
 	/**

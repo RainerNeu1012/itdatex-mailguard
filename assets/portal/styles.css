@@ -31,7 +31,16 @@ html, body {
   min-height: 100vh;
   line-height: 1.6;
   font-size: 1rem;
+  /* Verhindert horizontales Scrollen, wenn eine Zelle doch mal rausrutscht. */
+  overflow-x: hidden;
 }
+/* Alle Text-Container: lange Woerter/URLs innerhalb umbrechen statt Container sprengen. */
+p, li, dd, dt, td, th, div, span, strong, em, code, a {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+code { word-break: break-all; }
+img, svg, video { max-width: 100%; height: auto; }
 
 a { color: var(--mg-accent-hover); text-decoration: none; }
 a:hover { color: var(--mg-accent); }
@@ -79,9 +88,9 @@ a:hover { color: var(--mg-accent); }
   text-decoration: none;
   color: var(--mg-fg);
   /* Nie schrumpfen — die Nav rechts darf umbrechen (flex-wrap), aber die Brand
-     bleibt in einem Stück. Ohne flex-shrink:0 wird der Brand-Text bei breiter
-     Nav gequetscht und (falls global overflow-wrap:anywhere aktiv ist) mitten
-     im Wort umgebrochen. */
+     bleibt in einem Stück. Ohne flex-shrink:0 quetscht eine breite Nav den
+     Brand-Text auf zeichenweise Umbrueche (globales overflow-wrap:anywhere
+     erlaubt Break MITTEN in Woertern). */
   flex-shrink: 0;
 }
 .mg-brand:hover { color: var(--mg-fg); }
@@ -210,6 +219,11 @@ a:hover { color: var(--mg-accent); }
   border-radius: 10px;
   padding: 1.75rem;
   margin-bottom: 1.25rem;
+  /* Card darf nie breiter werden als der Viewport-Rahmen. Kombiniert mit
+     min-width:0 auf inneren Flex-Children verhindert das horizontales
+     Ueberlaufen von langen Adressen/URLs. */
+  max-width: 100%;
+  min-width: 0;
 }
 .mg-card h1, .mg-card h2, .mg-card h3 {
   font-family: var(--mg-display);
@@ -312,7 +326,10 @@ a:hover { color: var(--mg-accent); }
 
 .mg-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  /* minmax(min(280px, 100%), 1fr) verhindert Overflow auf < 320px-Screens:
+     die Grid-Column wird nie breiter als der Container, aber trotzdem 280px
+     wo Platz ist. */
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: 1rem;
 }
 .mg-card--feature h3 { font-size: 1.25rem; }
@@ -341,10 +358,61 @@ a:hover { color: var(--mg-accent); }
 .mg-err-inline  { color: var(--mg-err); }
 
 /* ---- Inbox / Stats ---- */
+.mg-inbox__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+
 .mg-stats { display: flex; gap: 2rem; align-items: center; flex-wrap: wrap; }
 .mg-stat  { text-align: center; min-width: 90px; }
 .mg-stat__value { font-family: var(--mg-display); font-size: 2.2rem; letter-spacing: 0.02em; line-height: 1; color: var(--mg-fg); }
 .mg-stat__label { font-family: var(--mg-mono); font-size: 1rem; color: var(--mg-subtle); letter-spacing: 0.06em; text-transform: uppercase; margin-top: 0.25rem; }
+
+/* Toolbar: Tabs + Filter-Toggle + Filter-Sheet */
+.mg-toolbar { padding-bottom: 1.25rem; }
+.mg-tabs {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.mg-tab {
+  background: transparent;
+  border: 1px solid var(--mg-border);
+  color: var(--mg-muted);
+  padding: 0.55rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--mg-mono);
+  font-size: 1rem;
+  letter-spacing: 0.03em;
+  min-height: 44px;
+}
+.mg-tab:hover { color: var(--mg-fg); border-color: var(--mg-accent); }
+.mg-tab--active {
+  background: var(--mg-accent);
+  border-color: var(--mg-accent);
+  color: #fff;
+}
+.mg-tab--active:hover { color: #fff; }
+
+.mg-filter-toggle {
+  margin-left: auto;
+  display: none; /* Desktop: Filter-Sheet ist immer offen, Toggle unsichtbar */
+}
+.mg-filter-sheet {
+  overflow: hidden;
+  max-height: 400px;
+  transition: max-height 0.25s ease;
+  margin-top: 1rem;
+}
+.mg-form__checkbox { flex-basis: 100%; display: block; }
+
+.mg-btn--ghost {
+  background: transparent;
+  border-color: var(--mg-border);
+  color: var(--mg-muted);
+}
+.mg-btn--ghost:hover { color: var(--mg-fg); border-color: var(--mg-accent); }
+
+.mg-pager { text-align: center; }
 
 .mg-mail {
   background: var(--mg-surface);
@@ -355,20 +423,22 @@ a:hover { color: var(--mg-accent); }
 }
 .mg-mail__head {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) 2fr auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
   gap: 0.5rem 1rem;
   align-items: baseline;
   cursor: pointer;
 }
 .mg-mail__head:hover { color: var(--mg-fg); }
+.mg-mail__from { min-width: 0; overflow-wrap: anywhere; }
 .mg-mail__subject {
+  min-width: 0;
   font-size: 1rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--mg-fg);
 }
-.mg-mail__meta { display: flex; gap: 0.5rem; align-items: center; color: var(--mg-muted); }
+.mg-mail__meta { display: flex; gap: 0.5rem; align-items: center; color: var(--mg-muted); flex-wrap: wrap; min-width: 0; }
 .mg-mail__body {
   margin-top: 0.85rem;
   padding-top: 0.85rem;
@@ -376,9 +446,157 @@ a:hover { color: var(--mg-accent); }
   font-size: 1rem;
   color: var(--mg-muted);
 }
+.mg-mail__actions {
+  margin-top: 0.85rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Sender-Gruppierung ("Nach Absender"-Tab) */
+.mg-sender {
+  padding: 1rem 1.25rem;
+}
+.mg-sender__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 2fr) auto;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  cursor: pointer;
+  min-height: 44px;
+}
+.mg-sender__head:hover .mg-sender__chevron { color: var(--mg-fg); }
+.mg-sender__from { min-width: 0; }
+.mg-sender__from strong { color: var(--mg-fg); overflow-wrap: anywhere; }
+.mg-sender__subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mg-muted);
+  font-size: 1rem;
+}
+.mg-sender__meta {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  color: var(--mg-muted);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.mg-sender__count {
+  display: inline-block;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 1rem;
+  font-family: var(--mg-mono);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  background: rgba(47, 129, 247, 0.15);
+  color: var(--mg-accent-hover);
+}
+.mg-sender__chevron {
+  color: var(--mg-subtle);
+  font-size: 1.1rem;
+  transition: transform 0.15s ease;
+  margin-left: 0.35rem;
+}
+.mg-sender__chevron--open { transform: rotate(180deg); color: var(--mg-fg); }
+.mg-sender__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.85rem;
+}
+.mg-sender__list {
+  border-top: 1px solid var(--mg-border);
+  padding-top: 0.85rem;
+  margin-top: 0.85rem;
+}
+.mg-sender__list .mg-mail {
+  background: var(--mg-bg);
+}
+.mg-sender--danger { border-color: var(--mg-err); }
 
 @media (max-width: 640px) {
-  .mg-mail__head { grid-template-columns: 1fr; }
+  .mg-shell { padding: 0 1rem 3rem; }
+  .mg-header { margin: 0 -1rem 1rem; padding: 0.7rem 1rem; }
+
+  .mg-mail__head { grid-template-columns: 1fr; padding: 0.5rem 0; min-height: 44px; }
+  .mg-mail__meta { gap: 0.35rem; }
+  /* Subject darf auf Mobile umbrechen (max 2 Zeilen), statt truncate — bessere Lesbarkeit. */
+  .mg-mail__subject {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Kompaktere Karten auf Mobile — ~30% weniger Vertikalraum */
+  .mg-card { padding: 1rem; margin-bottom: 0.85rem; }
+  .mg-inbox__head h2 { font-size: 1.3rem; }
+  .mg-card h1 { font-size: clamp(1.5rem, 6vw, 2rem); }
+  .mg-card h2 { font-size: 1.35rem; }
+  .mg-card h3 { font-size: 1.1rem; }
+
+  /* Body-Preview + Reasons: lange URLs sauber umbrechen. */
+  .mg-mail__body,
+  .mg-mail__body p,
+  .mg-reasons li,
+  .mg-sender__list { overflow-wrap: anywhere; word-break: normal; }
+  .mg-mail__body p { white-space: pre-wrap; }
+
+  /* Stats als 3-spaltiges Grid statt breiter Flex */
+  .mg-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+  }
+  .mg-stat { min-width: 0; }
+  .mg-stat__value { font-size: 1.6rem; }
+  .mg-stat__label { font-size: 0.85rem; letter-spacing: 0.04em; }
+
+  /* Filter-Toolbar: Toggle sichtbar, Sheet default zu, öffnet via --open */
+  .mg-filter-toggle { display: inline-flex; }
+  .mg-filter-sheet {
+    max-height: 0;
+    margin-top: 0;
+  }
+  .mg-filter-sheet--open {
+    max-height: 800px;
+    margin-top: 1rem;
+  }
+  .mg-form__row { flex-direction: column; align-items: stretch; }
+  .mg-form__row label { flex: 1 !important; }
+
+  /* Sender-Card auf Mobile 1-spaltig, Meta unten */
+  .mg-sender__head {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  .mg-sender__subject {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .mg-sender__meta { justify-content: flex-start; }
+
+  /* Row-Actions: unter 480px stacken, dazwischen wrappen */
+  .mg-mail__actions .mg-btn { min-height: 44px; }
+
+  /* Header/Brand: darf nicht ueber die Kante gehen. */
+  .mg-brand__name { font-size: clamp(1.15rem, 5.5vw, 1.6rem); }
+  .mg-brand__sub  { font-size: 0.85rem; }
+  .mg-brand__logo { width: 24px; }
+  .mg-nav__email  { overflow-wrap: anywhere; }
+
   .mg-burger { display: flex; }
   /* Post-Login-App-Nav: per Default zugeklappt, öffnet via .mg-nav--open */
   .mg-shell:not(.mg-shell--marketing) .mg-nav {
@@ -397,6 +615,44 @@ a:hover { color: var(--mg-accent); }
     margin: 0.4rem 0 0; padding: 0; border-top: 1px dashed var(--mg-border); padding-top: 0.5rem;
   }
   .mg-header { flex-wrap: wrap; align-items: center; }
+}
+
+/* Tabellen fuer /portal/devices und aehnliche Admin-Ansichten. */
+.mg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1rem;
+}
+.mg-table th, .mg-table td {
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid var(--mg-border);
+  text-align: left;
+  vertical-align: middle;
+}
+.mg-table th {
+  font-family: var(--mg-mono);
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mg-subtle);
+}
+.mg-mono { font-family: var(--mg-mono); font-size: 0.9rem; }
+
+@media (max-width: 480px) {
+  .mg-table th, .mg-table td { padding: 0.4rem 0.35rem; font-size: 0.9rem; }
+  .mg-mail__actions { flex-direction: column; align-items: stretch; }
+  .mg-mail__actions .mg-btn { width: 100%; }
+  .mg-sender__actions .mg-btn { flex: 1 1 auto; min-width: 0; }
+  .mg-stats { grid-template-columns: repeat(2, 1fr); }
+  /* Ganz enger Header: Brand + Burger sollten den Screen nicht sprengen. */
+  .mg-shell { padding: 0 0.75rem 3rem; }
+  .mg-header { margin: 0 -0.75rem 0.85rem; padding: 0.6rem 0.75rem; gap: 0.5rem; }
+  .mg-card { padding: 0.85rem; border-radius: 8px; }
+  .mg-stat__value { font-size: 1.4rem; }
+  .mg-stat__label { font-size: 0.75rem; }
+  /* Tabs auf ganz engem Screen: keine harten min-width, umbrechen erlaubt. */
+  .mg-tabs { gap: 0.3rem; }
+  .mg-tab { padding: 0.5rem 0.75rem; font-size: 0.9rem; }
 }
 
 /* ---- Verdict-Badges + Reasons ---- */
@@ -435,6 +691,17 @@ a:hover { color: var(--mg-accent); }
 .mg-btn--danger:hover {
   background: #d63a31;
   border-color: #d63a31;
+  color: #fff;
+}
+.mg-btn--warn {
+  background: var(--mg-warn);
+  border-color: var(--mg-warn);
+  color: #1a1a1a;
+  font-weight: 600;
+}
+.mg-btn--warn:hover {
+  background: #b8811b;
+  border-color: #b8811b;
   color: #fff;
 }
 
@@ -540,15 +807,23 @@ a:hover { color: var(--mg-accent); }
 }
 .mg-folder-row {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  /* Name: mind. 140px, sonst zerbricht der Grid ihn buchstabenweise (globales overflow-wrap:anywhere).
+     Status: minmax(0,1fr) laesst lange Fehlertexte wrappen, statt horizontal die Namen-Spalte zu fressen.
+     Actions: natuerliche Breite rechts. */
+  grid-template-columns: minmax(140px, max-content) minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.6rem;
   padding: 0.3rem 0;
   border-top: 1px solid rgba(255,255,255,0.04);
 }
 .mg-folder-row:first-of-type { border-top: 0; }
-.mg-folder-name { font-family: var(--mg-mono); }
-.mg-folder-actions { display: flex; gap: 0.3rem; }
+.mg-folder-name {
+  font-family: var(--mg-mono);
+  overflow-wrap: normal;
+  word-break: normal;
+  min-width: 0;
+}
+.mg-folder-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .mg-btn.mg-tiny { padding: 0.2rem 0.55rem; font-size: 0.78em; }
 
 /* Modal-Overlay fuer den Folder-Picker */

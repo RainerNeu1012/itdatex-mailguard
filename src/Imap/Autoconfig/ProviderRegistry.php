@@ -71,7 +71,7 @@ final class ProviderRegistry {
 			// Apple
 			'icloud.com' => [ 'host' => 'imap.mail.me.com', 'port' => 993, 'encryption' => 'ssl', 'note' => 'App-spezifisches Passwort noetig (appleid.apple.com).' ],
 			'me.com'     => [ 'host' => 'imap.mail.me.com', 'port' => 993, 'encryption' => 'ssl', 'note' => 'App-spezifisches Passwort noetig (appleid.apple.com).' ],
-			'mac.com'    => [ 'host' => 'imap.mail.me.com', 'port' => 993, 'encryption' => 'ssl' ],
+			'mac.com'    => [ 'host' => 'imap.mail.me.com', 'port' => 993, 'encryption' => 'ssl', 'note' => 'App-spezifisches Passwort noetig (appleid.apple.com).' ],
 			'privaterelay.appleid.com' => [ 'no_imap' => true, 'note' => 'Apple "Hide My Email" ist read-only und ohne IMAP.' ],
 
 			// FastMail
