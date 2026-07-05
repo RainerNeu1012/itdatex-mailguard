@@ -13,7 +13,7 @@ set -euo pipefail
 WP_DIR="/var/www/wp.itdatex.support/html"
 ASSET_DIR="/opt/itdatex-plugins/itdatex-mailguard/branding"
 PLUGIN_SLUG="itdatex-mailguard"
-VERSION="0.8.0"
+VERSION="0.8.1"
 
 PRICE_CENTS="4900"             # 49 EUR / Monat
 BILLING_MODE="subscription"
@@ -62,6 +62,12 @@ HTML
 )
 
 CHANGELOG=$(cat <<'CL'
+= 0.8.1 — Postfach-Tabs in Newsletter- und Aktionen-Ansicht =
+* NEU: Die in 0.8.0 eingeführten Postfach-Tabs sind jetzt auch in der Newsletter-Ansicht (Abos + Historie) und im Aktionen-Log verfügbar — Absender, Abmelde-Historie und Quarantäne-Aktionen werden nicht mehr aus mehreren Postfächern in einer Liste vermischt.
+* CHANGE: Die Postfach-Auswahl ist über Inbox, Newsletter und Aktionen synchronisiert. Ein Wechsel in einer Ansicht wird beim Wechsel in die nächste beibehalten (localStorage-basiert).
+* CHANGE: Pager in Newsletter-Historie und Aktions-Log springt beim Postfach-Wechsel automatisch auf Seite 1.
+* API: GET /subscriptions, /unsubs und /actions akzeptieren jeweils optional account_id für Per-Postfach-Filter.
+
 = 0.8.0 — Postfach-Tabs in der Inbox =
 * NEU: Wer mehrere Postfächer verbunden hat, sieht in der Inbox ganz oben eine Tab-Leiste — ein Tab pro Postfach. Mails aus verschiedenen Konten werden nicht mehr in einer Liste vermischt.
 * CHANGE: Standardansicht der Inbox zeigt immer nur EIN Postfach. Beim ersten Aufruf wird das erste aktive Konto gewählt; die Wahl wird pro Browser gespeichert und beim nächsten Besuch wiederhergestellt.

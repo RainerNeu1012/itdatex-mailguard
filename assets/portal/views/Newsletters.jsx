@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiPost } from '../api.js';
+import AccountTabs, { useCurrentAccount } from '../components/AccountTabs.jsx';
 
 const STATUS_TONE = {
   unsubscribed: { label: 'abgemeldet', cls: 'mg-pill--ok' },
@@ -12,12 +13,16 @@ const STATUS_TONE = {
 
 export default function Newsletters() {
   const [tab, setTab] = useState('subscriptions');
+  const [accounts, accountId, switchAccount] = useCurrentAccount();
+  const activeAccount = accounts.find((a) => a.id === accountId) || null;
   return (
     <div className="mg-stack">
       <div className="mg-card">
         <h2 style={{ margin: '0 0 0.25rem' }}>Newsletter</h2>
         <p className="mg-muted" style={{ margin: 0 }}>
-          Pro Absender abmelden statt pro Mail — einmal klicken reicht für alle aktuellen und künftigen Nachrichten dieses Senders.
+          {activeAccount
+            ? <>Newsletter aus <strong>{activeAccount.label || activeAccount.host}</strong>. Pro Absender abmelden statt pro Mail — einmal klicken reicht für alle aktuellen und künftigen Nachrichten dieses Senders.</>
+            : 'Pro Absender abmelden statt pro Mail — einmal klicken reicht für alle aktuellen und künftigen Nachrichten dieses Senders.'}
         </p>
         <div className="mg-form__row" style={{ marginTop: '0.75rem', gap: '0.4rem' }}>
           <button
@@ -31,12 +36,14 @@ export default function Newsletters() {
         </div>
       </div>
 
-      {tab === 'subscriptions' ? <Subscriptions /> : <History />}
+      <AccountTabs accounts={accounts} activeId={accountId} onSwitch={switchAccount} />
+
+      {tab === 'subscriptions' ? <Subscriptions accountId={accountId} /> : <History accountId={accountId} />}
     </div>
   );
 }
 
-function Subscriptions() {
+function Subscriptions({ accountId }) {
   const [items, setItems] = useState(null);
   const [busy, setBusy]   = useState({});
   const [error, setError] = useState(null);
@@ -44,11 +51,12 @@ function Subscriptions() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const { status, body } = await apiGet('subscriptions');
+      const qs = accountId ? `?account_id=${accountId}` : '';
+      const { status, body } = await apiGet('subscriptions' + qs);
       if (status >= 400) setError('HTTP ' + status);
       else setItems(body.items);
     } catch (e) { setError(String(e)); }
-  }, []);
+  }, [accountId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -170,21 +178,26 @@ function Subscriptions() {
   );
 }
 
-function History() {
+function History({ accountId }) {
   const [items, setItems]   = useState(null);
   const [busy, setBusy]     = useState({});
   const [error, setError]   = useState(null);
   const [page, setPage]     = useState(1);
   const [total, setTotal]   = useState(0);
 
+  // Beim Postfach-Wechsel: zurueck auf Seite 1, sonst zeigt der Pager unpassende
+  // Seiten fuer das neu gewaehlte Konto.
+  useEffect(() => { setPage(1); }, [accountId]);
+
   const load = useCallback(async () => {
     setError(null);
     try {
-      const { status, body } = await apiGet(`unsubs?page=${page}&per_page=25`);
+      const acc = accountId ? `&account_id=${accountId}` : '';
+      const { status, body } = await apiGet(`unsubs?page=${page}&per_page=25${acc}`);
       if (status >= 400) setError('HTTP ' + status);
       else { setItems(body.items); setTotal(body.total); }
     } catch (e) { setError(String(e)); }
-  }, [page]);
+  }, [page, accountId]);
 
   useEffect(() => { load(); }, [load]);
 

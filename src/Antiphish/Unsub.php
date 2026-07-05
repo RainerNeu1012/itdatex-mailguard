@@ -33,7 +33,7 @@ final class Unsub {
 		return $row ?: null;
 	}
 
-	public static function list_for_customer( int $customer_id, int $page = 1, int $per_page = 25 ) : array {
+	public static function list_for_customer( int $customer_id, int $page = 1, int $per_page = 25, int $account_id = 0 ) : array {
 		global $wpdb;
 		$per_page = max( 1, min( 100, $per_page ) );
 		$page     = max( 1, $page );
@@ -41,17 +41,28 @@ final class Unsub {
 		$t        = self::table();
 		$m        = $wpdb->prefix . Installer::TABLE_MESSAGES;
 
+		// Bei Account-Filter kommen wir per Join an mg_messages.account_id ran —
+		// mg_unsubs selbst kennt kein account_id.
+		$where    = 'u.customer_id = %d';
+		$scope    = $account_id > 0 ? ' AND m.account_id = %d' : '';
+		$rows_args  = $account_id > 0 ? [ $customer_id, $account_id, $per_page, $offset ] : [ $customer_id, $per_page, $offset ];
+		$count_args = $account_id > 0 ? [ $customer_id, $account_id ] : [ $customer_id ];
+
 		$rows = $wpdb->get_results( $wpdb->prepare(
 			"SELECT u.*, m.subject AS msg_subject, m.from_addr AS msg_from_addr, m.from_name AS msg_from_name
 			 FROM {$t} u
 			 LEFT JOIN {$m} m ON m.id = u.message_id
-			 WHERE u.customer_id = %d
+			 WHERE {$where}{$scope}
 			 ORDER BY u.id DESC LIMIT %d OFFSET %d",
-			$customer_id, $per_page, $offset
+			$rows_args
 		), ARRAY_A );
 
 		$total = (int) $wpdb->get_var( $wpdb->prepare(
-			"SELECT COUNT(*) FROM {$t} WHERE customer_id = %d", $customer_id
+			"SELECT COUNT(*)
+			 FROM {$t} u
+			 " . ( $account_id > 0 ? "LEFT JOIN {$m} m ON m.id = u.message_id" : '' ) . "
+			 WHERE {$where}{$scope}",
+			$count_args
 		) );
 
 		return [

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiPost } from '../api.js';
+import AccountTabs, { useCurrentAccount } from '../components/AccountTabs.jsx';
 
 const ACTION_LABEL = {
   quarantine:      { txt: 'In Quarantäne verschoben', icon: '🛡' },
@@ -13,21 +14,28 @@ const STATUS_TONE = {
 };
 
 export default function Actions() {
+  const [accounts, accountId, switchAccount] = useCurrentAccount();
   const [data, setData]     = useState({ items: [], total: 0, per_page: 50 });
   const [page, setPage]     = useState(1);
   const [busy, setBusy]     = useState({});
   const [error, setError]   = useState(null);
   const [loading, setLoad]  = useState(false);
+  const activeAccount = accounts.find((a) => a.id === accountId) || null;
+
+  // Beim Postfach-Wechsel: zurueck auf Seite 1, sonst wuerde der Pager
+  // Seiten fuer den falschen Log zeigen.
+  useEffect(() => { setPage(1); }, [accountId]);
 
   const load = useCallback(async () => {
     setLoad(true); setError(null);
     try {
-      const { status, body } = await apiGet('actions?page=' + page + '&per_page=50');
+      const acc = accountId ? `&account_id=${accountId}` : '';
+      const { status, body } = await apiGet(`actions?page=${page}&per_page=50${acc}`);
       if (status >= 400) setError('HTTP ' + status);
       else setData(body);
     } catch (e) { setError(String(e)); }
     finally { setLoad(false); }
-  }, [page]);
+  }, [page, accountId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -51,11 +59,13 @@ export default function Actions() {
       <div className="mg-card">
         <h2 style={{ margin: '0 0 0.25rem' }}>Aktionen</h2>
         <p className="mg-muted" style={{ margin: 0 }}>
-          Audit-Log aller Quarantäne-Verschiebungen. Bis zum jeweiligen Ablauf-Datum
-          kannst du eine Aktion mit einem Klick wieder rückgängig machen — die Mail
-          wandert dann zurück in den Ursprungs-Ordner.
+          {activeAccount
+            ? <>Audit-Log für <strong>{activeAccount.label || activeAccount.host}</strong>. Bis zum jeweiligen Ablauf-Datum kannst du eine Aktion mit einem Klick wieder rückgängig machen — die Mail wandert dann zurück in den Ursprungs-Ordner.</>
+            : 'Audit-Log aller Quarantäne-Verschiebungen. Bis zum jeweiligen Ablauf-Datum kannst du eine Aktion mit einem Klick wieder rückgängig machen — die Mail wandert dann zurück in den Ursprungs-Ordner.'}
         </p>
       </div>
+
+      <AccountTabs accounts={accounts} activeId={accountId} onSwitch={switchAccount} />
 
       {error && <div className="mg-card mg-error">{error}</div>}
       {loading && <div className="mg-card">Lade …</div>}

@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { apiGet, apiPost } from '../api.js';
 import { VerdictBadge, ReasonsList } from '../components/Verdict.jsx';
+import AccountTabs, { loadStoredAccountId, saveStoredAccountId } from '../components/AccountTabs.jsx';
 
-const TAB_STORAGE_KEY     = 'mg_inbox_tab';
-const ACCOUNT_STORAGE_KEY = 'mg_inbox_account_id';
+const TAB_STORAGE_KEY = 'mg_inbox_tab';
 
 function loadTab() {
   try {
@@ -13,13 +13,6 @@ function loadTab() {
 }
 function saveTab(v) {
   try { localStorage.setItem(TAB_STORAGE_KEY, v); } catch { /* ignore */ }
-}
-function loadAccountId() {
-  try { return parseInt(localStorage.getItem(ACCOUNT_STORAGE_KEY) || '0', 10) || 0; }
-  catch { return 0; }
-}
-function saveAccountId(id) {
-  try { localStorage.setItem(ACCOUNT_STORAGE_KEY, String(id || 0)); } catch { /* ignore */ }
 }
 
 const EMPTY_FILTER = { account_id: 0, unsub_only: 0, verdict: '', q: '', page: 1 };
@@ -51,7 +44,7 @@ export default function Inbox() {
   useEffect(() => {
     if (!accounts.length) return;
     if (filter.account_id && accounts.some((a) => a.id === filter.account_id)) return;
-    const stored  = loadAccountId();
+    const stored  = loadStoredAccountId();
     const preferred = stored && accounts.some((a) => a.id === stored) ? stored : (accounts.find((a) => a.status === 'active') || accounts[0]).id;
     setFilter((f) => ({ ...f, account_id: preferred, page: 1 }));
   }, [accounts]);
@@ -61,7 +54,7 @@ export default function Inbox() {
 
   const switchAccount = (id) => {
     if (id === filter.account_id) return;
-    saveAccountId(id);
+    saveStoredAccountId(id);
     setFilter((f) => ({ ...f, account_id: id, page: 1 }));
   };
 
@@ -110,23 +103,7 @@ export default function Inbox() {
         </div>
       </div>
 
-      {accounts.length >= 2 && (
-        <div className="mg-card mg-account-tabs" role="tablist" aria-label="Postfach auswaehlen">
-          {accounts.map((a) => (
-            <button
-              key={a.id}
-              className={'mg-account-tab' + (a.id === filter.account_id ? ' mg-account-tab--active' : '')}
-              role="tab"
-              aria-selected={a.id === filter.account_id}
-              title={a.username || a.label || a.host}
-              onClick={() => switchAccount(a.id)}
-            >
-              📬 {a.label || a.host}
-              {a.status !== 'active' && <span className="mg-pill mg-pill--muted mg-account-tab__status">{a.status}</span>}
-            </button>
-          ))}
-        </div>
-      )}
+      <AccountTabs accounts={accounts} activeId={filter.account_id} onSwitch={switchAccount} />
 
       {stats && (
         <div className="mg-card mg-stats">

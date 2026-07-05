@@ -40,18 +40,21 @@ final class Action {
 		return $row ?: null;
 	}
 
-	public static function list_for_customer( int $customer_id, int $page = 1, int $per_page = 50 ) : array {
+	public static function list_for_customer( int $customer_id, int $page = 1, int $per_page = 50, int $account_id = 0 ) : array {
 		global $wpdb;
 		$per_page = max( 1, min( 100, $per_page ) );
 		$page     = max( 1, $page );
 		$offset   = ( $page - 1 ) * $per_page;
+		$scope    = $account_id > 0 ? ' AND account_id = %d' : '';
+		$rows_args  = $account_id > 0 ? [ $customer_id, $account_id, $per_page, $offset ] : [ $customer_id, $per_page, $offset ];
+		$count_args = $account_id > 0 ? [ $customer_id, $account_id ] : [ $customer_id ];
 		$rows = $wpdb->get_results( $wpdb->prepare(
-			'SELECT * FROM ' . self::table() . ' WHERE customer_id = %d ORDER BY id DESC LIMIT %d OFFSET %d',
-			$customer_id, $per_page, $offset
+			'SELECT * FROM ' . self::table() . ' WHERE customer_id = %d' . $scope . ' ORDER BY id DESC LIMIT %d OFFSET %d',
+			$rows_args
 		), ARRAY_A );
 		$total = (int) $wpdb->get_var( $wpdb->prepare(
-			'SELECT COUNT(*) FROM ' . self::table() . ' WHERE customer_id = %d',
-			$customer_id
+			'SELECT COUNT(*) FROM ' . self::table() . ' WHERE customer_id = %d' . $scope,
+			$count_args
 		) );
 		return [
 			'items'    => array_map( [ __CLASS__, 'public_view' ], $rows ?: [] ),

@@ -377,8 +377,9 @@ final class Controller {
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'actions_list' ],
 			'args'                => [
-				'page'     => [ 'type' => 'integer', 'default' => 1 ],
-				'per_page' => [ 'type' => 'integer', 'default' => 50 ],
+				'page'       => [ 'type' => 'integer', 'default' => 1 ],
+				'per_page'   => [ 'type' => 'integer', 'default' => 50 ],
+				'account_id' => [ 'type' => 'integer' ],
 			],
 		] );
 
@@ -398,6 +399,11 @@ final class Controller {
 			'methods'             => 'GET',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'unsubs_list' ],
+			'args'                => [
+				'page'       => [ 'type' => 'integer', 'default' => 1 ],
+				'per_page'   => [ 'type' => 'integer', 'default' => 25 ],
+				'account_id' => [ 'type' => 'integer' ],
+			],
 		] );
 
 		register_rest_route( self::NAMESPACE, '/unsubs/(?P<id>\d+)/status', [
@@ -411,8 +417,9 @@ final class Controller {
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'subscriptions_list' ],
 			'args'                => [
-				'page'     => [ 'type' => 'integer', 'default' => 1 ],
-				'per_page' => [ 'type' => 'integer', 'default' => 50 ],
+				'page'       => [ 'type' => 'integer', 'default' => 1 ],
+				'per_page'   => [ 'type' => 'integer', 'default' => 50 ],
+				'account_id' => [ 'type' => 'integer' ],
 			],
 		] );
 
@@ -861,7 +868,8 @@ final class Controller {
 		if ( is_wp_error( $cid ) ) { return $cid; }
 		$page     = max( 1, (int) $req->get_param( 'page' ) );
 		$per_page = max( 1, min( 100, (int) $req->get_param( 'per_page' ) ) );
-		$data = ImapAction::list_for_customer( $cid, $page, $per_page );
+		$aid      = (int) $req->get_param( 'account_id' );
+		$data = ImapAction::list_for_customer( $cid, $page, $per_page, $aid );
 		$data['ok'] = true;
 		return new WP_REST_Response( $data, 200 );
 	}
@@ -903,7 +911,8 @@ final class Controller {
 		if ( is_wp_error( $cid ) ) { return $cid; }
 		$page     = (int) $req->get_param( 'page' );
 		$per_page = (int) $req->get_param( 'per_page' );
-		$data = Unsub::list_for_customer( $cid, $page ?: 1, $per_page ?: 25 );
+		$aid      = (int) $req->get_param( 'account_id' );
+		$data = Unsub::list_for_customer( $cid, $page ?: 1, $per_page ?: 25, $aid );
 		$data['ok'] = true;
 		return new WP_REST_Response( $data, 200 );
 	}
@@ -1039,7 +1048,8 @@ final class Controller {
 		if ( is_wp_error( $cid ) ) { return $cid; }
 		$page     = max( 1, (int) $req->get_param( 'page' ) );
 		$per_page = max( 1, min( 100, (int) $req->get_param( 'per_page' ) ) );
-		$data = Subscriptions::list_for_customer( $cid, $page, $per_page );
+		$aid      = (int) $req->get_param( 'account_id' );
+		$data = Subscriptions::list_for_customer( $cid, $page, $per_page, $aid );
 		$data['ok']       = true;
 		$data['page']     = $page;
 		$data['per_page'] = $per_page;

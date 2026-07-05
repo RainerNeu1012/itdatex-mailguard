@@ -22,20 +22,27 @@ final class Subscriptions {
 	/**
 	 * @return array{items:array<array<string,mixed>>,total:int}
 	 */
-	public static function list_for_customer( int $customer_id, int $page = 1, int $per_page = 50 ) : array {
+	public static function list_for_customer( int $customer_id, int $page = 1, int $per_page = 50, int $account_id = 0 ) : array {
 		global $wpdb;
 		$m  = $wpdb->prefix . Installer::TABLE_MESSAGES;
 		$u  = $wpdb->prefix . Installer::TABLE_UNSUBS;
 
+		$scope   = $account_id > 0 ? ' AND account_id = %d' : '';
+		$total_args = $account_id > 0 ? [ $customer_id, $account_id ] : [ $customer_id ];
+
 		$total = (int) $wpdb->get_var( $wpdb->prepare(
-			"SELECT COUNT(DISTINCT from_addr) FROM {$m} WHERE customer_id = %d AND has_unsub = 1 AND from_addr != ''",
-			$customer_id
+			"SELECT COUNT(DISTINCT from_addr) FROM {$m} WHERE customer_id = %d AND has_unsub = 1 AND from_addr != ''" . $scope,
+			$total_args
 		) );
 		if ( $total === 0 ) {
 			return [ 'items' => [], 'total' => 0 ];
 		}
 
 		$offset = max( 0, ( max( 1, $page ) - 1 ) * max( 1, $per_page ) );
+
+		$rows_args = $account_id > 0
+			? [ $customer_id, $account_id, $per_page, $offset ]
+			: [ $customer_id, $per_page, $offset ];
 
 		// Aggregat: pro from_addr ein Eintrag mit Count + neuester Mail-ID.
 		// Last-Unsub-Status haengen wir nachtraeglich an (1 Subquery pro Row,
@@ -48,11 +55,11 @@ final class Subscriptions {
 				MAX(fetched_at) AS latest_at,
 				SUBSTRING_INDEX(GROUP_CONCAT(id ORDER BY fetched_at DESC), ',', 1) AS latest_id
 			FROM {$m}
-			WHERE customer_id = %d AND has_unsub = 1 AND from_addr != ''
+			WHERE customer_id = %d AND has_unsub = 1 AND from_addr != ''" . $scope . "
 			GROUP BY from_addr
 			ORDER BY latest_at DESC
 			LIMIT %d OFFSET %d",
-			$customer_id, $per_page, $offset
+			$rows_args
 		), ARRAY_A );
 
 		$items = [];
