@@ -13,7 +13,7 @@ set -euo pipefail
 WP_DIR="/var/www/wp.itdatex.support/html"
 ASSET_DIR="/opt/itdatex-plugins/itdatex-mailguard/branding"
 PLUGIN_SLUG="itdatex-mailguard"
-VERSION="0.7.1"
+VERSION="0.7.2"
 
 PRICE_CENTS="4900"             # 49 EUR / Monat
 BILLING_MODE="subscription"
@@ -62,6 +62,13 @@ HTML
 )
 
 CHANGELOG=$(cat <<'CL'
+= 0.7.2 — Absender-Blockieren, iCloud-Autoconfig, Newsletter-Endpoints-Ausfallhandling =
+* NEU: Ein-Klick-Absender-Blockieren in der Sender-View — legt eine Blacklist-Regel für die From-Adresse an (dedup), zeigt "⛔ blockiert"-Pill in der Meta-Zeile. Neuer Endpoint POST /inbox/senders/block.
+* NEU: iCloud+ Custom-Domain-Erkennung — Auto-Discovery findet Postfächer, deren MX-Records auf mx01/mx02.mail.icloud.com zeigen (User @meinedomain.de wird als iCloud erkannt, IMAP-Settings automatisch gesetzt). Auch @mac.com bekommt den korrekten App-Passwort-Hinweis.
+* NEU: Newsletter-Abmelde-Failsafe — wenn ALLE List-Unsubscribe-Endpunkte eines Absenders im DNS nicht mehr auflösen (typisch bei alten Newslettern, deren Provider-Subdomains stillgelegt wurden), zeigt das Portal statt der rohen Fehlermeldung einen Dialog "Sender direkt blockieren?" — ein Klick legt die Blacklist-Regel an.
+* FIX: Fremdes ")" unter jeder Absender-Aktionszeile in der Inbox (JSX-Tippfehler).
+* FIX: Folder-Row-Layout — bei langen Test-Fehlermeldungen wurde die Kontonamen-Spalte auf 1 Zeichen gestaucht und der Name Buchstabe-für-Buchstabe vertikal umgebrochen; die Namen-Spalte hat jetzt eine Mindestbreite von 140px.
+
 = 0.7.1 — Quarantäne, Bulk-Cleanup und endgültiges Löschen (Rollup 0.6/0.7) =
 * NEU: Server-seitige IMAP-Quarantäne (RFC 6851 UID MOVE mit UIDPLUS-Fallback) — verdächtige Mails werden in einen dedizierten Quarantäne-Ordner auf dem Mailserver verschoben, KEIN EXPUNGE. Undo-Fenster via Audit-Log (mg_actions).
 * NEU: Auto-Quarantäne — pro Account einstellbarer Score-Schwellwert (Default aus), ab dem Scan-Verdicts eigenständig in Quarantäne wandern. Blacklist-Treffer übersteuern den Schwellwert und quarantänisieren immer.
