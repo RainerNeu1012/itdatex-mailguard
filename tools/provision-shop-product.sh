@@ -13,7 +13,7 @@ set -euo pipefail
 WP_DIR="/var/www/wp.itdatex.support/html"
 ASSET_DIR="/opt/itdatex-plugins/itdatex-mailguard/branding"
 PLUGIN_SLUG="itdatex-mailguard"
-VERSION="0.8.2"
+VERSION="0.8.3"
 
 PRICE_CENTS="4900"             # 49 EUR / Monat
 BILLING_MODE="subscription"
@@ -62,6 +62,9 @@ HTML
 )
 
 CHANGELOG=$(cat <<'CL'
+= 0.8.3 — Direkter Blockieren-Button bei fehlgeschlagenen Newsletter-Abmeldungen =
+* NEU: In der Newsletter-Abos-Ansicht steht neben dem "Nochmal abmelden"-Button jetzt ein direkter "⛔ Sender blockieren"-Button, sobald der letzte Abmelde-Versuch fehlgeschlagen ist. Der User muss nicht mehr erst einen zweiten Retry starten, um zum Blockieren-Dialog zu kommen.
+
 = 0.8.2 — Blockieren-Dialog fängt auch tote HTTP-Endpoints ab =
 * CHANGE: Der in 0.7.2 eingeführte "Sender blockieren"-Failsafe für tote Newsletter-Endpoints erkennt jetzt auch permanente HTTP-Fehler (404 Kampagne weg, 405 Method Not Allowed, 410 gone, 400/401/403 Token abgelaufen) — nicht mehr nur reine DNS-Ausfälle. Damit fängt der Dialog Fälle wie CM.com-Bulkmail-Kampagnen ab, deren URL nach Ablauf HTTP 404 liefert.
 * CHANGE: 5xx-Antworten und 429 (Rate-Limit) lösen den Blockieren-Dialog absichtlich NICHT aus — dort kann ein späterer Retry noch klappen.

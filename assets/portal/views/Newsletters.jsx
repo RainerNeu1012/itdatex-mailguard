@@ -81,6 +81,25 @@ function Subscriptions({ accountId }) {
     }
   };
 
+  const block = async (from_addr) => {
+    if (!window.confirm(
+      `Absender ${from_addr} blockieren?\n\n` +
+      `Es wird eine Blacklist-Regel angelegt. Künftige Mails dieses Senders werden als gefährlich eingestuft ` +
+      `und — bei aktivierter Auto-Quarantäne-Schwelle — automatisch in Quarantäne verschoben.\n\n` +
+      `Diese Aktion löscht keine bereits vorhandenen Mails.`
+    )) return;
+    setBusy((b) => ({ ...b, [from_addr]: 'block' }));
+    try {
+      const { body, status } = await apiPost('inbox/senders/block', { from_addr });
+      if (status !== 200 || !body.ok) alert('Blockieren fehlgeschlagen: ' + (body.error || status));
+      else if (body.existed)          alert('ℹ Sender war bereits blockiert.');
+      else                            alert('✔ Sender blockiert (Regel angelegt).');
+      load();
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
+    }
+  };
+
   const purge = async (from_addr, msg_count) => {
     const ok = window.confirm(
       `${msg_count} Newsletter-Mail${msg_count === 1 ? '' : 's'} von ${from_addr} in den Papierkorb verschieben ` +
@@ -121,6 +140,7 @@ function Subscriptions({ accountId }) {
         const dsnPill = lu && lu.dsn_status ? (STATUS_TONE[lu.dsn_status] || { label: lu.dsn_status, cls: 'mg-pill--muted' }) : null;
         const unsubscribed = lu && lu.api_status === 'unsubscribed';
         const needsManual  = lu && lu.api_status === 'needs_manual' && lu.manual_url;
+        const lastFailed   = lu && lu.api_status === 'failed';
         return (
           <div key={s.from_addr} className="mg-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
@@ -156,6 +176,16 @@ function Subscriptions({ accountId }) {
                   onClick={() => unsub(s.from_addr)}
                 >
                   {busy[s.from_addr] === 'unsub' ? '…' : '✉ Vom Newsletter abmelden'}
+                </button>
+              )}
+              {lastFailed && (
+                <button
+                  className="mg-btn mg-btn--warn"
+                  disabled={!!busy[s.from_addr]}
+                  onClick={() => block(s.from_addr)}
+                  title="Blacklist-Regel anlegen — künftige Mails dieses Absenders werden als gefährlich markiert und ggf. automatisch quarantänisiert"
+                >
+                  {busy[s.from_addr] === 'block' ? '…' : '⛔ Sender blockieren'}
                 </button>
               )}
               {unsubscribed && s.msg_count > 0 && (
