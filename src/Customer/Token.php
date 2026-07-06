@@ -11,6 +11,10 @@ namespace Itdatex\Mailguard\Customer;
  */
 final class Token {
 
+	// wp_options-Key fuer die JTI-Blacklist. Format: [ jti => exp_ts, ... ].
+	// Autoloaded, weil verify_session bei jedem REST-Request rueckfragt.
+	private const BLACKLIST_OPTION = 'itdatex_mailguard_session_blacklist';
+
 	public static function random_token() : string {
 		return bin2hex( random_bytes( 32 ) );
 	}
@@ -52,7 +56,42 @@ final class Token {
 		if ( $cid <= 0 ) {
 			return null;
 		}
+		$jti = (string) ( $payload['jti'] ?? '' );
+		if ( $jti !== '' && isset( self::blacklist()[ $jti ] ) ) {
+			return null;
+		}
 		return [ 'customer_id' => $cid, 'expires_at' => $exp ];
+	}
+
+	/**
+	 * Widerruft ein einzelnes Session-Token per JTI. Der HMAC-signierte Token
+	 * bleibt zwar syntaktisch gueltig, aber verify_session lehnt ihn ab.
+	 * Blacklist-Eintraege werden bei jeder Revoke-Operation von abgelaufenen
+	 * JTIs bereinigt — die Option waechst also nur mit lebenden Tokens.
+	 *
+	 * @return bool true wenn revoked, false bei kaputtem/abgelaufenem Token.
+	 */
+	public static function revoke_session( string $token ) : bool {
+		$parts = explode( '.', $token );
+		if ( count( $parts ) !== 2 ) { return false; }
+		$raw = self::b64url_decode( $parts[0] );
+		if ( $raw === null ) { return false; }
+		$payload = json_decode( $raw, true );
+		if ( ! is_array( $payload ) ) { return false; }
+		$jti = (string) ( $payload['jti'] ?? '' );
+		$exp = (int) ( $payload['exp'] ?? 0 );
+		if ( $jti === '' || $exp <= time() ) { return false; }
+
+		$now = time();
+		$bl  = array_filter( self::blacklist(), static fn ( $e ) => (int) $e > $now );
+		$bl[ $jti ] = $exp;
+		update_option( self::BLACKLIST_OPTION, $bl, true );
+		return true;
+	}
+
+	private static function blacklist() : array {
+		$bl = get_option( self::BLACKLIST_OPTION, [] );
+		return is_array( $bl ) ? $bl : [];
 	}
 
 	private static function session_key() : string {
