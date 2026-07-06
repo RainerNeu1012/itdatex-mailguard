@@ -105,6 +105,38 @@ final class Account {
 	}
 
 	/**
+	 * Manuelle Plan-Zuweisung durch den Site-Owner — ohne Stripe. Fuer
+	 * Comp-Konten, Rechnungskunden oder Fixes nach verpassten Webhooks.
+	 *
+	 * plan_status wird auf 'active' gesetzt. imap_quota kommt aus dem
+	 * Plan. llm_enabled respektiert den bestehenden Cloud-Consent — ohne
+	 * Consent bleibt LLM off, selbst wenn der Plan es erlauben wuerde
+	 * (siehe Webhook::update_customer_plan fuer denselben Guard).
+	 *
+	 * $grace_until_ts: Unix-Timestamp, ab dem der Plan als „auslaufend"
+	 * gilt. null = unbegrenzt. Fuer befristete Freischaltungen oder
+	 * Ratenzahlungen. Stripe-IDs werden bewusst NICHT gesetzt, damit ein
+	 * spaeteres Stripe-Onboarding sauber bleibt.
+	 */
+	public static function set_plan_manual( int $id, array $plan, ?int $grace_until_ts = null ) : void {
+		global $wpdb;
+		$consent_at    = (string) $wpdb->get_var( $wpdb->prepare(
+			'SELECT cloud_consent_at FROM ' . self::table() . ' WHERE id = %d',
+			$id
+		) );
+		$llm_effective = ! empty( $plan['llm_enabled'] ) && $consent_at !== '' && $consent_at !== '0' ? 1 : 0;
+		$data = [
+			'plan_slug'        => (string) $plan['slug'],
+			'plan_status'      => 'active',
+			'imap_quota'       => (int) $plan['imap_quota'],
+			'llm_enabled'      => $llm_effective,
+			'plan_grace_until' => $grace_until_ts ? gmdate( 'Y-m-d H:i:s', $grace_until_ts ) : null,
+		];
+		$wpdb->update( self::table(), $data, [ 'id' => $id ],
+			[ '%s', '%s', '%d', '%d', '%s' ], [ '%d' ] );
+	}
+
+	/**
 	 * Erteilt die Cloud-LLM-Einwilligung gem. Art. 6 Abs. 1 lit. a DSGVO.
 	 * Speichert Zeitstempel + die Version des Consent-Wortlauts, der zum
 	 * Zeitpunkt der Erteilung galt — damit bei späteren Text-Änderungen

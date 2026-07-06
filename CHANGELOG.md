@@ -7,6 +7,28 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.8.8] – 2026-07-06
+
+### Added
+- **Manuelle Plan-Freischaltung** in der WP-Admin-Endkundenliste. Neue
+  Row-Action „Plan" öffnet einen Editor, in dem der Site-Owner einem
+  Kunden einen Plan (`free/solo/plus/pro/test`) und ein optionales
+  Ablaufdatum (`plan_grace_until`) ohne Stripe zuweisen kann — für
+  Comp-Konten, Rechnungskunden oder Fixes nach verpassten Webhooks.
+- **1-Klick „E-Mail verifizieren"** in der Endkundenliste, sichtbar
+  nur bei noch nicht verifizierten Konten. Setzt `email_verified=1`
+  und `status=active`.
+- Neue Plan-Spalte in der Endkundenliste zeigt Slug + Grace-Datum.
+- Public API: `Customer\Account::set_plan_manual(int $id, array $plan, ?int $grace_ts)`.
+  Respektiert den bestehenden `cloud_consent_at` — ohne Consent bleibt
+  `llm_enabled` off, selbst wenn der Plan es erlauben würde
+  (identische Guard-Logik wie im Stripe-Webhook).
+
+### Warnhinweis in der UI
+- Wenn ein Kunde bereits ein Stripe-Abo hat (`stripe_subscription_id`
+  gesetzt), warnt der Plan-Editor, dass die manuelle Zuweisung beim
+  nächsten Webhook wieder überschrieben wird.
+
 ## [0.8.7] – 2026-07-06
 
 Bugfix follow-up to 0.8.6 (which was released untagged). The v0.8.7
@@ -78,4 +100,5 @@ that first tagged them (0.8.7). For older 0.7.x releases see the
 
 - `04529bc chore(release): 0.7.2 — block-sender, iCloud MX autoconfig, endpoints_dead unsub`
 
+[0.8.8]: https://github.com/RainerNeu1012/itdatex-mailguard/releases/tag/v0.8.8
 [0.8.7]: https://github.com/RainerNeu1012/itdatex-mailguard/releases/tag/v0.8.7
