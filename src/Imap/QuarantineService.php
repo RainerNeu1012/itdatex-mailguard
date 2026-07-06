@@ -140,6 +140,16 @@ final class QuarantineService {
 		}
 		Message::set_quarantine_action( $message_id, $customer_id, $action_id );
 
+		// Notify-Hook (Push-Listener). Der Listener entscheidet, ob Auto- vs.
+		// User-Quarantaenen unterschiedlich behandelt werden.
+		do_action(
+			'mailguard_quarantine_done',
+			$action_id,
+			$customer_id,
+			$actor === Action::ACTOR_AUTO ? Action::ACTOR_AUTO : Action::ACTOR_USER,
+			$message_id
+		);
+
 		return [ 'ok' => true, 'action_id' => $action_id ];
 	}
 
@@ -306,8 +316,34 @@ final class QuarantineService {
 			}
 		}
 		if ( $target_uid === 0 ) {
+			// Weder UIDPLUS beim Quarantine-Zeitpunkt noch Message-ID heute →
+			// wir koennen die Mail im Quarantaene-Folder nicht mehr eindeutig
+			// identifizieren. Soft-Purge: MailGuard-Referenz aufraeumen, sekundaerer
+			// Audit-Eintrag schreiben; die Kopie im Quarantaene-Folder bleibt als
+			// Karteileiche stehen (unsichtbar fuer den User). Alternative waere
+			// ein SEARCH FROM/SUBJECT, das aber bei mehreren Actions desselben
+			// Absenders fremde Mails mitschnappen wuerde.
 			$client->close();
-			return [ 'ok' => false, 'error' => 'target_uid_unknown' ];
+			Action::mark_undone( $action_id, $customer_id );
+			Action::create( [
+				'customer_id'        => $customer_id,
+				'account_id'         => (int) $row['account_id'],
+				'message_id'         => $message_id,
+				'action'             => Action::ACTION_PURGE,
+				'source_folder'      => $target_folder,
+				'source_uid'         => 0,
+				'target_folder'      => '',
+				'target_uid'         => 0,
+				'verdict_snap'       => (string) $row['verdict_snap'],
+				'verdict_score_snap' => $row['verdict_score_snap'] !== null ? (int) $row['verdict_score_snap'] : null,
+				'subject_snap'       => (string) $row['subject_snap'],
+				'from_addr_snap'     => (string) $row['from_addr_snap'],
+				'status'             => Action::STATUS_DONE,
+				'actor'              => Action::ACTOR_USER,
+				'undo_until'         => null,
+			] );
+			Message::delete( $message_id, $customer_id );
+			return [ 'ok' => true, 'soft' => true ];
 		}
 
 		try {
@@ -356,5 +392,129 @@ final class QuarantineService {
 	public static function quarantine_folder_for_account( array $account ) : string {
 		$custom = trim( (string) ( $account['quarantine_folder'] ?? '' ) );
 		return $custom !== '' ? $custom : Installer::DEFAULT_QUARANTINE_FOLDER;
+	}
+
+	/**
+	 * Endgueltiges Loeschen einer beliebigen Mail per Message-ID.
+	 *
+	 * - Ist die Mail quarantaenisiert → Delegation an self::purge($action_id).
+	 *   Damit bleibt der bestehende Audit-Flow (Undo-Referenz + Purge-Action) intakt.
+	 * - Ist die Mail nicht quarantaenisiert → move-then-expunge-quarantine:
+	 *   verschiebt die Mail in den MailGuard-eigenen Quarantaene-Folder und
+	 *   expungt DORT (folder-weit sicher, weil MailGuard-only-writable).
+	 *   Ein direktes EXPUNGE im Source-Folder wuerde \Deleted-Marker aus
+	 *   anderen Clients (Thunderbird, Alpine) mitloeschen — c-client kennt
+	 *   kein UID EXPUNGE.
+	 *
+	 * @return array{ok:bool,error?:string,detail?:string}
+	 */
+	public static function purge_message( int $message_id, int $customer_id ) : array {
+		$msg = Message::find_for_customer( $message_id, $customer_id );
+		if ( ! $msg ) {
+			return [ 'ok' => false, 'error' => 'not_found' ];
+		}
+
+		// Quarantaenisierte Mail → bestehenden Purge-Pfad nutzen.
+		$existing_action_id = isset( $msg['quarantine_action_id'] ) ? (int) $msg['quarantine_action_id'] : 0;
+		if ( $existing_action_id > 0 ) {
+			return self::purge( $existing_action_id, $customer_id );
+		}
+
+		$account = Account::find_for_customer( (int) $msg['account_id'], $customer_id );
+		if ( ! $account ) {
+			return [ 'ok' => false, 'error' => 'account_gone' ];
+		}
+
+		$source_folder = (string) $msg['folder'];
+		$source_uid    = (int) $msg['imap_uid'];
+		$msg_id_hdr    = (string) ( $msg['msg_id_hdr'] ?? '' );
+		$quar_folder   = self::quarantine_folder_for_account( $account );
+
+		// Legacy: Mail liegt bereits in der Quarantaene, hat aber keine
+		// quarantine_action_id (Row aus alter Plugin-Version). MOVE-to-self
+		// wuerde auf IONOS/Dovecot in den FPM-Timeout laufen — stattdessen
+		// direkt expungen. Folder-weites EXPUNGE ist in der Quarantaene
+		// unkritisch, weil ausschliesslich MailGuard hineinschreibt.
+		$is_source_quarantine = ( $source_folder === $quar_folder );
+
+		try {
+			$client = ClientFactory::for_account_folder( $account, $source_folder );
+			$client->connect();
+		} catch ( \Throwable $e ) {
+			return [ 'ok' => false, 'error' => 'connect_failed', 'detail' => $e->getMessage() ];
+		}
+
+		if ( ! $is_source_quarantine ) {
+			try {
+				$client->ensure_folder( $quar_folder );
+			} catch ( \Throwable $e ) {
+				$client->close();
+				return [ 'ok' => false, 'error' => 'create_folder_failed', 'detail' => $e->getMessage() ];
+			}
+		}
+
+		// UID kann veraltet sein (Client-Move, Reindex) — per Message-ID nachziehen.
+		if ( $source_uid === 0 && $msg_id_hdr !== '' ) {
+			try {
+				$source_uid = $client->find_uid_by_message_id( $msg_id_hdr );
+			} catch ( \Throwable $e ) {
+				$client->close();
+				return [ 'ok' => false, 'error' => 'find_target_failed', 'detail' => $e->getMessage() ];
+			}
+		}
+		if ( $source_uid === 0 ) {
+			$client->close();
+			return [ 'ok' => false, 'error' => 'target_uid_unknown' ];
+		}
+
+		if ( $is_source_quarantine ) {
+			try {
+				$client->expunge_uids( [ $source_uid ] );
+			} catch ( \Throwable $e ) {
+				$client->close();
+				return [ 'ok' => false, 'error' => 'expunge_failed', 'detail' => $e->getMessage() ];
+			}
+		} else {
+			try {
+				$client->move_uids( [ $source_uid ], $quar_folder );
+			} catch ( \Throwable $e ) {
+				$client->close();
+				return [ 'ok' => false, 'error' => 'move_failed', 'detail' => $e->getMessage() ];
+			}
+			try {
+				$client->select_folder( $quar_folder );
+				$client->expunge_selected();
+			} catch ( \Throwable $e ) {
+				$client->close();
+				// Move ist durch — Mail ist aus Source raus, liegt aber noch in
+				// Quarantaene. Nicht kritisch: naechster purge_message oder der
+				// Nutzer-Aktions-View raeumt sie ab. Kein Datenverlust.
+				return [ 'ok' => false, 'error' => 'expunge_failed', 'detail' => $e->getMessage() ];
+			}
+		}
+		$client->close();
+
+		// Audit-Eintrag: Purge, endgueltig, kein undo.
+		Action::create( [
+			'customer_id'        => $customer_id,
+			'account_id'         => (int) $msg['account_id'],
+			'message_id'         => $message_id,
+			'action'             => Action::ACTION_PURGE,
+			'source_folder'      => $source_folder,
+			'source_uid'         => $source_uid,
+			'target_folder'      => '',
+			'target_uid'         => 0,
+			'verdict_snap'       => (string) ( $msg['scan_verdict'] ?? '' ),
+			'verdict_score_snap' => isset( $msg['scan_score'] ) && $msg['scan_score'] !== null ? (int) $msg['scan_score'] : null,
+			'subject_snap'       => (string) ( $msg['subject'] ?? '' ),
+			'from_addr_snap'     => (string) ( $msg['from_addr'] ?? '' ),
+			'status'             => Action::STATUS_DONE,
+			'actor'              => Action::ACTOR_USER,
+			'undo_until'         => null,
+		] );
+
+		Message::delete( $message_id, $customer_id );
+
+		return [ 'ok' => true ];
 	}
 }

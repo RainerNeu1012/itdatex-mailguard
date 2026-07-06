@@ -266,11 +266,35 @@ final class XOauth2ImapClient {
 	 * @return int Ziel-UID falls bekannt, sonst 0
 	 */
 	public function move_uid( int $uid, string $target_folder ) : int {
+		return $this->move_uids_impl( [ $uid ], $target_folder );
+	}
+
+	/**
+	 * Batch-Version von move_uid: verschiebt ein UID-Set in einem Rutsch.
+	 * Genutzt vom Bulk-Delete-Pfad; die Ziel-UIDs sind hier nicht relevant.
+	 *
+	 * @param int[] $uids
+	 */
+	public function move_uids( array $uids, string $target_folder ) : void {
+		$this->move_uids_impl( $uids, $target_folder );
+	}
+
+	/**
+	 * Interner Move-Impl. Liefert bei Single-UID die Target-UID zurueck
+	 * (Backward-Compat fuer move_uid → Quarantine-Undo braucht das). Beim
+	 * Batch ignoriert der Caller den Return-Wert.
+	 *
+	 * @param int[] $uids
+	 */
+	private function move_uids_impl( array $uids, string $target_folder ) : int {
 		if ( ! $this->stream ) { $this->connect(); }
+		$uids = array_values( array_unique( array_filter( array_map( 'intval', $uids ), static fn ( $u ) => $u > 0 ) ) );
+		if ( ! $uids ) { return 0; }
+		$set     = implode( ',', $uids );
 		$qtarget = $this->quote_mailbox( $target_folder );
 
 		if ( $this->has_capability( 'move' ) ) {
-			$tag  = $this->send( 'UID MOVE ' . $uid . ' ' . $qtarget );
+			$tag  = $this->send( 'UID MOVE ' . $set . ' ' . $qtarget );
 			$resp = $this->read_until_tag( $tag );
 			if ( ! preg_match( '/^' . $tag . ' OK/m', $resp ) ) {
 				throw new \RuntimeException( 'UID MOVE fehlgeschlagen: ' . trim( $resp ) );
@@ -279,14 +303,14 @@ final class XOauth2ImapClient {
 		}
 
 		// Fallback: COPY + STORE \Deleted, ohne EXPUNGE.
-		$tag  = $this->send( 'UID COPY ' . $uid . ' ' . $qtarget );
+		$tag  = $this->send( 'UID COPY ' . $set . ' ' . $qtarget );
 		$resp = $this->read_until_tag( $tag );
 		if ( ! preg_match( '/^' . $tag . ' OK/m', $resp ) ) {
 			throw new \RuntimeException( 'UID COPY fehlgeschlagen: ' . trim( $resp ) );
 		}
 		$target_uid = self::extract_copyuid_target( $resp );
 
-		$stag  = $this->send( 'UID STORE ' . $uid . ' +FLAGS (\\Deleted)' );
+		$stag  = $this->send( 'UID STORE ' . $set . ' +FLAGS (\\Deleted)' );
 		$sresp = $this->read_until_tag( $stag );
 		if ( ! preg_match( '/^' . $stag . ' OK/m', $sresp ) ) {
 			// Mail liegt jetzt im Ziel UND in der Quelle (ohne \Deleted-Marker) —
@@ -294,6 +318,45 @@ final class XOauth2ImapClient {
 			throw new \RuntimeException( 'UID STORE \Deleted fehlgeschlagen: ' . trim( $sresp ) );
 		}
 		return $target_uid;
+	}
+
+	/**
+	 * Folder-weites EXPUNGE des aktuell selektierten Folders. Nur fuer
+	 * MailGuard-eigene Folder (Quarantaene). Siehe ImapClient::expunge_selected
+	 * fuer die Begruendung.
+	 */
+	public function expunge_selected() : void {
+		if ( ! $this->stream ) { $this->connect(); }
+		$tag  = $this->send( 'EXPUNGE' );
+		$resp = $this->read_until_tag( $tag );
+		if ( ! preg_match( '/^' . $tag . ' OK/m', $resp ) ) {
+			throw new \RuntimeException( 'EXPUNGE fehlgeschlagen: ' . trim( $resp ) );
+		}
+	}
+
+	/**
+	 * Server-side UID SEARCH FROM: liefert alle UIDs im aktuell selektierten
+	 * Folder, deren From-Header den Substring enthaelt. Fallback im Bulk-Purge,
+	 * wenn eine mg_messages-Zeile weder imap_uid noch msg_id_hdr hat.
+	 *
+	 * @return int[]
+	 */
+	public function uids_by_from( string $from_addr ) : array {
+		if ( ! $this->stream ) { $this->connect(); }
+		if ( $from_addr === '' ) { return []; }
+		$escaped = str_replace( [ '\\', '"' ], [ '\\\\', '\\"' ], $from_addr );
+		$tag     = $this->send( 'UID SEARCH FROM "' . $escaped . '"' );
+		$resp    = $this->read_until_tag( $tag );
+		if ( ! preg_match( '/^' . $tag . ' OK/m', $resp ) ) { return []; }
+		$uids = [];
+		foreach ( explode( "\n", $resp ) as $line ) {
+			if ( preg_match( '/^\*\s+SEARCH\s+(.+)$/i', trim( $line ), $m ) ) {
+				foreach ( preg_split( '/\s+/', trim( $m[1] ) ) ?: [] as $tok ) {
+					if ( ctype_digit( $tok ) ) { $uids[] = (int) $tok; }
+				}
+			}
+		}
+		return $uids;
 	}
 
 	/**
@@ -378,14 +441,31 @@ final class XOauth2ImapClient {
 	 * Folder unkritisch ist.
 	 */
 	public function expunge_uid( int $uid ) : void {
+		$this->expunge_uids( [ $uid ] );
+	}
+
+	/**
+	 * Batch-Version: ein UID STORE ueber das ganze UID-Set + ein UID EXPUNGE
+	 * (RFC 4315, wenn UIDPLUS) oder ein folder-weites EXPUNGE als Fallback.
+	 * Genutzt vom Bulk-Delete-Button — spart pro Mail einen Roundtrip zum
+	 * Provider, was den 502-Timeout bei langsamen Servern (IONOS/iCloud)
+	 * verhindert.
+	 *
+	 * @param int[] $uids
+	 */
+	public function expunge_uids( array $uids ) : void {
 		if ( ! $this->stream ) { $this->connect(); }
-		$stag  = $this->send( 'UID STORE ' . $uid . ' +FLAGS (\\Deleted)' );
+		$uids = array_values( array_unique( array_filter( array_map( 'intval', $uids ), static fn ( $u ) => $u > 0 ) ) );
+		if ( ! $uids ) { return; }
+		$set = implode( ',', $uids );
+
+		$stag  = $this->send( 'UID STORE ' . $set . ' +FLAGS (\\Deleted)' );
 		$sresp = $this->read_until_tag( $stag );
 		if ( ! preg_match( '/^' . $stag . ' OK/m', $sresp ) ) {
-			throw new \RuntimeException( 'UID STORE \Deleted fehlgeschlagen fuer UID ' . $uid . ': ' . trim( $sresp ) );
+			throw new \RuntimeException( 'UID STORE \Deleted fehlgeschlagen fuer UID-Set ' . $set . ': ' . trim( $sresp ) );
 		}
 		if ( $this->has_capability( 'uidplus' ) ) {
-			$etag  = $this->send( 'UID EXPUNGE ' . $uid );
+			$etag  = $this->send( 'UID EXPUNGE ' . $set );
 			$eresp = $this->read_until_tag( $etag );
 			if ( preg_match( '/^' . $etag . ' OK/m', $eresp ) ) { return; }
 			// UID EXPUNGE abgelehnt — auf klassischen EXPUNGE zurueckfallen.

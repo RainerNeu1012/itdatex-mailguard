@@ -213,18 +213,74 @@ final class ImapClient {
 	 * @return int Ziel-UID falls bekannt, sonst 0
 	 */
 	public function move_uid( int $uid, string $target_folder ) : int {
+		$this->move_uids( [ $uid ], $target_folder );
+		return 0;
+	}
+
+	/**
+	 * Batch-Version von move_uid: ein UID-Set in einem imap_mail_move-Call
+	 * (COPY + STORE +\Deleted) in den Zielordner verschieben. Kein EXPUNGE.
+	 *
+	 * Genutzt vom Bulk-Delete-Pfad: statt N mal die Quelle zu expungen
+	 * (was folder-weit expungt und Fremd-\Deleted-Marker mitloescht),
+	 * verschieben wir alle UIDs in den MailGuard-eigenen Quarantaene-Folder
+	 * und expungen DORT — folder-weit ist dort sicher.
+	 *
+	 * @param int[] $uids
+	 */
+	public function move_uids( array $uids, string $target_folder ) : void {
 		if ( ! $this->stream ) { $this->connect(); }
+		$uids = array_values( array_unique( array_filter( array_map( 'intval', $uids ), static fn ( $u ) => $u > 0 ) ) );
+		if ( ! $uids ) { return; }
+		$set = implode( ',', $uids );
 		// imap_mail_move() erwartet den nackten Folder-Namen — KEIN Server-Prefix-
 		// String wie '{host:port/imap/ssl}Folder'. GMX (und einige andere Server)
 		// lehnen einen prefix-haltigen Namen mit "[TRYCREATE] destination folder
 		// does not exist" ab, Outlook365 toleriert es zufällig.
 		imap_errors();
-		$ok = @imap_mail_move( $this->stream, (string) $uid, $target_folder, CP_UID );
+		$ok = @imap_mail_move( $this->stream, $set, $target_folder, CP_UID );
 		if ( ! $ok ) {
 			$errs = imap_errors() ?: [ 'unknown MOVE failure' ];
-			throw new \RuntimeException( 'MOVE UID ' . $uid . ' → ' . $target_folder . ' fehlgeschlagen: ' . implode( '; ', $errs ) );
+			throw new \RuntimeException( 'MOVE UID-Set ' . $set . ' → ' . $target_folder . ' fehlgeschlagen: ' . implode( '; ', $errs ) );
 		}
-		return 0;
+	}
+
+	/**
+	 * Folder-weites EXPUNGE des aktuell selektierten Folders — raeumt ALLE
+	 * \Deleted-markierten Mails ab. NUR fuer MailGuard-eigene Folder
+	 * (Quarantaene). In Source-Folders (Inbox/Junk) niemals aufrufen — dort
+	 * koennten Marker aus anderen Clients (Thunderbird, Alpine) mit weggeraeumt
+	 * werden. Ersatz fuer den Bulk-Delete-Pfad, wo Mails erst nach Quarantaene
+	 * verschoben und dann DORT expungt werden.
+	 */
+	public function expunge_selected() : void {
+		if ( ! $this->stream ) { $this->connect(); }
+		imap_errors();
+		$ok = @imap_expunge( $this->stream );
+		if ( ! $ok ) {
+			$errs = imap_errors() ?: [ 'unknown EXPUNGE failure' ];
+			throw new \RuntimeException( 'EXPUNGE fehlgeschlagen: ' . implode( '; ', $errs ) );
+		}
+	}
+
+	/**
+	 * Server-side IMAP SEARCH FROM: liefert alle UIDs im aktuell selektierten
+	 * Folder, deren From-Header den Substring enthaelt. Wird als Fallback im
+	 * Bulk-Purge-Pfad genutzt, wenn eine mg_messages-Zeile aus Legacy-Gruenden
+	 * weder imap_uid noch msg_id_hdr gespeichert hat (typisch fuer Zeilen aus
+	 * fruehen Plugin-Versionen).
+	 *
+	 * @return int[]
+	 */
+	public function uids_by_from( string $from_addr ) : array {
+		if ( ! $this->stream ) { $this->connect(); }
+		if ( $from_addr === '' ) { return []; }
+		// IMAP-Search-Strings quoten: Backslash + Doublequote escapen.
+		$escaped = str_replace( [ '\\', '"' ], [ '\\\\', '\\"' ], $from_addr );
+		imap_errors();
+		$result = @imap_search( $this->stream, 'FROM "' . $escaped . '"', SE_UID );
+		if ( $result === false ) { return []; }
+		return array_values( array_map( 'intval', $result ) );
 	}
 
 	/**
@@ -269,12 +325,34 @@ final class ImapClient {
 	 * verwenden.
 	 */
 	public function expunge_uid( int $uid ) : void {
+		$this->expunge_uids( [ $uid ] );
+	}
+
+	/**
+	 * Batch-Version von expunge_uid: markiert ein ganzes UID-Set als \Deleted
+	 * mit einem einzigen UID STORE und ruft danach genau EIN imap_expunge()
+	 * auf. Genutzt vom Bulk-Delete-Button ("Alle N löschen") — reduziert N
+	 * Connect-STORE-EXPUNGE-Zyklen auf 1 Connect + 1 STORE + 1 EXPUNGE, was
+	 * bei langsamen Providern (IONOS, iCloud) den nginx/FPM-Timeout verhindert.
+	 *
+	 * Selbe Einschränkung wie expunge_uid: c-client kennt kein UID EXPUNGE,
+	 * imap_expunge() räumt alle \Deleted-Marker im aktuell selektierten
+	 * Folder ab. Nur in dedizierten MailGuard-Folders (Quarantäne) uneinge-
+	 * schränkt sicher; im Source-Folder in Kauf genommen, weil das der ein-
+	 * zige c-client-Weg ist.
+	 *
+	 * @param int[] $uids
+	 */
+	public function expunge_uids( array $uids ) : void {
 		if ( ! $this->stream ) { $this->connect(); }
+		$uids = array_values( array_unique( array_filter( array_map( 'intval', $uids ), static fn ( $u ) => $u > 0 ) ) );
+		if ( ! $uids ) { return; }
+		$set = implode( ',', $uids );
 		imap_errors();
-		$ok = @imap_delete( $this->stream, (string) $uid, FT_UID );
+		$ok = @imap_delete( $this->stream, $set, FT_UID );
 		if ( ! $ok ) {
 			$errs = imap_errors() ?: [ 'unknown DELETE failure' ];
-			throw new \RuntimeException( 'UID STORE \Deleted fehlgeschlagen fuer UID ' . $uid . ': ' . implode( '; ', $errs ) );
+			throw new \RuntimeException( 'UID STORE \Deleted fehlgeschlagen fuer UID-Set ' . $set . ': ' . implode( '; ', $errs ) );
 		}
 		imap_errors();
 		$ok = @imap_expunge( $this->stream );
