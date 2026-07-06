@@ -69,8 +69,18 @@ final class Settings {
 		self::field_text(     'oauth_google_client_id',     __( 'Client ID', 'itdatex-mailguard' ),     'mg_oauth_google', [ 'placeholder' => 'xxxxxxxxxxxxxxx.apps.googleusercontent.com' ] );
 		self::field_password( 'oauth_google_client_secret', __( 'Client Secret', 'itdatex-mailguard' ), 'mg_oauth_google' );
 
+		add_settings_section( 'mg_mobile', __( 'Mobile-App & Push', 'itdatex-mailguard' ), [ __CLASS__, 'mobile_intro' ], self::PAGE_SLUG );
+		self::field_textarea( 'mobile_origins',           __( 'CORS-Origins (App)', 'itdatex-mailguard' ),   'mg_mobile', __( 'Zusätzliche erlaubte Origins, eine pro Zeile. Standard: capacitor://localhost, ionic://localhost, http://localhost*.', 'itdatex-mailguard' ), 4 );
+		self::field_textarea( 'push_fcm_service_account', __( 'FCM Service-Account (JSON)', 'itdatex-mailguard' ), 'mg_mobile', __( 'Firebase Console → Projekt-Settings → Service Accounts → Generate new private key. JSON komplett einfügen. Wird verschlüsselt gespeichert.', 'itdatex-mailguard' ), 8, true );
+		self::field_text(     'push_fcm_project_id',      __( 'FCM Project-ID (optional)', 'itdatex-mailguard' ), 'mg_mobile', [ 'placeholder' => __( 'auto aus JSON', 'itdatex-mailguard' ) ] );
+
 		add_settings_section( 'mg_license', __( 'Lizenz', 'itdatex-mailguard' ), [ __CLASS__, 'license_intro' ], self::PAGE_SLUG );
 		self::field_text( 'license_key', __( 'Lizenzschlüssel', 'itdatex-mailguard' ), 'mg_license', [ 'placeholder' => 'XXXXX-XXXXX-…' ] );
+	}
+
+	public static function mobile_intro() : void {
+		echo '<p>' . esc_html__( 'Konfiguriere hier den REST-Zugriff für native Apps (Capacitor/Ionic) und den Firebase-Push-Provider.', 'itdatex-mailguard' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'Ohne FCM-Konfiguration laufen die Push-Endpoints im No-Op-Modus — Devices können sich registrieren, aber es wird nichts verschickt. Erst nach Eintragen des Service-Account-JSONs werden Notifications ausgeliefert.', 'itdatex-mailguard' ) . '</p>';
 	}
 
 	public static function oauth_ms_intro() : void {
@@ -123,9 +133,22 @@ final class Settings {
 		if ( ! is_array( $input ) ) { $input = []; }
 		$out = $current;
 
-		foreach ( [ 'portal_slug', 'mail_from_name', 'mail_from_address', 'antiphish_api_url', 'oauth_microsoft_client_id', 'oauth_microsoft_tenant', 'oauth_google_client_id' ] as $k ) {
+		foreach ( [ 'portal_slug', 'mail_from_name', 'mail_from_address', 'antiphish_api_url', 'oauth_microsoft_client_id', 'oauth_microsoft_tenant', 'oauth_google_client_id', 'push_fcm_project_id' ] as $k ) {
 			if ( isset( $input[ $k ] ) ) {
 				$out[ $k ] = $k === 'antiphish_api_url' ? esc_url_raw( (string) $input[ $k ] ) : sanitize_text_field( (string) $input[ $k ] );
+			}
+		}
+		if ( isset( $input['mobile_origins'] ) ) {
+			// Newline-normalisierte Whitelist. Whitespace pro Zeile trimmen, leere Zeilen entfernen.
+			$lines = preg_split( '/\r\n|\r|\n/', (string) $input['mobile_origins'] ) ?: [];
+			$lines = array_values( array_filter( array_map( 'trim', $lines ), static fn ( $s ) => $s !== '' ) );
+			$out['mobile_origins'] = implode( "\n", $lines );
+		}
+		// FCM Service-Account: leer lassen → alten Wert behalten (Textarea zeigt Masking).
+		if ( array_key_exists( 'push_fcm_service_account', $input ) ) {
+			$json = trim( (string) $input['push_fcm_service_account'] );
+			if ( $json !== '' ) {
+				$out['push_fcm_service_account'] = $json;
 			}
 		}
 		foreach ( [ 'allow_registration', 'require_email_verification', 'scan_deep' ] as $k ) {
@@ -218,6 +241,33 @@ final class Settings {
 				esc_attr( $key ),
 				esc_attr( $placeholder )
 			);
+		}, self::PAGE_SLUG, $section );
+	}
+
+	/**
+	 * Textarea-Field. Wenn $mask_when_stored=true, wird bei bereits gespeichertem Wert
+	 * ein Platzhalter angezeigt und das Feld leer gerendert (wie Password) — nuetzlich
+	 * fuer Secrets wie den FCM-Service-Account-JSON.
+	 */
+	private static function field_textarea( string $key, string $label, string $section, string $desc = '', int $rows = 4, bool $mask_when_stored = false ) : void {
+		add_settings_field( $key, $label, function () use ( $key, $desc, $rows, $mask_when_stored ) {
+			$val  = (string) self::get( $key, '' );
+			$show = $val;
+			$ph   = '';
+			if ( $mask_when_stored && $val !== '' ) {
+				$show = '';
+				$ph   = __( '{ … gespeichert … } — leer lassen, um nicht zu aendern', 'itdatex-mailguard' );
+			}
+			printf( '<textarea class="large-text code" rows="%1$d" name="%2$s[%3$s]" placeholder="%4$s">%5$s</textarea>',
+				(int) $rows,
+				esc_attr( Installer::OPTION_SETTINGS ),
+				esc_attr( $key ),
+				esc_attr( $ph ),
+				esc_textarea( $show )
+			);
+			if ( $desc !== '' ) {
+				echo '<p class="description">' . esc_html( $desc ) . '</p>';
+			}
 		}, self::PAGE_SLUG, $section );
 	}
 

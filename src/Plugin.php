@@ -8,8 +8,10 @@ use Itdatex\Mailguard\Admin\Customers;
 use Itdatex\Mailguard\Admin\Settings;
 use Itdatex\Mailguard\Antiphish\ScanService;
 use Itdatex\Mailguard\Imap\PullService;
+use Itdatex\Mailguard\Notify\Hooks as NotifyHooks;
 use Itdatex\Mailguard\Portal\Rewrite;
 use Itdatex\Mailguard\Rest\Controller as RestController;
+use Itdatex\Mailguard\Rest\Cors as RestCors;
 use Itdatex\Mailguard\Saas\Onboard as SaasOnboard;
 use Itdatex\Mailguard\Saas\Webhook as SaasWebhook;
 use Itdatex\Mailguard\Saas\BillingPortal as SaasBillingPortal;
@@ -42,6 +44,10 @@ final class Plugin {
 		add_action( 'rest_api_init', [ RestController::class, 'register' ] );
 		add_action( 'rest_api_init', [ SaasWebhook::class, 'register' ] );
 		add_action( 'rest_api_init', [ SaasBillingPortal::class, 'register' ] );
+
+		// CORS + Push-Notify-Hooks registrieren.
+		RestCors::register();
+		NotifyHooks::register();
 
 		add_filter( 'cron_schedules', [ __CLASS__, 'register_cron_schedule' ] );
 		add_action( Installer::CRON_PULL_HOOK, [ PullService::class, 'pull_all' ] );

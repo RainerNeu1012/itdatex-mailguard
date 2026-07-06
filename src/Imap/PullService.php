@@ -20,7 +20,14 @@ final class PullService {
 	public const MAX_FOLDERS_PER_RUN = 25;
 	public const MAX_UIDS_PER_FOLDER = 50;
 
+	public const FOLDER_SYNC_TTL_SECONDS = 3600;
+
 	public static function pull_all() : array {
+		// Vor dem eigentlichen Pull: pro Account einmal pro Stunde die IMAP-
+		// Folder-Liste syncen (via Transient-Throttle), damit neu angelegte
+		// Ordner automatisch mit reinkommen ohne User-Aktion.
+		self::maybe_sync_all_accounts();
+
 		$folders = Folder::list_active( self::MAX_FOLDERS_PER_RUN );
 		if ( ! $folders ) {
 			return [ 'folders' => 0 ];
@@ -38,6 +45,14 @@ final class PullService {
 	 */
 	public static function pull_account( int $account_id, int $customer_id ) : array {
 		global $wpdb;
+
+		// User-triggered Pull → Folder-Liste immer syncen, damit "Jetzt abholen"
+		// nach einem neu angelegten IMAP-Ordner sofort greift.
+		$account = Account::find_for_customer( $account_id, $customer_id );
+		if ( $account ) {
+			Folder::sync_from_imap( $account, $customer_id );
+		}
+
 		$t = Folder::table();
 		$rows = $wpdb->get_results( $wpdb->prepare(
 			"SELECT * FROM {$t} WHERE account_id = %d AND customer_id = %d AND status = 'active' ORDER BY id ASC",
@@ -58,6 +73,30 @@ final class PullService {
 			'fetched'    => $fetched,
 			'results'    => $summary,
 		];
+	}
+
+	/**
+	 * Iteriert alle aktiven Accounts und syncen die Folder-Liste, wenn
+	 * der letzte Sync laenger als FOLDER_SYNC_TTL_SECONDS her ist.
+	 * Wird vor jedem pull_all-Cron-Lauf aufgerufen — billig (1 IMAP-LIST
+	 * pro Account und Stunde).
+	 */
+	public static function maybe_sync_all_accounts() : int {
+		global $wpdb;
+		$rows = $wpdb->get_results(
+			'SELECT * FROM ' . $wpdb->prefix . "mg_imap_accounts WHERE status = 'active'",
+			ARRAY_A
+		);
+		if ( ! $rows ) { return 0; }
+		$synced = 0;
+		foreach ( $rows as $row ) {
+			$key = 'mg_folder_sync_' . (int) $row['id'];
+			if ( get_transient( $key ) ) { continue; }
+			set_transient( $key, 1, self::FOLDER_SYNC_TTL_SECONDS );
+			Folder::sync_from_imap( $row, (int) $row['customer_id'] );
+			$synced++;
+		}
+		return $synced;
 	}
 
 	public static function pull_folder( int $folder_id, int $customer_id ) : array {

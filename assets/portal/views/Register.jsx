@@ -77,12 +77,12 @@ export default function Register() {
     <div className="mg-stack">
       <div className="mg-card">
         <h2>Willkommen bei MailGuard</h2>
-        <p>Mit deinem Konto bekommst du eine geschützte Inbox: jede eingehende Mail wird automatisch auf Phishing geprüft, Newsletter kannst du mit einem Klick abbestellen.</p>
+        <p>Deine Inbox mit Phishing-Schutz und 1-Klick-Newsletter-Abmelden. Jede Mail wird automatisch auf Impersonation-Tricks geprüft (Brand-Spoofing, gestreckte Absender-Namen wie „E A S Y B A N K", verdächtige Links). Newsletter meldest du pro Absender ab statt pro Mail.</p>
         <p className="mg-muted">In drei Schritten:</p>
         <ol className="mg-muted" style={{ paddingLeft: '1.2rem', margin: 0 }}>
           <li>Konto anlegen und E-Mail bestätigen.</li>
-          <li>IMAP-Postfach verbinden (SSL oder STARTTLS).</li>
-          <li>Inbox öffnen — eingehende Mails werden im 15-Minuten-Takt geprüft.</li>
+          <li>Postfach verbinden — Microsoft/Gmail per 1-Klick-OAuth, alles andere per IMAP mit Autoconfig. Alle Ordner werden automatisch erkannt.</li>
+          <li>Inbox öffnen — chronologisch oder nach Absender gruppiert. Pull läuft alle 15 Minuten, „Jetzt abholen" holt sofort.</li>
         </ol>
       </div>
     <form className="mg-card mg-form" onSubmit={submit}>

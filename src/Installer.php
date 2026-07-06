@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 12;
+	public const CURRENT_DB_VERSION = 14;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -26,7 +26,12 @@ final class Installer {
 	public const TABLE_UNSUBS        = 'mg_unsubs';
 	public const TABLE_RULES         = 'mg_rules';
 	public const TABLE_ACTIONS       = 'mg_actions';
+	public const TABLE_API_TOKENS    = 'mg_api_tokens';
+	public const TABLE_PUSH_DEVICES  = 'mg_push_devices';
+	public const TABLE_WEB_SESSIONS  = 'mg_web_sessions';
 	public const TABLE_ATTACHMENTS   = 'mg_attachments';
+
+	public const CRON_UNDO_EXPIRY_HOOK = 'itdatex_mailguard_undo_expiry_check';
 
 	// Bewusst ASCII-only: IMAP-Mailbox-Namen mit Nicht-ASCII brauchen MUTF-7-Encoding
 	// (RFC 3501), das nicht jeder Server gleich handhabt. Englischer Name funktioniert
@@ -77,11 +82,17 @@ final class Installer {
 		if ( ! wp_next_scheduled( self::CRON_SCAN_HOOK ) ) {
 			wp_schedule_event( time() + 120, self::CRON_SCAN_SCHEDULE, self::CRON_SCAN_HOOK );
 		}
+		if ( ! wp_next_scheduled( self::CRON_UNDO_EXPIRY_HOOK ) ) {
+			// Taeglich 09:00 UTC — Push-Reminder fuer Undo-Faelle, deren 7-Tage-
+			// Fenster in <24h ablaeuft.
+			$next = strtotime( 'tomorrow 09:00 UTC' );
+			wp_schedule_event( $next, 'daily', self::CRON_UNDO_EXPIRY_HOOK );
+		}
 	}
 
 	public static function deactivate() : void {
 		flush_rewrite_rules();
-		foreach ( [ self::CRON_PULL_HOOK, self::CRON_SCAN_HOOK ] as $hook ) {
+		foreach ( [ self::CRON_PULL_HOOK, self::CRON_SCAN_HOOK, self::CRON_UNDO_EXPIRY_HOOK ] as $hook ) {
 			$ts = wp_next_scheduled( $hook );
 			if ( $ts ) {
 				wp_unschedule_event( $ts, $hook );
@@ -274,6 +285,25 @@ final class Installer {
 			KEY idx_action_status (action, status)
 		) {$charset};";
 
+		$t_tok = $wpdb->prefix . self::TABLE_API_TOKENS;
+		$sql_tok = "CREATE TABLE {$t_tok} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			token_hash CHAR(64) NOT NULL,
+			refresh_hash CHAR(64) NULL,
+			name VARCHAR(120) NOT NULL DEFAULT '',
+			platform VARCHAR(10) NOT NULL DEFAULT 'unknown',
+			last_used_at DATETIME NULL,
+			access_expires_at DATETIME NOT NULL,
+			refresh_expires_at DATETIME NULL,
+			revoked_at DATETIME NULL,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			UNIQUE KEY uniq_token (token_hash),
+			KEY idx_refresh (refresh_hash),
+			KEY idx_customer (customer_id)
+		) {$charset};";
+
 		$t_att = $wpdb->prefix . self::TABLE_ATTACHMENTS;
 		// Pro Mail-Anhang ein Eintrag. Wir speichern KEINE Bytes — nur die MIME-
 		// Metadaten aus IMAP BODYSTRUCTURE. Das reicht fuer Sichtbarkeits-Anzeige
@@ -298,6 +328,45 @@ final class Installer {
 			KEY idx_suspicious (is_suspicious)
 		) {$charset};";
 
+		$t_dev = $wpdb->prefix . self::TABLE_PUSH_DEVICES;
+		$sql_dev = "CREATE TABLE {$t_dev} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			token_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+			platform VARCHAR(10) NOT NULL DEFAULT 'unknown',
+			fcm_token VARCHAR(512) NOT NULL,
+			device_label VARCHAR(120) NOT NULL DEFAULT '',
+			events_mask INT UNSIGNED NOT NULL DEFAULT 15,
+			last_seen_at DATETIME NULL,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			UNIQUE KEY uniq_fcm (fcm_token),
+			KEY idx_customer (customer_id),
+			KEY idx_token (token_id)
+		) {$charset};";
+
+		// Web-Sessions: Tracking-Only. Der HMAC-signierte Session-Cookie ist
+		// weiterhin die eigentliche Auth-Quelle (kein DB-Lookup pro Request);
+		// diese Tabelle listet nur, wo der User gerade eingeloggt ist, damit
+		// er einzelne Browser-Sessions gezielt beenden kann. Revoke setzt
+		// revoked_at UND schreibt den JTI in die Token-Blacklist — nur die
+		// Blacklist wirkt bei verify_session.
+		$t_web = $wpdb->prefix . self::TABLE_WEB_SESSIONS;
+		$sql_web = "CREATE TABLE {$t_web} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			jti CHAR(16) NOT NULL,
+			ua VARCHAR(255) NOT NULL DEFAULT '',
+			ip VARCHAR(45) NOT NULL DEFAULT '',
+			created_at DATETIME NOT NULL,
+			last_seen_at DATETIME NULL,
+			expires_at DATETIME NOT NULL,
+			revoked_at DATETIME NULL,
+			PRIMARY KEY (id),
+			UNIQUE KEY uniq_jti (jti),
+			KEY idx_customer (customer_id, revoked_at)
+		) {$charset};";
+
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		dbDelta( $sql_customers );
 		dbDelta( $sql_imap );
@@ -306,6 +375,9 @@ final class Installer {
 		dbDelta( $sql_rul );
 		dbDelta( $sql_fol );
 		dbDelta( $sql_act );
+		dbDelta( $sql_tok );
+		dbDelta( $sql_dev );
+		dbDelta( $sql_web );
 		dbDelta( $sql_att );
 
 		// One-shot Migration: aus jedem bestehenden Account einen Folder-Eintrag

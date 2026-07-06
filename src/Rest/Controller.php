@@ -5,6 +5,8 @@ namespace Itdatex\Mailguard\Rest;
 
 use Itdatex\Mailguard\Customer\ApiToken;
 use Itdatex\Mailguard\Customer\Auth;
+use Itdatex\Mailguard\Customer\Session;
+use Itdatex\Mailguard\Customer\WebSession;
 use Itdatex\Mailguard\Notify\Device as PushDevice;
 use Itdatex\Mailguard\Imap\Account as ImapAccount;
 use Itdatex\Mailguard\Imap\Action as ImapAction;
@@ -131,6 +133,18 @@ final class Controller {
 			'methods'             => 'DELETE',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'me_push_devices_delete' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/web-sessions', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_web_sessions_list' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/web-sessions/(?P<id>\d+)', [
+			'methods'             => 'DELETE',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_web_sessions_revoke' ],
 		] );
 
 		register_rest_route( self::NAMESPACE, '/accounts', [
@@ -1304,6 +1318,26 @@ final class Controller {
 		if ( is_wp_error( $cid ) ) { return $cid; }
 		PushDevice::delete( (int) $req['id'], $cid );
 		return new WP_REST_Response( [ 'ok' => true ], 200 );
+	}
+
+	public static function me_web_sessions_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		return new WP_REST_Response( [
+			'ok'    => true,
+			'items' => WebSession::list_for_customer( $cid, Session::current_jti() ),
+		], 200 );
+	}
+
+	public static function me_web_sessions_revoke( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$res = WebSession::revoke_by_id( (int) $req['id'], $cid, Session::current_jti() );
+		if ( empty( $res['ok'] ) ) {
+			$status = ( $res['error'] ?? '' ) === 'not_found' ? 404 : 400;
+			return new WP_REST_Response( $res, $status );
+		}
+		return new WP_REST_Response( $res, 200 );
 	}
 
 	/**

@@ -155,6 +155,9 @@ final class ScanService {
 
 		$auto = self::maybe_auto_quarantine( (int) $row['account_id'], $customer_id, $id, $verdict, $score_capped, $blacklist_hit );
 
+		// Notify-Hook: laesst Push-Listener oder andere Extensions den Verdict abgreifen.
+		do_action( 'mailguard_scan_complete', $id, $customer_id, $verdict, $score_capped );
+
 		return [
 			'ok'              => true,
 			'verdict'         => $verdict,

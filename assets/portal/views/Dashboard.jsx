@@ -14,10 +14,10 @@ export default function Dashboard({ me }) {
         <div className="mg-card" style={{ borderLeft: '3px solid #3b82f6' }}>
           <h3>Erste Schritte</h3>
           <ol style={{ paddingLeft: '1.2rem', margin: 0 }}>
-            <li><strong>Postfach verbinden</strong> — unter <em>Postfächer</em> dein IMAP-Konto eintragen (SSL/STARTTLS). Das Passwort wird verschlüsselt gespeichert.</li>
-            <li><strong>Erste Synchronisation abwarten</strong> — der Pull-Cron läuft alle 15 Minuten und holt deine Mails.</li>
-            <li><strong>Inbox öffnen</strong> — Phishing-Mails sind rot markiert, Newsletter haben einen Abmelden-Button.</li>
-            <li><strong>Optional:</strong> unter <em>Regeln</em> Whitelist/Blacklist-Einträge pflegen.</li>
+            <li><strong>Postfach verbinden</strong> — unter <em>Postfächer</em> dein Konto eintragen. Microsoft/Gmail per 1-Klick-OAuth, andere Provider via IMAP (Passwort wird verschlüsselt gespeichert).</li>
+            <li><strong>Ordner werden automatisch übernommen</strong> — Inbox, Junk und alle Custom-Ordner werden beim ersten Abholen erkannt und gescannt. Neue Ordner kommen automatisch dazu.</li>
+            <li><strong>Inbox öffnen</strong> — chronologisch oder nach Absender gruppiert. Phishing-Mails sind rot markiert, Newsletter kannst du pro Absender in einem Klick abbestellen.</li>
+            <li><strong>Optional:</strong> Regeln (Whitelist/Blacklist) pflegen und im Plan-Tab die KI-Tiefenanalyse aktivieren.</li>
           </ol>
           <p className="mg-muted mg-tiny" style={{ marginTop: '0.8rem' }}>Diese Box verschwindet nach deinem nächsten Login.</p>
         </div>
@@ -26,33 +26,51 @@ export default function Dashboard({ me }) {
       <div className="mg-grid">
         <FeatureCard
           title="📬 Postfächer"
-          desc="Verbinde deine IMAP-Konten und lass sie automatisch auf Phishing prüfen."
+          desc="Microsoft- und Gmail-Konten per 1-Klick-OAuth, alle anderen Provider per IMAP mit Autoconfig. Alle Ordner deines Postfachs werden automatisch übernommen — auch neue, die du später anlegst."
           status="aktiv"
           cta={{ label: 'Postfächer verwalten →', onClick: () => navigate('accounts') }}
         />
         <FeatureCard
           title="📥 Inbox"
-          desc="Alle eingehenden Mails an einem Ort, mit Vorschau und Newsletter-Indikator."
+          desc="Zwei Ansichten: chronologisch für den klassischen Mail-Stream oder nach Absender gruppiert — mit Zähler pro Absender, Verdict-Pill und Bulk-Aktionen. Auf Mobile optimiert."
           status="aktiv"
           cta={{ label: 'Zur Inbox →', onClick: () => navigate('inbox') }}
         />
         <FeatureCard
-          title="🛡 Phishing-Warnungen"
-          desc="Eingehende Mails werden gegen die Anti-Phishing-API geprüft, du siehst Verdict + Score direkt in der Inbox."
+          title="🛡 Phishing- & Spoofing-Schutz"
+          desc={'Heuristik + optional KI-Tiefenanalyse. Erkennt Brand-Impersonation (PayPal, Sparkasse, DKB, N26 …), Anti-Detection-Streckungen wie „E A S Y B A N K" und verdächtige Links. Verdict + Score direkt in der Inbox.'}
           status="aktiv"
           cta={{ label: 'Verdächtige Mails →', onClick: () => navigate('inbox') }}
         />
         <FeatureCard
           title="📰 Newsletter-Abmelden"
-          desc="Bulk-Unsubscribe per RFC-8058 (HTTP + mailto). Bounce-Status wird nachverfolgt."
+          desc="Pro Absender ein Klick statt pro Mail. RFC-8058 One-Click-HTTP mit automatischem mailto-Fallback wenn der Provider den One-Click-Endpoint kaputt schickt. Bounce-Status wird nachverfolgt."
           status="aktiv"
           cta={{ label: 'Newsletter →', onClick: () => navigate('newsletters') }}
         />
         <FeatureCard
-          title="🔍 URL-Scanner"
-          desc="Verdächtige Links manuell prüfen, ohne sie zu öffnen."
+          title="🛡 Quarantäne & Endgültig-Löschen"
+          desc="Verdächtige Mails in einen Quarantäne-Ordner verschieben — 7 Tage rückgängig-Fenster. Danach oder sofort endgültig löschen (auch für ganze Absender-Gruppen in einem Rutsch)."
+          status="aktiv"
+          cta={{ label: 'Aktionen ansehen →', onClick: () => navigate('actions') }}
+        />
+        <FeatureCard
+          title="⚙ Regeln"
+          desc="Whitelist- und Blacklist-Regeln pro Absender, Domain, Betreff oder Body-Muster. Blacklist übersteuert Whitelist. Kombiniert mit dem Auto-Quarantäne-Schwellwert deines Postfachs."
+          status="aktiv"
+          cta={{ label: 'Regeln bearbeiten →', onClick: () => navigate('rules') }}
+        />
+        <FeatureCard
+          title="🔍 URL- & Mail-Scanner"
+          desc="Verdächtige Links prüfen, ohne sie zu öffnen. Auch komplette E-Mail-Header/Body-Tests, um vor dem Klicken zu wissen ob eine Mail sauber ist."
           status="aktiv"
           cta={{ label: 'Scanner öffnen →', onClick: () => navigate('scanner') }}
+        />
+        <FeatureCard
+          title="💳 Plan & KI-Tiefenanalyse"
+          desc="Plan-Übersicht, Postfach-Quota und DSGVO-konformer Consent für die KI-Tiefenanalyse. Free/Solo/Plus/Pro — Stripe-Portal für Plan-Wechsel und Zahlungsmittel."
+          status="aktiv"
+          cta={{ label: 'Plan verwalten →', onClick: () => navigate('plan') }}
         />
       </div>
     </div>

@@ -4,6 +4,8 @@ declare( strict_types = 1 );
 namespace Itdatex\Mailguard\Imap;
 
 use Itdatex\Mailguard\Installer;
+use Itdatex\Mailguard\Imap\ClientFactory;
+use Itdatex\Mailguard\Imap\QuarantineService;
 
 /**
  * DB-Layer fuer mg_imap_folders. Ein Folder gehoert immer einem Account
@@ -117,6 +119,50 @@ final class Folder {
 			'last_test_ok'     => $ok ? 1 : 0,
 			'last_test_detail' => mb_substr( $detail, 0, 500 ),
 		], [ 'id' => $id, 'customer_id' => $customer_id ] );
+	}
+
+	/**
+	 * Synchronisiert die Folder-Tabelle mit dem tatsaechlichen IMAP-Baum:
+	 * connectet, LISTet alle Folder, legt neu-entdeckte Folder als 'active'
+	 * an. Bereits konfigurierte Folder werden nicht angefasst (auch nicht
+	 * reaktiviert, wenn der User sie manuell auf 'disabled' gesetzt hat).
+	 *
+	 * Ausgeschlossen: der Quarantaene-Folder des Accounts — sonst wuerden
+	 * quarantaenisierte Mails beim naechsten Pull wieder als neue Mails
+	 * eingesammelt (Loop). Non-selectable Folder ('\Noselect'-Attribut,
+	 * wie Gmail-Label-Container) werden ebenfalls uebersprungen.
+	 *
+	 * @return array{ok:bool,discovered?:int,added?:int,skipped?:int,error?:string,detail?:string}
+	 */
+	public static function sync_from_imap( array $account, int $customer_id ) : array {
+		$account_id = (int) $account['id'];
+		try {
+			$client = ClientFactory::for_account( $account );
+			$client->connect();
+			$folders = $client->list_folders();
+			$client->close();
+		} catch ( \Throwable $e ) {
+			return [ 'ok' => false, 'error' => 'connect_failed', 'detail' => $e->getMessage() ];
+		}
+
+		$quar_name = QuarantineService::quarantine_folder_for_account( $account );
+		$existing  = array_flip( array_column( self::list_for_account( $account_id, $customer_id ), 'folder_name' ) );
+
+		$added = 0; $skipped = 0;
+		foreach ( $folders as $f ) {
+			$name = (string) ( $f['name'] ?? '' );
+			if ( $name === '' ) { $skipped++; continue; }
+			if ( $name === $quar_name ) { $skipped++; continue; }
+			// Server-Container ohne selektierbare Mails (Gmail-Label-Root, IMAP-Root).
+			$attrs = array_map( 'strtolower', (array) ( $f['attributes'] ?? [] ) );
+			if ( in_array( '\\noselect', $attrs, true ) ) { $skipped++; continue; }
+			if ( isset( $existing[ $name ] ) ) { $skipped++; continue; }
+
+			$new_id = self::create( $account_id, $customer_id, $name, (string) ( $f['display'] ?? '' ) );
+			if ( $new_id > 0 ) { $added++; } else { $skipped++; }
+		}
+
+		return [ 'ok' => true, 'discovered' => count( $folders ), 'added' => $added, 'skipped' => $skipped ];
 	}
 
 	public static function public_view( array $row ) : array {

@@ -60,7 +60,7 @@ final class Token {
 		if ( $jti !== '' && isset( self::blacklist()[ $jti ] ) ) {
 			return null;
 		}
-		return [ 'customer_id' => $cid, 'expires_at' => $exp ];
+		return [ 'customer_id' => $cid, 'expires_at' => $exp, 'jti' => $jti ];
 	}
 
 	/**
@@ -81,12 +81,21 @@ final class Token {
 		$jti = (string) ( $payload['jti'] ?? '' );
 		$exp = (int) ( $payload['exp'] ?? 0 );
 		if ( $jti === '' || $exp <= time() ) { return false; }
+		self::blacklist_jti( $jti, $exp );
+		return true;
+	}
 
+	/**
+	 * Untere Primitive: markiert einen bekannten JTI (aus einer verify'ten
+	 * Session oder aus der WebSession-Tabelle) als widerrufen. Prunt dabei
+	 * abgelaufene Blacklist-Eintraege, damit die Option nicht endlos waechst.
+	 */
+	public static function blacklist_jti( string $jti, int $exp ) : void {
+		if ( $jti === '' || $exp <= time() ) { return; }
 		$now = time();
 		$bl  = array_filter( self::blacklist(), static fn ( $e ) => (int) $e > $now );
 		$bl[ $jti ] = $exp;
 		update_option( self::BLACKLIST_OPTION, $bl, true );
-		return true;
 	}
 
 	private static function blacklist() : array {
