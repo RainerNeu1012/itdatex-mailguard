@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiDelete } from '../api.js';
+import { portalUrl } from '../router.js';
 
 export default function Devices() {
   const [sessions, setSessions] = useState(null);
@@ -34,7 +35,9 @@ export default function Devices() {
     try {
       const res = await apiDelete('me/web-sessions/' + id);
       if (res.body?.is_current) {
-        window.location.href = 'login';
+        // Voller Page-Reload, damit der Server das jetzt-revoked Cookie neu
+        // pruefen kann (SPA-navigate wuerde die alte me-State weitertragen).
+        window.location.href = portalUrl('login');
         return;
       }
       load();

@@ -30,6 +30,7 @@ export function currentRoute() {
     case 'rules':           return { name: 'rules',            params };
     case 'plan':            return { name: 'plan',             params };
     case 'actions':         return { name: 'actions',          params };
+    case 'devices':         return { name: 'devices',          params };
   }
   // accounts/{id}/edit
   const m = rest.match(/^accounts\/(\d+)\/edit$/);
