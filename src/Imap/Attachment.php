@@ -47,7 +47,7 @@ final class Attachment {
 	public static function list_for_message( int $message_id, int $customer_id ) : array {
 		global $wpdb;
 		$rows = $wpdb->get_results( $wpdb->prepare(
-			'SELECT id, part_num, filename, mime_type, size_bytes, encoding, is_suspicious, suspicion_reasons
+			'SELECT id, part_num, filename, mime_type, size_bytes, encoding, is_suspicious, suspicion_reasons, av_status, av_signature, av_scanned_at
 			 FROM ' . self::table() . '
 			 WHERE message_id = %d AND customer_id = %d
 			 ORDER BY id ASC',
@@ -67,7 +67,29 @@ final class Attachment {
 			'encoding'      => (string) $row['encoding'],
 			'is_suspicious' => (int) $row['is_suspicious'],
 			'reasons'       => is_array( $reasons ) ? $reasons : [],
+			'av_status'     => (string) ( $row['av_status'] ?? '' ),
+			'av_signature'  => (string) ( $row['av_signature'] ?? '' ),
+			'av_scanned_at' => $row['av_scanned_at'] ?? null,
 		];
+	}
+
+	/**
+	 * Persistiert das AV-Ergebnis nach ClamAV-Scan. Bei "infected" wird
+	 * zusaetzlich is_suspicious=1 gesetzt, damit die Portal-UI den Anhang
+	 * auch dann als problematisch markiert, wenn die lokale Heuristik nichts
+	 * fand (klassischer Fall: unauffaelliger Dateiname mit echter Malware).
+	 */
+	public static function record_av_result( int $attachment_id, string $status, ?string $signature ) : void {
+		global $wpdb;
+		$update = [
+			'av_status'     => mb_substr( $status, 0, 20 ),
+			'av_signature'  => mb_substr( (string) $signature, 0, 255 ),
+			'av_scanned_at' => current_time( 'mysql', true ),
+		];
+		if ( $status === 'infected' ) {
+			$update['is_suspicious'] = 1;
+		}
+		$wpdb->update( self::table(), $update, [ 'id' => $attachment_id ] );
 	}
 
 	/**

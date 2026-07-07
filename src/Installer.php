@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 14;
+	public const CURRENT_DB_VERSION = 15;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -65,6 +65,11 @@ final class Installer {
 			'oauth_microsoft_tenant'       => 'common',
 			'oauth_google_client_id'       => '',
 			'oauth_google_client_secret'   => '',
+			'av_clamav_enabled'            => 0,
+			'av_clamav_socket'             => '/var/run/clamav/clamd.ctl',
+			'av_clamav_timeout'            => 15,
+			'av_max_bytes'                 => 26214400, // 25 MiB
+			'av_notify_admin'              => 1,
 		];
 		$existing = (array) get_option( self::OPTION_SETTINGS, [] );
 		update_option( self::OPTION_SETTINGS, array_merge( $defaults, $existing ), false );
@@ -321,11 +326,15 @@ final class Installer {
 			encoding VARCHAR(30) NOT NULL DEFAULT '',
 			is_suspicious TINYINT(1) NOT NULL DEFAULT 0,
 			suspicion_reasons LONGTEXT NULL,
+			av_status VARCHAR(20) NOT NULL DEFAULT '',
+			av_signature VARCHAR(255) NOT NULL DEFAULT '',
+			av_scanned_at DATETIME NULL,
 			created_at DATETIME NOT NULL,
 			PRIMARY KEY (id),
 			KEY idx_customer (customer_id),
 			KEY idx_message (message_id),
-			KEY idx_suspicious (is_suspicious)
+			KEY idx_suspicious (is_suspicious),
+			KEY idx_av_status (av_status)
 		) {$charset};";
 
 		$t_dev = $wpdb->prefix . self::TABLE_PUSH_DEVICES;

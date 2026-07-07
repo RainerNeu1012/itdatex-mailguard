@@ -640,6 +640,32 @@ final class ImapClient {
 		}
 	}
 
+	/**
+	 * Laedt den Byte-Content eines Anhangs (peek — kein \Seen). Wenn size_hint
+	 * das Limit ueberschreitet, wird gar nicht gefetched — sonst wuerde der
+	 * IMAP-Traffic auch fuer zu grosse Files anfallen.
+	 *
+	 * Rueckgabe: dekodierte Bytes oder null bei Fehler/Skip.
+	 */
+	public function fetch_attachment_body( int $uid, string $part_num, string $encoding, int $max_bytes, int $size_hint = 0 ) : ?string {
+		if ( ! $this->stream ) { $this->connect(); }
+		if ( $part_num === '' ) { return null; }
+		if ( $size_hint > 0 && $size_hint > $max_bytes ) { return null; }
+
+		$body = @imap_fetchbody( $this->stream, $uid, $part_num, FT_UID | FT_PEEK );
+		if ( ! is_string( $body ) || $body === '' ) { return null; }
+		$decoded = self::decode_transfer( $body, $encoding );
+		if ( strlen( $decoded ) > $max_bytes ) { return null; }
+		return $decoded;
+	}
+
+	public static function decode_transfer( string $body, string $encoding ) : string {
+		$e = strtolower( $encoding );
+		if ( $e === 'base64' )           { return (string) base64_decode( $body, true ); }
+		if ( $e === 'quoted-printable' ) { return (string) quoted_printable_decode( $body ); }
+		return $body;
+	}
+
 	public static function clean_preview( string $s, int $max ) : string {
 		$s = preg_replace( '/\s+/u', ' ', $s ) ?: '';
 		$s = trim( $s );

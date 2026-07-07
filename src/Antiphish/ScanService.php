@@ -7,6 +7,8 @@ use Itdatex\Mailguard\Admin\Settings;
 use Itdatex\Mailguard\Installer;
 use Itdatex\Mailguard\Imap\Account as ImapAccount;
 use Itdatex\Mailguard\Imap\Action as ImapAction;
+use Itdatex\Mailguard\Imap\Attachment as ImapAttachment;
+use Itdatex\Mailguard\Imap\ClientFactory as ImapClientFactory;
 use Itdatex\Mailguard\Imap\QuarantineService;
 use Itdatex\Mailguard\Rules\Engine as RulesEngine;
 
@@ -137,11 +139,19 @@ final class ScanService {
 			$score += $att_max_score;
 		}
 
+		// AV-Scan (ClamAV): laedt Attachment-Bytes bei Bedarf per IMAP nach und
+		// prueft sie gegen clamd. Bei Fund wird der Score auf 100 gezogen und
+		// die Mail zwangs-quarantaenisiert (unabhaengig vom Kunden-Threshold).
+		$av_infections = self::av_scan_attachments( $row, $reasons );
+
 		$score_capped = max( 0, min( 100, $score ) );
-		// Wenn Anhaenge selbst schon >= suspicious-Schwelle liefern und der
-		// Body-Verdict "clean" war, dann nachziehen — sonst blieben Malware-
-		// Anhaenge in einer sonst harmlos wirkenden Mail als "clean" markiert.
-		if ( $att_max_score >= 40 && in_array( $verdict, [ '', 'clean' ], true ) ) {
+		if ( $av_infections ) {
+			$verdict      = 'dangerous';
+			$score_capped = 100;
+		} elseif ( $att_max_score >= 40 && in_array( $verdict, [ '', 'clean' ], true ) ) {
+			// Wenn Anhaenge selbst schon >= suspicious-Schwelle liefern und der
+			// Body-Verdict "clean" war, dann nachziehen — sonst blieben Malware-
+			// Anhaenge in einer sonst harmlos wirkenden Mail als "clean" markiert.
 			$verdict = $score_capped >= 70 ? 'dangerous' : 'suspicious';
 		}
 
@@ -153,7 +163,12 @@ final class ScanService {
 			'scanned_at'   => current_time( 'mysql', true ),
 		], [ 'id' => $id ] );
 
-		$auto = self::maybe_auto_quarantine( (int) $row['account_id'], $customer_id, $id, $verdict, $score_capped, $blacklist_hit );
+		$force_quarantine = ! empty( $av_infections );
+		$auto = self::maybe_auto_quarantine( (int) $row['account_id'], $customer_id, $id, $verdict, $score_capped, $blacklist_hit || $force_quarantine );
+
+		if ( $av_infections ) {
+			self::notify_admin_malware( $row, $av_infections );
+		}
 
 		// Notify-Hook: laesst Push-Listener oder andere Extensions den Verdict abgreifen.
 		do_action( 'mailguard_scan_complete', $id, $customer_id, $verdict, $score_capped );
@@ -235,6 +250,139 @@ final class ScanService {
 		$entries[] = $now;
 		set_transient( $key, $entries, $window );
 		return [ 'allowed' => true, 'limit' => $rate, 'remaining' => $rate - count( $entries ) ];
+	}
+
+	/**
+	 * ClamAV-Scan aller noch nicht bewerteten Anhaenge einer Mail. Laedt Bytes
+	 * per IMAP nur bei Bedarf (nur wenn AV-Setting aktiv, nur wenn size <=
+	 * av_max_bytes). Persistiert das Ergebnis pro Anhang in mg_attachments
+	 * (av_status/av_signature) und ergaenzt $reasons in-place um jeden Fund.
+	 *
+	 * Bei Errors (clamd down, IMAP-Fehler) wird der jeweilige Anhang auf
+	 * av_status='error' gesetzt, aber der Scan nicht abgebrochen — sonst
+	 * wuerde ein clamd-Ausfall alle Mails auf 'error' zwingen.
+	 *
+	 * @param array<string,mixed> $row       Message-Row aus mg_messages
+	 * @param array<int,array<string,mixed>> $reasons Referenz — Funde werden angehaengt
+	 * @return array<int,array{filename:string,signature:string}> Liste der Infektions-Funde
+	 */
+	private static function av_scan_attachments( array $row, array &$reasons ) : array {
+		if ( (int) ( $row['has_attachments'] ?? 0 ) !== 1 ) {
+			return [];
+		}
+		if ( (int) Settings::get( 'av_clamav_enabled', 0 ) !== 1 ) {
+			return [];
+		}
+		$socket = (string) Settings::get( 'av_clamav_socket', '' );
+		if ( $socket === '' ) {
+			return [];
+		}
+
+		global $wpdb;
+		$t_att = $wpdb->prefix . Installer::TABLE_ATTACHMENTS;
+		$rows  = $wpdb->get_results( $wpdb->prepare(
+			"SELECT id, part_num, filename, mime_type, size_bytes, encoding, av_status
+			 FROM {$t_att}
+			 WHERE message_id = %d
+			 ORDER BY id ASC",
+			(int) $row['id']
+		), ARRAY_A );
+		if ( ! $rows ) { return []; }
+
+		$max_bytes = max( 1024, (int) Settings::get( 'av_max_bytes', 26214400 ) );
+		$timeout   = max( 3, (int) Settings::get( 'av_clamav_timeout', 15 ) );
+
+		// Filter: nur noch nicht gescannte Anhaenge und nur bis av_max_bytes.
+		$targets = array_filter( $rows, static function ( $a ) use ( $max_bytes ) {
+			$done = in_array( (string) ( $a['av_status'] ?? '' ), [ 'clean', 'infected' ], true );
+			$size = (int) ( $a['size_bytes'] ?? 0 );
+			return ! $done && $size > 0 && $size <= $max_bytes;
+		} );
+		if ( ! $targets ) { return []; }
+
+		$account = ImapAccount::find_for_customer( (int) $row['account_id'], (int) $row['customer_id'] );
+		if ( ! $account ) { return []; }
+
+		try {
+			$client = ImapClientFactory::for_account_folder( $account, (string) ( $row['folder'] ?: 'INBOX' ) );
+			$client->connect();
+		} catch ( \Throwable $e ) {
+			foreach ( $targets as $a ) {
+				ImapAttachment::record_av_result( (int) $a['id'], 'error', 'imap: ' . $e->getMessage() );
+			}
+			return [];
+		}
+
+		$clamav = new ClamavClient( $socket, $timeout, $max_bytes );
+
+		$infections = [];
+		try {
+			foreach ( $targets as $a ) {
+				$bytes = null;
+				try {
+					$bytes = $client->fetch_attachment_body(
+						(int) $row['imap_uid'],
+						(string) $a['part_num'],
+						(string) $a['encoding'],
+						$max_bytes,
+						(int) $a['size_bytes']
+					);
+				} catch ( \Throwable $e ) {
+					ImapAttachment::record_av_result( (int) $a['id'], 'error', 'imap: ' . $e->getMessage() );
+					continue;
+				}
+				if ( $bytes === null || $bytes === '' ) {
+					ImapAttachment::record_av_result( (int) $a['id'], 'too_large', null );
+					continue;
+				}
+				$res = $clamav->scan_bytes( $bytes );
+				ImapAttachment::record_av_result( (int) $a['id'], (string) $res['status'], $res['signature'] ?? $res['detail'] ?? null );
+
+				if ( ( $res['status'] ?? '' ) === 'infected' ) {
+					$sig = (string) ( $res['signature'] ?? 'unknown' );
+					$fn  = (string) ( $a['filename'] ?? '' );
+					$infections[] = [ 'filename' => $fn, 'signature' => $sig ];
+					$reasons[] = [
+						'rule'        => 'attachment.malware_found',
+						'description' => sprintf( 'ClamAV: %s in Anhang "%s"', $sig, $fn ),
+						'score'       => 100,
+					];
+				}
+			}
+		} finally {
+			try { $client->close(); } catch ( \Throwable $e ) { /* ignore */ }
+		}
+
+		return $infections;
+	}
+
+	/**
+	 * Admin-Notify per wp_mail bei Malware-Fund. Ein Mail pro Fund-Batch.
+	 * Setting av_notify_admin=0 unterdrueckt die Benachrichtigung.
+	 */
+	private static function notify_admin_malware( array $row, array $infections ) : void {
+		if ( (int) Settings::get( 'av_notify_admin', 1 ) !== 1 ) {
+			return;
+		}
+		$admin = (string) get_option( 'admin_email', '' );
+		if ( $admin === '' ) { return; }
+
+		$subject = '[MailGuard] Malware in Kunden-Mail erkannt';
+		$lines = [
+			'ClamAV hat in einer eingehenden Mail Malware erkannt und die Mail in Quarantaene verschoben.',
+			'',
+			sprintf( 'Kunde: #%d', (int) $row['customer_id'] ),
+			sprintf( 'Account: #%d', (int) $row['account_id'] ),
+			sprintf( 'Betreff: %s', (string) $row['subject'] ),
+			sprintf( 'Absender: %s', (string) $row['from_addr'] ),
+			sprintf( 'Ordner: %s (UID %d)', (string) $row['folder'], (int) $row['imap_uid'] ),
+			'',
+			'Funde:',
+		];
+		foreach ( $infections as $inf ) {
+			$lines[] = sprintf( '  - %s: %s', (string) $inf['filename'], (string) $inf['signature'] );
+		}
+		wp_mail( $admin, $subject, implode( "\n", $lines ) );
 	}
 
 	public static function reset_to_pending( int $id, int $customer_id ) : bool {

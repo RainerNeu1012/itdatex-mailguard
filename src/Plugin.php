@@ -40,6 +40,7 @@ final class Plugin {
 		add_action( 'admin_init',    [ Settings::class, 'register' ] );
 		add_action( 'admin_menu',    [ Settings::class, 'add_menu' ] );
 		add_action( 'admin_init',    [ Customers::class, 'handle_actions' ] );
+		add_action( 'admin_post_itdatex_mg_clamav_ping', [ Settings::class, 'handle_clamav_ping' ] );
 
 		add_action( 'rest_api_init', [ RestController::class, 'register' ] );
 		add_action( 'rest_api_init', [ SaasWebhook::class, 'register' ] );

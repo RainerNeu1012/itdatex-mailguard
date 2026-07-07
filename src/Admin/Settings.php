@@ -60,6 +60,13 @@ final class Settings {
 		self::field_number( 'scan_batch_size',    __( 'Scans pro Cron-Run', 'itdatex-mailguard' ), 'mg_api', 1, 100 );
 		self::field_number( 'manual_scan_quota',  __( 'Manuelle Scans / Endkunde / 24h', 'itdatex-mailguard' ), 'mg_api', 1, 1000 );
 
+		add_settings_section( 'mg_av', __( 'ClamAV Anhang-Scan', 'itdatex-mailguard' ), [ __CLASS__, 'clamav_intro' ], self::PAGE_SLUG );
+		self::field_checkbox( 'av_clamav_enabled', __( 'ClamAV aktivieren', 'itdatex-mailguard' ), 'mg_av', __( 'Bei aktivem Scan werden Anhaenge waehrend des Cron-Runs per IMAP nachgeladen und gegen clamd gestreamt', 'itdatex-mailguard' ) );
+		self::field_text(     'av_clamav_socket',  __( 'clamd-Socket', 'itdatex-mailguard' ), 'mg_av', [ 'placeholder' => '/var/run/clamav/clamd.ctl oder tcp://127.0.0.1:3310' ] );
+		self::field_number(   'av_clamav_timeout', __( 'Timeout (Sek.)', 'itdatex-mailguard' ), 'mg_av', 3, 120 );
+		self::field_number(   'av_max_bytes',      __( 'Max. Dateigroesse (Bytes)', 'itdatex-mailguard' ), 'mg_av', 65536, 104857600 );
+		self::field_checkbox( 'av_notify_admin',   __( 'Admin-Benachrichtigung', 'itdatex-mailguard' ), 'mg_av', __( 'Bei jedem Malware-Fund eine E-Mail an den Site-Admin senden', 'itdatex-mailguard' ) );
+
 		add_settings_section( 'mg_oauth_ms', __( 'Microsoft 365 OAuth', 'itdatex-mailguard' ), [ __CLASS__, 'oauth_ms_intro' ], self::PAGE_SLUG );
 		self::field_text(     'oauth_microsoft_client_id',     __( 'Application (Client) ID', 'itdatex-mailguard' ), 'mg_oauth_ms', [ 'placeholder' => 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' ] );
 		self::field_password( 'oauth_microsoft_client_secret', __( 'Client Secret', 'itdatex-mailguard' ),           'mg_oauth_ms' );
@@ -103,6 +110,19 @@ final class Settings {
 			__( 'Anleitung: <a href="https://console.cloud.google.com" target="_blank" rel="noopener">console.cloud.google.com</a> → neues Projekt → <em>APIs &amp; Services</em> → <em>Library</em> → <em>Gmail API</em> aktivieren. Dann <em>OAuth consent screen</em>: User type „External", App-Name, Developer-Email; eigene Email als <em>Test user</em> hinzufügen; Scope <code>https://mail.google.com/</code>. Schließlich <em>Credentials</em> → <em>+ Create credentials</em> → <em>OAuth client ID</em> → <em>Web application</em>, Redirect-URI = die URL oben. Hinweis: <code>mail.google.com</code> ist „restricted scope" — bis 100 Test-User reicht der Test-Modus, für Production später Google-Verifikation einreichen.', 'itdatex-mailguard' ),
 			[ 'a' => [ 'href' => [], 'target' => [], 'rel' => [] ], 'em' => [], 'code' => [] ]
 		) . '</p>';
+	}
+
+	public static function clamav_intro() : void {
+		$url = wp_nonce_url( admin_url( 'admin-post.php?action=itdatex_mg_clamav_ping' ), 'itdatex_mg_clamav_ping' );
+		echo '<p>' . esc_html__( 'ClamAV scannt Anhaenge (Malware-Signaturen). Der Daemon wird per INSTREAM ueber TCP oder Unix-Socket angesprochen — kein clamscan-Fork pro Datei. Bei einem Fund wird die Mail als "dangerous" markiert, in Quarantaene verschoben und (optional) der Admin benachrichtigt.', 'itdatex-mailguard' ) . '</p>';
+		echo '<p><a href="' . esc_url( $url ) . '" class="button">' . esc_html__( 'clamd PING testen', 'itdatex-mailguard' ) . '</a></p>';
+		$last = get_transient( 'itdatex_mg_clamav_ping_result' );
+		if ( is_array( $last ) ) {
+			$ok    = ! empty( $last['ok'] );
+			$color = $ok ? '#00a32a' : '#d63638';
+			$label = $ok ? sprintf( __( 'OK — clamd Version: %s', 'itdatex-mailguard' ), (string) $last['version'] ) : sprintf( __( 'FEHLER — %s', 'itdatex-mailguard' ), (string) $last['error'] );
+			echo '<p><strong style="color:' . esc_attr( $color ) . '">' . esc_html( $label ) . '</strong></p>';
+		}
 	}
 
 	public static function license_intro() : void {
@@ -151,8 +171,17 @@ final class Settings {
 				$out['push_fcm_service_account'] = $json;
 			}
 		}
-		foreach ( [ 'allow_registration', 'require_email_verification', 'scan_deep' ] as $k ) {
+		foreach ( [ 'allow_registration', 'require_email_verification', 'scan_deep', 'av_clamav_enabled', 'av_notify_admin' ] as $k ) {
 			$out[ $k ] = ! empty( $input[ $k ] ) ? 1 : 0;
+		}
+		if ( isset( $input['av_clamav_socket'] ) ) {
+			$out['av_clamav_socket'] = sanitize_text_field( (string) $input['av_clamav_socket'] );
+		}
+		if ( isset( $input['av_clamav_timeout'] ) ) {
+			$out['av_clamav_timeout'] = max( 3, min( 120, (int) $input['av_clamav_timeout'] ) );
+		}
+		if ( isset( $input['av_max_bytes'] ) ) {
+			$out['av_max_bytes'] = max( 65536, min( 104857600, (int) $input['av_max_bytes'] ) );
 		}
 		if ( isset( $input['scan_batch_size'] ) ) {
 			$out['scan_batch_size'] = max( 1, min( 100, (int) $input['scan_batch_size'] ) );
@@ -208,6 +237,33 @@ final class Settings {
 	public static function get( string $key, $default = null ) {
 		$o = (array) get_option( Installer::OPTION_SETTINGS, [] );
 		return $o[ $key ] ?? $default;
+	}
+
+	/**
+	 * Handler fuer den "clamd PING"-Button im Admin. Baut aus den aktuellen
+	 * Settings einen ClamavClient und legt das Ergebnis fuer 30 s in einem
+	 * Transient ab, damit der Redirect es anzeigen kann.
+	 */
+	public static function handle_clamav_ping() : void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( '', '', [ 'response' => 403 ] );
+		}
+		check_admin_referer( 'itdatex_mg_clamav_ping' );
+		$socket  = (string) self::get( 'av_clamav_socket', '' );
+		$timeout = max( 3, (int) self::get( 'av_clamav_timeout', 15 ) );
+		if ( $socket === '' ) {
+			set_transient( 'itdatex_mg_clamav_ping_result', [ 'ok' => false, 'error' => 'kein Socket konfiguriert' ], 30 );
+		} else {
+			$client  = new \Itdatex\Mailguard\Antiphish\ClamavClient( $socket, $timeout );
+			$version = $client->ping();
+			if ( $version === null ) {
+				set_transient( 'itdatex_mg_clamav_ping_result', [ 'ok' => false, 'error' => 'PING fehlgeschlagen — Socket erreichbar?' ], 30 );
+			} else {
+				set_transient( 'itdatex_mg_clamav_ping_result', [ 'ok' => true, 'version' => $version ], 30 );
+			}
+		}
+		wp_safe_redirect( admin_url( 'admin.php?page=' . self::PAGE_SLUG ) . '#mg_av' );
+		exit;
 	}
 
 	public static function render_page() : void {

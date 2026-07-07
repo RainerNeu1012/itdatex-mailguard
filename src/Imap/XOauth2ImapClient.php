@@ -621,6 +621,23 @@ final class XOauth2ImapClient {
 		return $body;
 	}
 
+	/**
+	 * Laedt den Byte-Content eines Anhangs via BODY.PEEK[<part>] (kein \Seen).
+	 * Skipt, wenn size_hint das max_bytes-Limit uebersteigt, damit XOAUTH2-
+	 * Provider (Gmail/Outlook) nicht unnoetig Traffic bekommen.
+	 */
+	public function fetch_attachment_body( int $uid, string $part_num, string $encoding, int $max_bytes, int $size_hint = 0 ) : ?string {
+		if ( ! $this->stream ) { $this->connect(); }
+		if ( $part_num === '' ) { return null; }
+		if ( $size_hint > 0 && $size_hint > $max_bytes ) { return null; }
+
+		$body = $this->fetch_literal( $uid, 'BODY.PEEK[' . $part_num . ']' );
+		if ( $body === null || $body === '' ) { return null; }
+		$decoded = self::decode_transfer( $body, $encoding );
+		if ( strlen( $decoded ) > $max_bytes ) { return null; }
+		return $decoded;
+	}
+
 	private function send( string $cmd ) : string {
 		$tag = sprintf( 'A%04d', ++$this->tag_seq );
 		fwrite( $this->stream, $tag . ' ' . $cmd . "\r\n" );
