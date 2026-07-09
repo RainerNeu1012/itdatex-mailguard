@@ -9,7 +9,14 @@ const PORTAL_BASE = (((window.itdatexMailguard || {}).portalUrl || '/portal/')
 export function currentRoute() {
   const path = window.location.pathname;
   if (!path.startsWith(PORTAL_BASE)) return { name: 'login', params: {} };
-  const rest = path.slice(PORTAL_BASE.length).replace(/^\//, '').replace(/\/$/, '');
+  // Tauri startet mit `/index.html` als Frame-URL — für den Router ist das
+  // aber die "home"-Route. Wir schneiden den index.html-Suffix ab, bevor
+  // das Rest-Matching läuft. Web-Version unberührt (dort ist die Portal-
+  // Root ohnehin per Rewrite-Rule ohne index.html erreichbar).
+  const rest = path.slice(PORTAL_BASE.length)
+    .replace(/^\//, '')
+    .replace(/\/$/, '')
+    .replace(/^index\.html$/, '');
   const search = new URLSearchParams(window.location.search);
   const params = Object.fromEntries(search.entries());
   // Flache Routen

@@ -22,6 +22,11 @@ final class Cors {
 		'http://localhost',
 		'http://localhost:3000',
 		'http://localhost:5173',
+		// Tauri WebView2 (Windows Desktop-Client). "tauri.localhost" ist die
+		// Origin, mit der Windows-Builds Requests senden; "tauri://localhost"
+		// wird im Dev-Modus mancher älterer Tauri-Versionen benutzt.
+		'https://tauri.localhost',
+		'tauri://localhost',
 	];
 
 	public static function register() : void {

@@ -115,6 +115,6 @@ final class Device {
 
 	private static function sanitize_platform( string $p ) : string {
 		$p = strtolower( trim( $p ) );
-		return in_array( $p, [ 'ios', 'android', 'web' ], true ) ? $p : 'unknown';
+		return in_array( $p, [ 'ios', 'android', 'web', 'windows', 'macos', 'linux' ], true ) ? $p : 'unknown';
 	}
 }
