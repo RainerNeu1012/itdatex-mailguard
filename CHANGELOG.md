@@ -7,6 +7,68 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.9.0] – 2026-07-09
+
+Companion-Release zur ersten Version des MailGuard Windows-Clients
+(itdatex-mailguard-desktop v0.1.0). Alle Änderungen in diesem Release
+sind Backend/Portal-Voraussetzungen, damit derselbe Portal-Bundle-Code
+in einer Tauri-Shell laufen kann + die Windows-App Toasts/Tray-Badge
+mit Inhalten füttern kann.
+
+### Added
+- **In-App-Notifications-Feed**. Neuer Endpoint-Cluster unter
+  `/me/notifications` (`GET` mit `since_id`/`unread_only`,
+  `GET /unread-count`, `POST /mark-seen`). Der Server persistiert jetzt
+  jedes User-relevante Ereignis (Phishing erkannt, Auto-Quarantäne,
+  Undo-Ablauf, Newsletter-Bounce) in einer neuen `mg_notifications`-
+  Tabelle. Der bestehende FCM-Push für Mobile/Web bleibt unverändert
+  und läuft parallel; die neue Persistenz ist die Wahrheitsquelle für
+  Poll-basierte Clients (Windows-Desktop) und die Header-Bell im
+  Portal.
+- **Notifications-Bell im Portal-Header**. 🔔-Button zeigt Unread-
+  Zahl als roter Badge, klick öffnet Dropdown mit den letzten zehn
+  Ereignissen. Klick auf einen Eintrag navigiert zur Ziel-Route und
+  markiert alles bis dahin als gelesen. „Alle gelesen"-Button setzt
+  Badge auf 0 ohne Navigation. Poll läuft alle 60 s bei aktivem Tab,
+  alle 5 min wenn Tab im Hintergrund — spart Requests, ohne Reaktions-
+  zeit im Vordergrund zu verlieren.
+- **Bearer-Auth-Provider-Hook in `assets/portal/api.js`**. Wenn
+  `window.itdatexMailguard.authProvider` gesetzt ist (Tauri-Shell
+  hängt den Windows-Credential-Manager dahinter), liefert die Portal-
+  SPA den Bearer-Token dort statt aus `localStorage`. 401-Antworten
+  triggern einen transparenten `/mobile/refresh` + Request-Retry.
+  Web + bestehende Mobile-Apps unverändert.
+- **Dashboard-Card „🖥 Desktop-Client"** mit Autostart-Toggle. Nur
+  sichtbar wenn `window.itdatexMailguard.desktop === true`, sonst
+  komplett unsichtbar — Web-Nutzer sehen davon nichts.
+- **CORS-Allowlist erweitert** um `tauri://localhost` und
+  `https://tauri.localhost` (Standard-Origins von WebView2-basierten
+  Tauri-Windows-Builds).
+- **Push-Plattform-Enum erweitert** um `windows`/`macos`/`linux`. Der
+  eigentliche Push-Weg bleibt FCM; die neuen Enum-Werte erlauben es
+  Desktop-Clients, sich für die Notifications-Persistenz zu
+  registrieren, ohne dass die bisherige Mobile-/Web-Push-Logik
+  angefasst wird.
+
+### Changed
+- **DB-Schema-Bump 15 → 16.** dbDelta idempotent — `mg_notifications`
+  wird beim nächsten `migrate_db` angelegt (indexiert auf
+  `(customer_id, read_at, id)` und `(customer_id, created_at)` für den
+  Poll- und History-Zugriff).
+- **Router robust gegen `index.html` als Start-Pfad.** Tauri-Shells
+  öffnen die App auf `/index.html`; der bisherige Router mappte das
+  auf „not-found". Endung wird nun vor dem Route-Matching abgeschnitten
+  — Web-Version bleibt unberührt (dort ist die Portal-Root ohnehin
+  ohne `index.html` erreichbar).
+
+### Windows-Client (separates Repo)
+Der zugehörige Windows-Client `itdatex-mailguard-desktop` v0.1.0 ist
+gleichzeitig veröffentlicht:
+<https://github.com/RainerNeu1012/itdatex-mailguard-desktop/releases/tag/v0.1.0>
+
+Nutzt die oben genannten Backend-/Portal-Änderungen; Portal-Code wird
+dort per Git-Submodule referenziert.
+
 ## [0.8.9] – 2026-07-09
 
 ### Added
@@ -142,6 +204,7 @@ that first tagged them (0.8.7). For older 0.7.x releases see the
 
 - `04529bc chore(release): 0.7.2 — block-sender, iCloud MX autoconfig, endpoints_dead unsub`
 
+[0.9.0]: https://github.com/RainerNeu1012/itdatex-mailguard/releases/tag/v0.9.0
 [0.8.9]: https://github.com/RainerNeu1012/itdatex-mailguard/releases/tag/v0.8.9
 [0.8.8]: https://github.com/RainerNeu1012/itdatex-mailguard/releases/tag/v0.8.8
 [0.8.7]: https://github.com/RainerNeu1012/itdatex-mailguard/releases/tag/v0.8.7
