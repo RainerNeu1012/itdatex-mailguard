@@ -8,6 +8,7 @@ use Itdatex\Mailguard\Customer\Auth;
 use Itdatex\Mailguard\Customer\Session;
 use Itdatex\Mailguard\Customer\WebSession;
 use Itdatex\Mailguard\Notify\Device as PushDevice;
+use Itdatex\Mailguard\Notify\Notification;
 use Itdatex\Mailguard\Imap\Account as ImapAccount;
 use Itdatex\Mailguard\Imap\Action as ImapAction;
 use Itdatex\Mailguard\Imap\Attachment as ImapAttachment;
@@ -145,6 +146,29 @@ final class Controller {
 			'methods'             => 'DELETE',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'me_web_sessions_revoke' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/notifications', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_notifications_list' ],
+			'args'                => [
+				'since_id'    => [ 'type' => 'integer', 'default' => 0 ],
+				'limit'       => [ 'type' => 'integer', 'default' => 50 ],
+				'unread_only' => [ 'type' => 'integer', 'default' => 0 ],
+			],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/notifications/unread-count', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_notifications_unread_count' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/notifications/mark-seen', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_notifications_mark_seen' ],
 		] );
 
 		register_rest_route( self::NAMESPACE, '/accounts', [
@@ -1391,6 +1415,45 @@ final class Controller {
 			return new WP_REST_Response( $res, $status );
 		}
 		return new WP_REST_Response( $res, 200 );
+	}
+
+	public static function me_notifications_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$since_id    = max( 0, (int) $req->get_param( 'since_id' ) );
+		$limit       = max( 1, min( 200, (int) $req->get_param( 'limit' ) ?: 50 ) );
+		$unread_only = (int) $req->get_param( 'unread_only' ) === 1;
+		$items = Notification::list_for_customer( $cid, $since_id, $limit, $unread_only );
+		return new WP_REST_Response( [
+			'ok'           => true,
+			'items'        => $items,
+			// Highest returned id → Client speichert das lokal als lastSeenId und
+			// schickt es beim nächsten Poll als since_id, damit er nur wirklich
+			// Neues bekommt.
+			'max_id'       => $items ? max( array_column( $items, 'id' ) ) : $since_id,
+			'unread_count' => Notification::unread_count( $cid ),
+		], 200 );
+	}
+
+	public static function me_notifications_unread_count( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		return new WP_REST_Response( [
+			'ok'           => true,
+			'unread_count' => Notification::unread_count( $cid ),
+		], 200 );
+	}
+
+	public static function me_notifications_mark_seen( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json     = (array) $req->get_json_params();
+		$up_to_id = isset( $json['up_to_id'] ) ? (int) $json['up_to_id'] : 0;
+		$marked   = Notification::mark_seen( $cid, $up_to_id );
+		return new WP_REST_Response( [
+			'ok'     => true,
+			'marked' => $marked,
+		], 200 );
 	}
 
 	/**

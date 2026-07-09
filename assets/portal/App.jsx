@@ -18,6 +18,7 @@ import Rules          from './views/Rules.jsx';
 import Plan           from './views/Plan.jsx';
 import Actions        from './views/Actions.jsx';
 import Devices        from './views/Devices.jsx';
+import NotificationsBell from './components/NotificationsBell.jsx';
 
 export default function App() {
   const route = useRoute();
@@ -104,6 +105,7 @@ export default function App() {
               <button className="mg-nav__btn" onClick={() => navigate('accounts')}>Postfächer</button>
               <button className="mg-nav__btn" onClick={() => navigate('plan')}>Plan</button>
               <button className="mg-nav__btn" onClick={() => navigate('devices')}>Geräte</button>
+              <NotificationsBell />
               <span className="mg-nav__email">{me.email}</span>
               <button className="mg-nav__btn" onClick={() => navigate('logout')}>Logout</button>
             </nav>

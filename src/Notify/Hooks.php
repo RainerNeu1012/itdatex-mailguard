@@ -6,6 +6,7 @@ namespace Itdatex\Mailguard\Notify;
 use Itdatex\Mailguard\Imap\Action as ImapAction;
 use Itdatex\Mailguard\Imap\Message as ImapMessage;
 use Itdatex\Mailguard\Installer;
+use Itdatex\Mailguard\Notify\Notification;
 
 /**
  * Zentraler Ort fuer alle do_action-Listener, die Push-Notifications ausloesen.
@@ -35,9 +36,18 @@ final class Hooks {
 		if ( $verdict !== 'dangerous' ) { return; }
 		$msg = ImapMessage::find_for_customer( $message_id, $customer_id );
 		$from = $msg ? mb_substr( (string) ( $msg['from_name'] ?: $msg['from_addr'] ), 0, 60 ) : '';
+		$title = 'Gefährliche Mail erkannt';
+		$body  = $from !== '' ? "MailGuard hat eine Phishing-Mail von $from blockiert." : 'MailGuard hat eine Phishing-Mail blockiert.';
+		Notification::create( $customer_id, [
+			'event'      => Notification::EVENT_DANGEROUS,
+			'title'      => $title,
+			'body'       => $body,
+			'route'      => 'inbox?verdict=dangerous',
+			'message_id' => $message_id,
+		] );
 		PushService::notify_customer( $customer_id, Device::EVENT_DANGEROUS, [
-			'title'     => 'Gefährliche Mail erkannt',
-			'body'      => $from !== '' ? "MailGuard hat eine Phishing-Mail von $from blockiert." : 'MailGuard hat eine Phishing-Mail blockiert.',
+			'title'     => $title,
+			'body'      => $body,
 			'deep_link' => '/portal/inbox?verdict=dangerous',
 			'data'      => [ 'event' => 'scan_complete', 'message_id' => (string) $message_id, 'score' => (string) $score ],
 		] );
@@ -45,30 +55,57 @@ final class Hooks {
 
 	public static function on_quarantine_done( int $action_id, int $customer_id, string $actor, int $message_id ) : void {
 		if ( $actor !== ImapAction::ACTOR_AUTO ) { return; }
-		// User-Quarantaenen loesen KEIN Push aus — der User hat's ja selbst geklickt.
+		// User-Quarantaenen loesen KEINEN Notify aus — der User hat's ja selbst geklickt.
 		$msg = ImapMessage::find_for_customer( $message_id, $customer_id );
 		$from = $msg ? mb_substr( (string) ( $msg['from_name'] ?: $msg['from_addr'] ), 0, 60 ) : '';
+		$title = 'Mail automatisch in Quarantäne';
+		$body  = $from !== '' ? "Auto-Quarantäne für Mail von $from — 7 Tage rückgängig möglich." : 'Eine Mail wurde automatisch in Quarantäne verschoben.';
+		Notification::create( $customer_id, [
+			'event'      => Notification::EVENT_AUTO_QUARANTINE,
+			'title'      => $title,
+			'body'       => $body,
+			'route'      => 'actions',
+			'message_id' => $message_id,
+			'action_id'  => $action_id,
+		] );
 		PushService::notify_customer( $customer_id, Device::EVENT_QUARANTINE, [
-			'title'     => 'Mail automatisch in Quarantäne',
-			'body'      => $from !== '' ? "Auto-Quarantäne für Mail von $from — 7 Tage rückgängig möglich." : 'Eine Mail wurde automatisch in Quarantäne verschoben.',
+			'title'     => $title,
+			'body'      => $body,
 			'deep_link' => '/portal/actions',
 			'data'      => [ 'event' => 'quarantine_done', 'action_id' => (string) $action_id ],
 		] );
 	}
 
 	public static function on_undo_expiring( int $action_id, int $customer_id, int $hours_left ) : void {
+		$title = 'Undo-Fenster läuft ab';
+		$body  = "In $hours_left Std. wird eine Quarantäne endgültig — jetzt prüfen oder rückgängig machen.";
+		Notification::create( $customer_id, [
+			'event'     => Notification::EVENT_UNDO_EXPIRING,
+			'title'     => $title,
+			'body'      => $body,
+			'route'     => 'actions?filter=quarantine',
+			'action_id' => $action_id,
+		] );
 		PushService::notify_customer( $customer_id, Device::EVENT_UNDO_EXPIRING, [
-			'title'     => 'Undo-Fenster läuft ab',
-			'body'      => "In $hours_left Std. wird eine Quarantäne endgültig — jetzt prüfen oder rückgängig machen.",
+			'title'     => $title,
+			'body'      => $body,
 			'deep_link' => '/portal/actions?filter=quarantine',
 			'data'      => [ 'event' => 'undo_expiring', 'action_id' => (string) $action_id ],
 		] );
 	}
 
 	public static function on_unsub_bounced( int $unsub_id, int $customer_id ) : void {
+		$title = 'Newsletter-Abmeldung fehlgeschlagen';
+		$body  = 'Der Provider hat deinen Abmeldeversuch abgelehnt. Bitte manuell nachschauen.';
+		Notification::create( $customer_id, [
+			'event' => Notification::EVENT_UNSUB_BOUNCED,
+			'title' => $title,
+			'body'  => $body,
+			'route' => 'newsletters?tab=history',
+		] );
 		PushService::notify_customer( $customer_id, Device::EVENT_UNSUB_BOUNCED, [
-			'title'     => 'Newsletter-Abmeldung fehlgeschlagen',
-			'body'      => 'Der Provider hat deinen Abmeldeversuch abgelehnt. Bitte manuell nachschauen.',
+			'title'     => $title,
+			'body'      => $body,
 			'deep_link' => '/portal/newsletters?tab=history',
 			'data'      => [ 'event' => 'unsub_bounced', 'unsub_id' => (string) $unsub_id ],
 		] );

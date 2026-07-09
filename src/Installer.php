@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 15;
+	public const CURRENT_DB_VERSION = 16;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -30,6 +30,7 @@ final class Installer {
 	public const TABLE_PUSH_DEVICES  = 'mg_push_devices';
 	public const TABLE_WEB_SESSIONS  = 'mg_web_sessions';
 	public const TABLE_ATTACHMENTS   = 'mg_attachments';
+	public const TABLE_NOTIFICATIONS = 'mg_notifications';
 
 	public const CRON_UNDO_EXPIRY_HOOK = 'itdatex_mailguard_undo_expiry_check';
 
@@ -361,6 +362,31 @@ final class Installer {
 			KEY idx_token (token_id)
 		) {$charset};";
 
+		// In-App-Notifications. Der Server persistiert jedes Ereignis, das der
+		// User sehen soll (Phishing erkannt, Auto-Quarantäne, Undo-Fenster
+		// läuft aus, Newsletter-Abmeldung gebounced). Portal + Desktop-Client
+		// pollen /me/notifications und zeigen Toasts + Header-Badge — der
+		// Desktop-Client ist auf diese Tabelle angewiesen, weil auf Windows
+		// kein zuverlässiger Push-Kanal existiert (FCM in WebView2 ist fragil).
+		// Der bestehende FCM-Push (Mobile/Web) bleibt unverändert und läuft
+		// parallel: dieselben Notify\Hooks feuern beides.
+		$t_not = $wpdb->prefix . self::TABLE_NOTIFICATIONS;
+		$sql_not = "CREATE TABLE {$t_not} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			event VARCHAR(40) NOT NULL DEFAULT '',
+			title VARCHAR(200) NOT NULL DEFAULT '',
+			body VARCHAR(1000) NOT NULL DEFAULT '',
+			route VARCHAR(200) NOT NULL DEFAULT '',
+			message_id BIGINT UNSIGNED NULL,
+			action_id BIGINT UNSIGNED NULL,
+			created_at DATETIME NOT NULL,
+			read_at DATETIME NULL,
+			PRIMARY KEY (id),
+			KEY idx_customer_unread (customer_id, read_at, id),
+			KEY idx_customer_created (customer_id, created_at)
+		) {$charset};";
+
 		// Web-Sessions: Tracking-Only. Der HMAC-signierte Session-Cookie ist
 		// weiterhin die eigentliche Auth-Quelle (kein DB-Lookup pro Request);
 		// diese Tabelle listet nur, wo der User gerade eingeloggt ist, damit
@@ -395,6 +421,7 @@ final class Installer {
 		dbDelta( $sql_dev );
 		dbDelta( $sql_web );
 		dbDelta( $sql_att );
+		dbDelta( $sql_not );
 
 		// One-shot Migration: aus jedem bestehenden Account einen Folder-Eintrag
 		// erzeugen. Nur wenn die Folder-Tabelle leer ist UND mind. ein Account
