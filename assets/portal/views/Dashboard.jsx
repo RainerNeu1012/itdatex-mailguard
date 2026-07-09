@@ -3,12 +3,15 @@ import { navigate } from '../router.js';
 
 export default function Dashboard({ me }) {
   const isFirstLogin = !me.last_login_at;
+  const cfg = (typeof window !== 'undefined' ? window.itdatexMailguard : null) || {};
   return (
     <div className="mg-stack">
       <div className="mg-card">
         <h2>Willkommen, {me.email}</h2>
         <p className="mg-muted">Konto seit {fmtDate(me.created_at)} {me.last_login_at ? '· Letzter Login: ' + fmtDate(me.last_login_at) : ''}</p>
       </div>
+
+      {cfg.desktop && cfg.native && <DesktopCard native={cfg.native} />}
 
       {isFirstLogin && (
         <div className="mg-card" style={{ borderLeft: '3px solid #3b82f6' }}>
@@ -72,6 +75,55 @@ export default function Dashboard({ me }) {
           status="aktiv"
           cta={{ label: 'Plan verwalten →', onClick: () => navigate('plan') }}
         />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Sichtbar nur wenn wir in der Tauri-Shell laufen (window.itdatexMailguard.desktop
+ * === true). Für Web-Nutzer verschwindet die Card komplett. Aktuell: Autostart-
+ * Toggle. Später hier auch Update-Check, Silent-Mode etc.
+ */
+function DesktopCard({ native }) {
+  const [enabled, setEnabled] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    native.autostart.get().then((v) => { if (!cancelled) setEnabled(!!v); });
+    return () => { cancelled = true; };
+  }, [native]);
+
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      const ok = enabled ? await native.autostart.disable() : await native.autostart.enable();
+      if (ok) {
+        setEnabled(!enabled);
+      } else {
+        alert('Autostart konnte nicht geändert werden. Prüfe Windows-Berechtigungen.');
+      }
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="mg-card" style={{ borderLeft: '3px solid #0ea5e9' }}>
+      <h3 style={{ margin: '0 0 0.25rem' }}>🖥 Desktop-Client</h3>
+      <p className="mg-muted" style={{ margin: '0 0 0.75rem' }}>
+        Du benutzt den MailGuard-Desktop-Client. Push-Benachrichtigungen und Autostart sind hier verfügbar.
+      </p>
+      <div className="mg-form__row" style={{ gap: '0.5rem', alignItems: 'center' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: busy ? 'wait' : 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={!!enabled}
+            disabled={busy || enabled === null}
+            onChange={toggle}
+          />
+          <span>Beim Windows-Start automatisch mit einloggen</span>
+        </label>
+        {enabled === null && <span className="mg-muted mg-tiny">lade …</span>}
       </div>
     </div>
   );
