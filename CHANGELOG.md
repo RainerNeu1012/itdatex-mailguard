@@ -7,6 +7,48 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.8.9] – 2026-07-09
+
+### Added
+- **„Sender vernichten"** — kombinierter Ein-Klick-Flow, der versucht,
+  beim Anbieter abzumelden (best-effort), eine Blacklist-Regel für den
+  Absender anlegt und alle bestehenden Mails per IMAP-EXPUNGE endgültig
+  löscht (kein Papierkorb, kein Undo). Sichtbar als roter Button auf der
+  Newsletter-Seite und in der grupppierten Inbox-Ansicht. Verlangt eine
+  Type-in-Bestätigung (`VERNICHTEN` eintippen) — sowohl Frontend als
+  auch REST-Endpoint prüfen sie, damit DevTools-Muskelspiel nicht
+  ausreicht.
+- **Auto-DSN-Poll für mailto-Abmeldungen**. Neuer WP-Cron
+  `itdatex_mailguard_unsub_poll` (alle 10 Min.) aktualisiert den
+  Bounce-Status offener mailto-Abmeldungen der letzten 48 h. Bounces
+  landen dadurch ohne User-Klick in Historie und Notify-Hook. Schedule
+  wird beim `plugins_loaded` selbst-heilend nachgezogen, kein DB-Bump
+  nötig.
+- Neue Public-API: `UnsubService::execute_for_sender`,
+  `UnsubService::eradicate_sender`, `Subscriptions::messages_for_sender`,
+  `PurgeService::block_sender`, REST `POST /subscriptions/eradicate`.
+
+### Changed
+- **Robustere Newsletter-Abmeldung.**
+  - `Antiphish\Client` retryt transient fehlgeschlagene Aufrufe (HTTP
+    429, 5xx, Netz-/Timeout-Fehler) genau einmal mit 400 ms Backoff.
+    mailto-execute bleibt bewusst ohne Retry, damit keine doppelten
+    Abmelde-Mails rausgehen.
+  - Idempotenz-Guard: schon erfolgreich abgemeldete Mails hitten die
+    API nicht mehr erneut. Doppelklick-Race ist zusätzlich per
+    Transient-Lock (60 s, per Kunde+Message) abgesichert — verhindert
+    duplizierte `mg_unsubs`-Zeilen.
+  - Bulk-Abmeldung fällt bei toten oder fehlenden Endpoints auf ältere
+    Absender-Mails zurück (bis zu 5), statt sofort aufzugeben. Ältere
+    Kampagnen haben häufiger noch gültige Tokens.
+- REST-Statuscodes klarer getrennt: `already`/`ok`/`needs_manual`/
+  `endpoints_dead` → 200, `not_found` → 404, `in_progress` (Lock) →
+  409, `no_options` → 422, sonst 502. UI kann echte Backend-Ausfälle
+  von "Provider spielt nicht mit" unterscheiden.
+- Portal-UI zeigt konkrete Fehlerursachen (`attempts[]`/`detail`) statt
+  „Status: unbekannt"; der `endpoints_dead`-Zweig ist auch auf der
+  Newsletter-Seite verfügbar (nicht mehr nur in Inbox).
+
 ## [0.8.8] – 2026-07-06
 
 ### Added
@@ -100,5 +142,6 @@ that first tagged them (0.8.7). For older 0.7.x releases see the
 
 - `04529bc chore(release): 0.7.2 — block-sender, iCloud MX autoconfig, endpoints_dead unsub`
 
+[0.8.9]: https://github.com/RainerNeu1012/itdatex-mailguard/releases/tag/v0.8.9
 [0.8.8]: https://github.com/RainerNeu1012/itdatex-mailguard/releases/tag/v0.8.8
 [0.8.7]: https://github.com/RainerNeu1012/itdatex-mailguard/releases/tag/v0.8.7
