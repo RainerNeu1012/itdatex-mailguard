@@ -63,17 +63,33 @@ function Subscriptions({ accountId }) {
   const unsub = async (from_addr) => {
     setBusy((b) => ({ ...b, [from_addr]: 'unsub' }));
     try {
-      const { body } = await apiPost('subscriptions/unsubscribe', { from_addr });
+      const { body, status } = await apiPost('subscriptions/unsubscribe', { from_addr });
       const manualUrl = body.manual_url || (body.api && body.api.manual_url) || '';
       if (body.needs_manual && manualUrl) {
         // Direkt neuen Tab aufmachen — der User hat gerade explizit auf 'Abmelden' geklickt,
         // der Popup-Blocker haelt das durch. Der Reload zeigt danach den persistenten Button.
         window.open(manualUrl, '_blank', 'noopener');
+      } else if (body.reason === 'endpoints_dead') {
+        // Anbieter hat die Abmelde-URL stillgelegt. Anbieten, direkt zu blockieren —
+        // sonst hat der User keine Handhabe außer resigniert wegzuklicken.
+        const cause = body.dead_cause === 'http'
+          ? 'Die Abmelde-URL antwortet dauerhaft mit einem Fehler (Kampagne abgelaufen oder Endpoint zurückgezogen).'
+          : 'Die Abmelde-Adressen sind im DNS nicht mehr erreichbar.';
+        if (window.confirm(
+          `Absender ${from_addr} lässt sich nicht mehr regulär abmelden.\n\n${cause}\n\n` +
+          `Direkt blockieren? Es wird eine Blacklist-Regel angelegt; bestehende Mails bleiben unverändert.`
+        )) {
+          const { body: b2, status: s2 } = await apiPost('inbox/senders/block', { from_addr });
+          if (s2 !== 200 || !b2.ok)     alert('Blockieren fehlgeschlagen: ' + (b2.error || s2));
+          else if (b2.existed)          alert('ℹ Sender war bereits blockiert.');
+          else                          alert('✔ Sender blockiert (Regel angelegt).');
+        }
+      } else if (body.already) {
+        alert('ℹ Bereits abgemeldet — kein neuer Versuch nötig.');
+      } else if (body.ok) {
+        alert(`✔ Abgemeldet (${(body.api && body.api.status) || 'ok'})`);
       } else {
-        const msg = body.ok
-          ? `✔ Abgemeldet (${body.api && body.api.status})`
-          : `Status: ${body.api && body.api.status || body.error || 'unbekannt'}`;
-        alert(msg);
+        alert(formatUnsubError(body, status));
       }
       load();
     } finally {
@@ -116,6 +132,39 @@ function Subscriptions({ accountId }) {
       if (body.failed)  parts.push(`${body.failed} fehlgeschlagen`);
       const ruleTxt = body.rule_id ? ' · Auto-Regel aktiv' : '';
       alert((body.ok ? '✔ ' : '⚠ ') + (parts.join(', ') || 'keine Änderung') + ruleTxt);
+      load();
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
+    }
+  };
+
+  const eradicate = async (from_addr, msg_count) => {
+    // Type-in-Confirmation. Muscle-Memory-Klicks werden hier bewusst blockiert,
+    // weil hard_purge_sender ohne Undo läuft (IMAP-EXPUNGE, kein Papierkorb).
+    const answer = window.prompt(
+      `Absender ${from_addr} KOMPLETT VERNICHTEN?\n\n` +
+      `Es passiert Folgendes:\n` +
+      `• Best-effort Abmelde-Versuch beim Anbieter\n` +
+      `• Blacklist-Regel angelegt (künftige Mails werden aussortiert)\n` +
+      `• ${msg_count} Mail${msg_count === 1 ? '' : 's'} werden ENDGÜLTIG gelöscht (kein Papierkorb, kein Undo)\n\n` +
+      `Zur Bestätigung "VERNICHTEN" eintippen:`
+    );
+    if (answer === null) return;
+    if (answer.trim().toUpperCase() !== 'VERNICHTEN') {
+      alert('Abgebrochen — Bestätigung stimmt nicht.');
+      return;
+    }
+    setBusy((b) => ({ ...b, [from_addr]: 'eradicate' }));
+    try {
+      const { body, status } = await apiPost('subscriptions/eradicate', {
+        from_addr,
+        confirm: 'VERNICHTEN',
+      });
+      if (status === 422) {
+        alert('Abgebrochen: ' + (body.message || 'Bestätigung fehlgeschlagen.'));
+        return;
+      }
+      alert(formatEradicateResult(body, from_addr));
       load();
     } finally {
       setBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
@@ -198,6 +247,18 @@ function Subscriptions({ accountId }) {
                   {busy[s.from_addr] === 'purge'
                     ? '…'
                     : `🗑 ${s.msg_count} aufräumen + blockieren`}
+                </button>
+              )}
+              {s.msg_count > 0 && (
+                <button
+                  className="mg-btn mg-btn--danger"
+                  disabled={!!busy[s.from_addr]}
+                  onClick={() => eradicate(s.from_addr, s.msg_count)}
+                  title="Best-effort abmelden + Sender blockieren + ALLE bestehenden Mails ENDGÜLTIG löschen (kein Undo)"
+                >
+                  {busy[s.from_addr] === 'eradicate'
+                    ? '…'
+                    : `💥 Sender vernichten (${s.msg_count})`}
                 </button>
               )}
             </div>
@@ -305,6 +366,62 @@ function History({ accountId }) {
       )}
     </div>
   );
+}
+
+/**
+ * Fasst die drei Teilergebnisse einer "Sender vernichten"-Aktion in einem
+ * User-lesbaren Text zusammen. Zeigt jede Teil-Aktion als eigene Zeile, damit
+ * der User sieht, was durchging und was nicht (z.B. Abmeldung tot, Purge ok).
+ */
+function formatEradicateResult(body, from_addr) {
+  const lines = [`Ergebnis für ${from_addr}:`];
+  const u = body.unsub || {};
+  if (u.ok && u.already)         lines.push('• Abmeldung: bereits zuvor erfolgt');
+  else if (u.ok)                 lines.push('• Abmeldung: erfolgreich');
+  else if (u.needs_manual)       lines.push('• Abmeldung: manuell im Browser abzuschließen');
+  else if (u.reason === 'endpoints_dead') {
+    lines.push('• Abmeldung: Anbieter-Endpunkte tot (übersprungen)');
+  } else {
+    lines.push('• Abmeldung: fehlgeschlagen (' + (u.error || 'unbekannt') + ')');
+  }
+  const b = body.block || {};
+  if (b.ok && b.existed) lines.push('• Blockiert: Regel bestand bereits');
+  else if (b.ok)         lines.push('• Blockiert: neue Regel angelegt');
+  else                   lines.push('• Blockieren: fehlgeschlagen (' + (b.error || 'unbekannt') + ')');
+  const p = body.purge || {};
+  const parts = [];
+  if (p.purged)  parts.push(`${p.purged} endgültig gelöscht`);
+  if (p.skipped) parts.push(`${p.skipped} übersprungen`);
+  if (p.failed)  parts.push(`${p.failed} fehlgeschlagen`);
+  lines.push('• Purge: ' + (parts.length ? parts.join(', ') : 'nichts zu löschen'));
+  const heading = body.ok ? '✔ Sender vernichtet' : '⚠ Teilweise erledigt';
+  return heading + '\n\n' + lines.join('\n');
+}
+
+/**
+ * Baut aus der Unsub-API-Antwort eine für den User lesbare Fehlermeldung.
+ * Priorisiert `detail` (Backend-Erklärung) über den letzten attempt-Status
+ * über den generischen error-Code. HTTP 409 = Doppelklick-Lock, 422 = keine
+ * Optionen im List-Unsubscribe-Header — beide brauchen eigene Texte, weil
+ * der User sonst denkt, das System sei kaputt.
+ */
+function formatUnsubError(body, status) {
+  if (status === 409) return 'ℹ Es läuft bereits eine Abmeldung — bitte kurz warten und Seite neu laden.';
+  if (status === 422 || body.error === 'no_options' || body.error === 'no_option_picked') {
+    return '⚠ Diese Mail enthält keine gültige Abmelde-Information. Bitte manuell im Newsletter selbst abmelden oder Sender blockieren.';
+  }
+  if (body.detail && typeof body.detail === 'string') {
+    return '⚠ Abmeldung fehlgeschlagen: ' + body.detail;
+  }
+  const attempts = Array.isArray(body.attempts) ? body.attempts : [];
+  const last = attempts.length ? attempts[attempts.length - 1] : null;
+  if (last) {
+    const parts = [last.kind || '?', last.status || '?'];
+    if (last.http_status) parts.push('HTTP ' + last.http_status);
+    if (last.detail)      parts.push(last.detail);
+    return '⚠ Abmeldung fehlgeschlagen (' + parts.join(' · ') + ')';
+  }
+  return '⚠ Abmeldung fehlgeschlagen: ' + (body.error || 'unbekannter Fehler');
 }
 
 function fmtDate(s) {

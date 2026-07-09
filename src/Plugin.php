@@ -7,6 +7,7 @@ use Itdatex\Mailguard\Installer;
 use Itdatex\Mailguard\Admin\Customers;
 use Itdatex\Mailguard\Admin\Settings;
 use Itdatex\Mailguard\Antiphish\ScanService;
+use Itdatex\Mailguard\Antiphish\UnsubService;
 use Itdatex\Mailguard\Imap\PullService;
 use Itdatex\Mailguard\Notify\Hooks as NotifyHooks;
 use Itdatex\Mailguard\Portal\Rewrite;
@@ -53,6 +54,18 @@ final class Plugin {
 		add_filter( 'cron_schedules', [ __CLASS__, 'register_cron_schedule' ] );
 		add_action( Installer::CRON_PULL_HOOK, [ PullService::class, 'pull_all' ] );
 		add_action( Installer::CRON_SCAN_HOOK, [ ScanService::class, 'scan_pending_batch' ] );
+		add_action( Installer::CRON_UNSUB_POLL_HOOK, [ UnsubService::class, 'poll_pending_dsn' ] );
+
+		// Selbst-Heilung: falls die Aktivierung damals ohne Unsub-Poll lief
+		// (Migration einer bestehenden Installation), Schedule bei plugins_loaded
+		// nachträglich anlegen. Kein Extra-Migration-Step nötig.
+		add_action( 'plugins_loaded', [ __CLASS__, 'ensure_unsub_poll_scheduled' ], 20 );
+	}
+
+	public static function ensure_unsub_poll_scheduled() : void {
+		if ( ! wp_next_scheduled( Installer::CRON_UNSUB_POLL_HOOK ) ) {
+			wp_schedule_event( time() + 300, Installer::CRON_UNSUB_POLL_SCHEDULE, Installer::CRON_UNSUB_POLL_HOOK );
+		}
 	}
 
 	public static function register_cron_schedule( array $schedules ) : array {
@@ -66,6 +79,12 @@ final class Plugin {
 			$schedules[ Installer::CRON_SCAN_SCHEDULE ] = [
 				'interval' => 5 * MINUTE_IN_SECONDS,
 				'display'  => __( 'Alle 5 Minuten (MailGuard Phishing-Scan)', 'itdatex-mailguard' ),
+			];
+		}
+		if ( ! isset( $schedules[ Installer::CRON_UNSUB_POLL_SCHEDULE ] ) ) {
+			$schedules[ Installer::CRON_UNSUB_POLL_SCHEDULE ] = [
+				'interval' => 10 * MINUTE_IN_SECONDS,
+				'display'  => __( 'Alle 10 Minuten (MailGuard Unsub-DSN-Poll)', 'itdatex-mailguard' ),
 			];
 		}
 		return $schedules;

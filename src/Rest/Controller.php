@@ -449,6 +449,12 @@ final class Controller {
 			'callback'            => [ __CLASS__, 'subscriptions_purge' ],
 		] );
 
+		register_rest_route( self::NAMESPACE, '/subscriptions/eradicate', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'subscriptions_eradicate' ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/scan/url', [
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
@@ -841,10 +847,37 @@ final class Controller {
 		$json = (array) $req->get_json_params();
 		$idx  = isset( $json['option_idx'] ) ? (int) $json['option_idx'] : null;
 		$res  = UnsubService::execute_for_message( (int) $req['id'], $cid, $idx );
-		// needs_manual ist eine Aufforderung an den User (Provider braucht Browser-Klick),
-		// nicht ein Serverfehler — deshalb mit 200 statt 502 antworten.
-		$http = ( ! empty( $res['ok'] ) || ! empty( $res['needs_manual'] ) ) ? 200 : 502;
-		return new WP_REST_Response( $res, $http );
+		return new WP_REST_Response( $res, self::unsub_http_code( $res ) );
+	}
+
+	/**
+	 * Mapping Unsub-Ergebnis → HTTP-Status.
+	 *
+	 * 200 = klarer Ausgang, den das UI anzeigen soll:
+	 *       • ok (erfolgreich abgemeldet)
+	 *       • needs_manual (User muss im Browser klicken)
+	 *       • already (schon zuvor abgemeldet)
+	 *       • endpoints_dead (Provider hat Abmelde-URL stillgelegt — echtes Ergebnis, kein Serverfehler)
+	 * 404 = Ziel-Mail existiert nicht mehr
+	 * 409 = parallele Abmeldung läuft bereits (Doppelklick-Lock)
+	 * 422 = kein List-Unsubscribe-Header vorhanden (Client-seitig unlösbar)
+	 * 502 = Backend-Fehler (API down, Timeout, unerwarteter Provider-Fehler)
+	 *
+	 * Trennt "unser Server hat gerade ein Problem" von "der Newsletter-Absender
+	 * spielt nicht mit" — das UI kann darauf unterschiedlich reagieren, statt
+	 * überall dieselbe rote 502-Fehlermeldung zu zeigen.
+	 */
+	private static function unsub_http_code( array $res ) : int {
+		if ( ! empty( $res['ok'] ) )           return 200;
+		if ( ! empty( $res['needs_manual'] ) ) return 200;
+		if ( ( $res['reason'] ?? '' ) === 'endpoints_dead' ) return 200;
+		return match ( (string) ( $res['error'] ?? '' ) ) {
+			'not_found'      => 404,
+			'in_progress'    => 409,
+			'no_options',
+			'no_option_picked' => 422,
+			default          => 502,
+		};
 	}
 
 	public static function inbox_quarantine( WP_REST_Request $req ) {
@@ -1078,15 +1111,9 @@ final class Controller {
 		if ( $from_addr === '' || ! str_contains( $from_addr, '@' ) ) {
 			return new WP_Error( 'bad_input', __( 'from_addr fehlt.', 'itdatex-mailguard' ), [ 'status' => 400 ] );
 		}
-		$msg_id = Subscriptions::latest_message_for_sender( $cid, $from_addr );
-		if ( ! $msg_id ) {
-			return new WP_Error( 'not_found', __( 'Keine Newsletter-Mail dieses Senders gefunden.', 'itdatex-mailguard' ), [ 'status' => 404 ] );
-		}
-		$res = UnsubService::execute_for_message( $msg_id, $cid, null );
-		$res['from_addr']     = $from_addr;
-		$res['source_msg_id'] = $msg_id;
-		$http = ( ! empty( $res['ok'] ) || ! empty( $res['needs_manual'] ) ) ? 200 : 502;
-		return new WP_REST_Response( $res, $http );
+		$res = UnsubService::execute_for_sender( $cid, $from_addr );
+		$res['from_addr'] = $from_addr;
+		return new WP_REST_Response( $res, self::unsub_http_code( $res ) );
 	}
 
 	public static function subscriptions_purge( WP_REST_Request $req ) {
@@ -1100,6 +1127,32 @@ final class Controller {
 		$auto_rule = ! empty( $json['auto_rule'] );
 		$res = PurgeService::purge_sender( $cid, $from_addr, $auto_rule );
 		$res['from_addr'] = $from_addr;
+		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
+	}
+
+	/**
+	 * "Sender vernichten" — kombiniert Abmelde-Versuch + Blockieren + Hard-Purge
+	 * in einem atomaren Aufruf. Server-seitig confirmieren, damit weder DevTools-
+	 * Nutzer noch böse Curls das Nur-Frontend-Confirm umgehen können: das UI muss
+	 * `confirm: 'VERNICHTEN'` mitschicken, sonst 422.
+	 */
+	public static function subscriptions_eradicate( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json      = (array) $req->get_json_params();
+		$from_addr = strtolower( trim( (string) ( $json['from_addr'] ?? '' ) ) );
+		$confirm   = trim( (string) ( $json['confirm'] ?? '' ) );
+		if ( $from_addr === '' || ! str_contains( $from_addr, '@' ) ) {
+			return new WP_Error( 'bad_input', __( 'from_addr fehlt.', 'itdatex-mailguard' ), [ 'status' => 400 ] );
+		}
+		if ( strtoupper( $confirm ) !== 'VERNICHTEN' ) {
+			return new WP_Error(
+				'confirm_missing',
+				__( 'Bestätigung fehlt — bitte "VERNICHTEN" eintippen, damit diese endgültige Aktion ausgeführt wird.', 'itdatex-mailguard' ),
+				[ 'status' => 422 ]
+			);
+		}
+		$res = UnsubService::eradicate_sender( $cid, $from_addr );
 		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
 	}
 

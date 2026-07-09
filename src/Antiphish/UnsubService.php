@@ -4,6 +4,9 @@ declare( strict_types = 1 );
 namespace Itdatex\Mailguard\Antiphish;
 
 use Itdatex\Mailguard\Imap\Message as ImapMessage;
+use Itdatex\Mailguard\Antiphish\Subscriptions;
+use Itdatex\Mailguard\Antiphish\PurgeService;
+use Itdatex\Mailguard\Installer;
 
 /**
  * Hochlevel-Orchestrator fuer Newsletter-Unsubscribe.
@@ -39,6 +42,46 @@ final class UnsubService {
 		$row = ImapMessage::find_for_customer( $message_id, $customer_id );
 		if ( ! $row ) { return [ 'ok' => false, 'error' => 'not_found' ]; }
 
+		// Idempotenz: schon erfolgreich abgemeldet → nicht nochmal die API anhauen.
+		// Spart Roundtrip, verhindert Doppel-Abmeldung bei mailto, und schützt vor
+		// versehentlichem Reset bereits geklärter Zustände. Explizite Optionswahl
+		// zählt aber als bewusster Retry-Wunsch (User klickt "trotzdem").
+		if ( $option_idx === null ) {
+			$prev = Unsub::find_by_message( $message_id, $customer_id );
+			if ( $prev && (string) $prev['api_status'] === 'unsubscribed' ) {
+				return [
+					'ok'             => true,
+					'already'        => true,
+					'unsub_id'       => (int) $prev['id'],
+					'api'            => [
+						'status'      => 'unsubscribed',
+						'http_status' => $prev['api_http_status'] !== null ? (int) $prev['api_http_status'] : null,
+						'message_id'  => (string) $prev['api_message_id'],
+						'manual_url'  => '',
+					],
+					'option'         => null,
+					'http_code'      => 200,
+					'attempts'       => [],
+				];
+			}
+		}
+
+		// Doppelklick-Lock: kurzlebiger Transient verhindert, dass zwei parallele
+		// Requests (Doppel-Tap, zweiter Tab) gleichzeitig die API befeuern und
+		// duplizierte mg_unsubs-Zeilen erzeugen.
+		$lock_key = 'mg_unsub_lock_' . $customer_id . '_' . $message_id;
+		if ( get_transient( $lock_key ) ) {
+			return [ 'ok' => false, 'error' => 'in_progress', 'detail' => 'Es läuft bereits eine Abmeldung für diese Mail — bitte kurz warten und die Seite neu laden.' ];
+		}
+		set_transient( $lock_key, 1, 60 );
+		try {
+			return self::execute_locked( $row, $message_id, $customer_id, $option_idx );
+		} finally {
+			delete_transient( $lock_key );
+		}
+	}
+
+	private static function execute_locked( array $row, int $message_id, int $customer_id, ?int $option_idx ) : array {
 		// Erst Optionen ziehen — wir wollen nicht auf veraltete Cache-Optionen vertrauen.
 		$ext = self::extract_for_message( $message_id, $customer_id );
 		if ( empty( $ext['ok'] ) || empty( $ext['found'] ) ) {
@@ -69,7 +112,11 @@ final class UnsubService {
 				'email'  => self::email_payload( $row ),
 				'option' => $option,
 			];
-			$res = Client::unsub_execute( $payload );
+			// Retry nur für http one-click (RFC 8058 idempotent) und plain http GET-Fallback.
+			// mailto NICHT — jeder Retry würde eine zweite Abmelde-Mail rausschicken.
+			$kind        = (string) ( $option['kind'] ?? '' );
+			$allow_retry = $kind === 'http';
+			$res = Client::unsub_execute( $payload, 20, $allow_retry );
 			if ( is_wp_error( $res ) ) {
 				$rec = [ 'status' => 'failed', 'raw' => [ 'error' => $res->get_error_message() ] ];
 				$last_id     = Unsub::create( $customer_id, $message_id, $option, $rec );
@@ -206,6 +253,162 @@ final class UnsubService {
 			if ( str_contains( $haystack, $n ) ) { return true; }
 		}
 		return false;
+	}
+
+	/**
+	 * Bulk-Abmeldung für alle Newsletter-Mails eines Absenders. Versucht die
+	 * neueste Mail zuerst; scheitert die mit no_options oder endpoints_dead,
+	 * geht es der Reihe nach mit älteren Mails weiter. Sobald eine gelingt
+	 * (oder needs_manual auslöst), Ende der Kette.
+	 *
+	 * Grund: bei manchen Providern ist die List-Unsubscribe-URL der jüngsten
+	 * Kampagne bereits abgeräumt, ältere Kampagnen der gleichen Serie haben
+	 * aber noch funktionierende Endpoints. Aus User-Sicht ist es egal, welche
+	 * Mail den Abmelde-Klick trägt — Hauptsache es klappt.
+	 */
+	public static function execute_for_sender( int $customer_id, string $from_addr ) : array {
+		$ids = Subscriptions::messages_for_sender( $customer_id, $from_addr, 5 );
+		if ( ! $ids ) {
+			return [ 'ok' => false, 'error' => 'not_found', 'from_addr' => $from_addr ];
+		}
+		$last = null;
+		foreach ( $ids as $mid ) {
+			$res = self::execute_for_message( $mid, $customer_id, null );
+			$res['source_msg_id'] = $mid;
+			$last = $res;
+			if ( ! empty( $res['ok'] ) || ! empty( $res['needs_manual'] ) ) {
+				return $res;
+			}
+			// Nur bei "keine Optionen" oder "Endpoints tot" auf ältere Mail ausweichen.
+			// Bei transienten Fehlern (Timeout, 5xx nach Retry) macht der Fallback
+			// wenig Sinn — der Provider hat dieselben Endpoints in älteren Mails.
+			$reason = (string) ( $res['reason'] ?? '' );
+			$error  = (string) ( $res['error']  ?? '' );
+			if ( $error !== 'no_options' && $reason !== 'endpoints_dead' ) {
+				return $res;
+			}
+		}
+		if ( $last !== null ) {
+			$last['fallback_exhausted'] = true;
+			return $last;
+		}
+		return [ 'ok' => false, 'error' => 'not_found', 'from_addr' => $from_addr ];
+	}
+
+	/**
+	 * "Sender vernichten" — der einzigartige Newsletter-Killer, der drei
+	 * Aktionen in einem Rutsch bündelt:
+	 *   1. Best-effort Abmeldung beim Provider (RFC 8058 One-Click / mailto).
+	 *      Fehler blockieren den Rest NICHT — auch wenn der Abmelde-Endpoint
+	 *      tot ist, wollen wir die Mails trotzdem loswerden.
+	 *   2. Blacklist-Regel anlegen (auto-quarantiniert künftige Mails, sofern
+	 *      der User eine auto_quarantine_min_score-Schwelle gesetzt hat).
+	 *   3. Hard-Purge: alle bestehenden Mails dieses Senders werden per
+	 *      IMAP-EXPUNGE endgültig gelöscht (nicht Papierkorb, nicht Quarantäne).
+	 *      Kein Undo mehr möglich — deswegen muss die UI eine deutliche
+	 *      Type-in-Confirmation davor schalten.
+	 *
+	 * Reihenfolge ist wichtig:
+	 *   - Zuerst Abmelden, damit die Message-IDs noch existieren (nach Purge
+	 *     können wir die Ursprungsmail nicht mehr für Extract-Options nutzen).
+	 *   - Dann Blockieren, damit selbst wenn der Purge einzelne Mails verpasst
+	 *     (z.B. weil sie parallel angekommen sind) die Blacklist-Regel greift.
+	 *   - Zuletzt Purge — schaltet die Ursprungs-Referenz frei.
+	 *
+	 * Response ist als Zusammenfassung strukturiert, nicht als "alles-oder-
+	 * nichts". Der User will nach dem Klick eine Zeile pro Aktion sehen:
+	 * "Abmelde-Versuch: ok / needs_manual / endpoints_dead / skipped",
+	 * "Blockiert: neu / bestand bereits", "Endgültig gelöscht: N Mails".
+	 */
+	public static function eradicate_sender( int $customer_id, string $from_addr ) : array {
+		$from_addr = strtolower( trim( $from_addr ) );
+		if ( $from_addr === '' || ! str_contains( $from_addr, '@' ) ) {
+			return [ 'ok' => false, 'error' => 'bad_input' ];
+		}
+
+		$out = [
+			'ok'        => true,
+			'from_addr' => $from_addr,
+			'unsub'     => null,
+			'block'     => null,
+			'purge'     => null,
+		];
+
+		// Schritt 1: Best-effort Unsub. Kein return-on-error, selbst wenn der
+		// Provider gar nicht mehr erreichbar ist, geht der Purge weiter.
+		try {
+			$unsub = self::execute_for_sender( $customer_id, $from_addr );
+			$out['unsub'] = [
+				'ok'          => ! empty( $unsub['ok'] ),
+				'already'     => ! empty( $unsub['already'] ),
+				'needs_manual'=> ! empty( $unsub['needs_manual'] ),
+				'reason'      => (string) ( $unsub['reason'] ?? '' ),
+				'dead_cause'  => (string) ( $unsub['dead_cause'] ?? '' ),
+				'error'       => (string) ( $unsub['error']  ?? '' ),
+				'manual_url'  => (string) ( $unsub['manual_url'] ?? '' ),
+			];
+		} catch ( \Throwable $e ) {
+			// Ausnahmesituation: Backend-Panic. Nicht abbrechen — der User will
+			// die Mails weg haben, egal was der Abmelde-Call macht.
+			$out['unsub'] = [ 'ok' => false, 'error' => 'exception', 'detail' => $e->getMessage() ];
+		}
+
+		// Schritt 2: Blockieren. Blacklist-Regel für künftige Mails.
+		$block = PurgeService::block_sender( $customer_id, $from_addr, 'Auto-Regel: Sender vernichtet' );
+		$out['block'] = [
+			'ok'      => ! empty( $block['ok'] ),
+			'rule_id' => isset( $block['id'] ) ? (int) $block['id'] : 0,
+			'existed' => ! empty( $block['existed'] ),
+			'error'   => (string) ( $block['error'] ?? '' ),
+		];
+
+		// Schritt 3: Hard-Purge. IMAP-EXPUNGE aller Mails. Der teuerste Teil,
+		// deshalb zum Schluss — wenn er scheitert, sind Abmeldung + Sperre
+		// wenigstens schon durch, und der User kann's nochmal versuchen.
+		$purge = PurgeService::hard_purge_sender( $customer_id, $from_addr );
+		$out['purge'] = [
+			'ok'       => ! empty( $purge['ok'] ),
+			'purged'   => (int) ( $purge['purged']  ?? 0 ),
+			'skipped'  => (int) ( $purge['skipped'] ?? 0 ),
+			'failed'   => (int) ( $purge['failed']  ?? 0 ),
+			'failures' => $purge['failures'] ?? [],
+		];
+
+		// Gesamt-ok nur wenn Block + Purge sauber durchliefen. Unsub kann
+		// bewusst fehlschlagen (endpoints_dead) und trotzdem als "erledigt"
+		// gelten — der Sender ist ja jetzt geblockt und die Mails sind weg.
+		$out['ok'] = $out['block']['ok'] && $out['purge']['ok'];
+		return $out;
+	}
+
+	/**
+	 * Cron-Handler: pollt DSN-Status für alle offenen mailto/api-Abmeldungen der
+	 * letzten 48h. Erledigt genau das, was der User sonst manuell mit dem
+	 * "↻ Status"-Button anstoßen müsste — damit Bounces automatisch auffallen.
+	 *
+	 * Cutoff 48h, weil DSN-Bounces spätestens innerhalb 24-48h eintrudeln. Danach
+	 * ist "keine Antwort" praktisch als "durchgegangen" zu werten und wir sparen
+	 * uns die API-Calls.
+	 *
+	 * Cap 100 Zeilen pro Lauf — schützt vor Runaway-Load, falls sich mal eine
+	 * riesige Backlog aufgestaut hat. Rest kommt im nächsten Slot.
+	 */
+	public static function poll_pending_dsn() : void {
+		global $wpdb;
+		$t = $wpdb->prefix . Installer::TABLE_UNSUBS;
+		$rows = $wpdb->get_results(
+			"SELECT id, customer_id
+			 FROM {$t}
+			 WHERE api_message_id != ''
+			   AND ( dsn_status = '' OR dsn_status = 'delayed' )
+			   AND created_at > (UTC_TIMESTAMP() - INTERVAL 48 HOUR)
+			 ORDER BY id ASC
+			 LIMIT 100",
+			ARRAY_A
+		);
+		foreach ( $rows ?: [] as $r ) {
+			self::status_refresh( (int) $r['id'], (int) $r['customer_id'] );
+		}
 	}
 
 	public static function status_refresh( int $unsub_id, int $customer_id ) : array {

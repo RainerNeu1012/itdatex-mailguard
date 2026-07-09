@@ -118,15 +118,32 @@ final class Subscriptions {
 	 * fuer einen Customer — Ziel-Mail fuer Bulk-Unsub.
 	 */
 	public static function latest_message_for_sender( int $customer_id, string $from_addr ) : ?int {
+		$ids = self::messages_for_sender( $customer_id, $from_addr, 1 );
+		return $ids[0] ?? null;
+	}
+
+	/**
+	 * Alle Newsletter-Mails eines Absenders (neueste zuerst), maximal $limit.
+	 *
+	 * Wird für Bulk-Unsub-Fallback benutzt: wenn die neueste Mail einen
+	 * abgelaufenen Token hat (404/410 auf den One-Click-Endpoint), versuchen
+	 * wir dieselbe Aktion mit der zweit-, dritt-neuesten Mail — ältere
+	 * Kampagnen haben oft noch gültige Tokens, und dem User ist egal, welche
+	 * Mail den Abmelde-Klick auslöst.
+	 *
+	 * @return int[]
+	 */
+	public static function messages_for_sender( int $customer_id, string $from_addr, int $limit = 5 ) : array {
 		global $wpdb;
-		$m  = $wpdb->prefix . Installer::TABLE_MESSAGES;
-		$id = $wpdb->get_var( $wpdb->prepare(
+		$m   = $wpdb->prefix . Installer::TABLE_MESSAGES;
+		$lim = max( 1, min( 20, $limit ) );
+		$rows = $wpdb->get_col( $wpdb->prepare(
 			"SELECT id FROM {$m}
 			 WHERE customer_id = %d AND has_unsub = 1 AND from_addr = %s
 			 ORDER BY fetched_at DESC
-			 LIMIT 1",
-			$customer_id, $from_addr
+			 LIMIT %d",
+			$customer_id, $from_addr, $lim
 		) );
-		return $id ? (int) $id : null;
+		return array_map( 'intval', $rows ?: [] );
 	}
 }

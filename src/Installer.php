@@ -43,6 +43,10 @@ final class Installer {
 	public const CRON_PULL_SCHEDULE = 'itdatex_mailguard_15min';
 	public const CRON_SCAN_HOOK     = 'itdatex_mailguard_scan_pending';
 	public const CRON_SCAN_SCHEDULE = 'itdatex_mailguard_5min';
+	// Poll DSN/Bounce-Status für offene mailto-Abmeldungen. Sonst bleibt ein
+	// Bounce unbemerkt und der User denkt, die Abmeldung sei durchgegangen.
+	public const CRON_UNSUB_POLL_HOOK     = 'itdatex_mailguard_unsub_poll';
+	public const CRON_UNSUB_POLL_SCHEDULE = 'itdatex_mailguard_10min';
 
 	public static function activate() : void {
 		$defaults = [
@@ -93,11 +97,14 @@ final class Installer {
 			$next = strtotime( 'tomorrow 09:00 UTC' );
 			wp_schedule_event( $next, 'daily', self::CRON_UNDO_EXPIRY_HOOK );
 		}
+		if ( ! wp_next_scheduled( self::CRON_UNSUB_POLL_HOOK ) ) {
+			wp_schedule_event( time() + 600, self::CRON_UNSUB_POLL_SCHEDULE, self::CRON_UNSUB_POLL_HOOK );
+		}
 	}
 
 	public static function deactivate() : void {
 		flush_rewrite_rules();
-		foreach ( [ self::CRON_PULL_HOOK, self::CRON_SCAN_HOOK, self::CRON_UNDO_EXPIRY_HOOK ] as $hook ) {
+		foreach ( [ self::CRON_PULL_HOOK, self::CRON_SCAN_HOOK, self::CRON_UNDO_EXPIRY_HOOK, self::CRON_UNSUB_POLL_HOOK ] as $hook ) {
 			$ts = wp_next_scheduled( $hook );
 			if ( $ts ) {
 				wp_unschedule_event( $ts, $hook );
