@@ -7,6 +7,53 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.10.0] – 2026-07-10
+
+Neues Feature: **Auto-Vernichten pro Absender-Domain**. Ergänzt den
+bisherigen `eradicate_sender`-Einmalklick um eine persistente
+Domain-Sperre — sobald aktiv, filtert der Pull-Service jede eingehende
+Mail der Domain direkt beim IMAP-Fetch heraus, bevor sie in
+`mg_messages` oder in der Inbox landet.
+
+### Added
+- **Neue Tabelle `mg_eradicate_domains`** (customer_id, domain,
+  created_at, last_hit_at, hit_count) mit UNIQUE-Index
+  `(customer_id, domain)`. Storage-Layer in
+  `Antiphish\EradicateDomains` (add/remove/list/is_active/record_hit +
+  extract_domain).
+- **Ingest-Interception im `PullService`**. Vor dem Aufruf von
+  `Message::ingest` wird die Absender-Domain gegen die Kunden-
+  spezifische Auto-Vernichten-Liste geprüft. Bei Treffer wird die UID
+  gesammelt und am Ende der Folder-Runde in einem einzigen
+  `expunge_uids`-Batch entfernt (spart N Roundtrips). Neuer
+  `eradicated`-Counter in der Pull-Zusammenfassung.
+- **Neue REST-Endpoints unter `/me/eradicate-domains`**.
+  `GET` liefert die Liste inkl. Hit-Stats, `POST` legt eine neue
+  Domain an (Confirm-Guard `confirm: "VERNICHTEN"`; optional
+  `purge_history: true` löscht bereits eingegangene Mails der Domain),
+  `DELETE /{id}` hebt eine Sperre wieder auf.
+- **`PurgeService::hard_purge_domain`**. Domain-Variante von
+  `hard_purge_sender` mit `LOWER(from_addr) LIKE '%@domain'`. Bewusst
+  ohne server-seitigen Orphan-Search (der wäre für eine Domain N
+  SEARCH-Calls pro unique Legacy-Sender und unpredictable teuer). Wird
+  von `POST /me/eradicate-domains` mit `purge_history: true`
+  aufgerufen.
+- **Portal-View „Auto-Vernichten"**. Neue Route
+  `/portal/eradicate-domains` mit Add-Form (Domain +
+  Purge-History-Checkbox), Löschen-Button und Trefferzähler pro
+  Domain. Nav-Link zwischen „Regeln" und „Aktionen".
+- **Domain-Häkchen im bestehenden Vernichten-Flow**. Nach der
+  Type-in-`VERNICHTEN`-Bestätigung in Inbox/Newsletters fragt ein
+  zweiter `window.confirm`, ob zusätzlich alle zukünftigen Mails der
+  Absender-Domain automatisch vernichtet werden sollen — fängt die
+  typische Sub-Adress-Rotation (news@, angebote@, service@) ab, die
+  die Sender-Blacklist-Regel nicht abdeckt.
+
+### Changed
+- **DB-Schema-Bump 16 → 17.** `dbDelta` idempotent; die neue Tabelle
+  wird beim nächsten `migrate_db` angelegt.
+- **Plugin-Version 0.9.0 → 0.10.0.**
+
 ## [0.9.0] – 2026-07-09
 
 Companion-Release zur ersten Version des MailGuard Windows-Clients
