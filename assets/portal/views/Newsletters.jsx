@@ -154,6 +154,20 @@ function Subscriptions({ accountId }) {
       alert('Abgebrochen — Bestätigung stimmt nicht.');
       return;
     }
+
+    // Zweiter Schritt: Domain-Auto-Vernichten anbieten. Der Blacklist-Rule
+    // von eradicate_sender greift nur pro from_addr — Absender wechseln oft
+    // die Sub-Adresse (news@, angebote@, service@…). Ein Häkchen auf die
+    // Domain fängt die alle mit ab, ohne dass der User jedesmal wieder klicken
+    // muss. Wenn abgelehnt: normaler Sender-only-Eradicate-Flow.
+    const domain = extractDomain(from_addr);
+    const alsoDomain = !!domain && window.confirm(
+      `Auch alle zukünftigen Mails von *@${domain} automatisch vernichten?\n\n` +
+      `Sobald aktiv, filtert MailGuard jede neue Mail dieser Domain beim` +
+      ` Abrufen direkt vom Server — sie landet nie in deiner Inbox.\n\n` +
+      `Kann jederzeit unter "Auto-Vernichten-Domains" wieder aufgehoben werden.`
+    );
+
     setBusy((b) => ({ ...b, [from_addr]: 'eradicate' }));
     try {
       const { body, status } = await apiPost('subscriptions/eradicate', {
@@ -164,12 +178,28 @@ function Subscriptions({ accountId }) {
         alert('Abgebrochen: ' + (body.message || 'Bestätigung fehlgeschlagen.'));
         return;
       }
-      alert(formatEradicateResult(body, from_addr));
+      let extra = '';
+      if (alsoDomain) {
+        const res = await apiPost('me/eradicate-domains', {
+          domain,
+          confirm: 'VERNICHTEN',
+        });
+        extra = res?.body?.ok
+          ? `\n\n✔ Domain *@${domain} auf Auto-Vernichten gesetzt.`
+          : `\n\n⚠ Domain-Auto-Vernichten fehlgeschlagen: ${res?.body?.message || 'unbekannter Fehler'}`;
+      }
+      alert(formatEradicateResult(body, from_addr) + extra);
       load();
     } finally {
       setBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
     }
   };
+
+  function extractDomain(addr) {
+    const at = String(addr || '').lastIndexOf('@');
+    if (at < 0) return '';
+    return String(addr).slice(at + 1).toLowerCase().trim();
+  }
 
   if (error)        return <div className="mg-card mg-error">{error}</div>;
   if (items === null) return <div className="mg-card">Lade …</div>;

@@ -24,6 +24,7 @@ use Itdatex\Mailguard\Oauth\GoogleClient;
 use Itdatex\Mailguard\Oauth\MicrosoftClient;
 use Itdatex\Mailguard\Oauth\StateToken;
 use Itdatex\Mailguard\Antiphish\Client as AntiphishClient;
+use Itdatex\Mailguard\Antiphish\EradicateDomains;
 use Itdatex\Mailguard\Antiphish\PurgeService;
 use Itdatex\Mailguard\Antiphish\ScanService;
 use Itdatex\Mailguard\Antiphish\Unsub;
@@ -514,6 +515,27 @@ final class Controller {
 			'methods'             => 'DELETE',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'rules_delete' ],
+		] );
+
+		// Auto-Vernichten-Domains: persistente Liste, gegen die PullService
+		// jede eingehende Mail prueft und Treffer sofort per EXPUNGE verwirft.
+		register_rest_route( self::NAMESPACE, '/me/eradicate-domains', [
+			[
+				'methods'             => 'GET',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'eradicate_domains_list' ],
+			],
+			[
+				'methods'             => 'POST',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'eradicate_domains_create' ],
+			],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/eradicate-domains/(?P<id>\d+)', [
+			'methods'             => 'DELETE',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'eradicate_domains_delete' ],
 		] );
 	}
 
@@ -1178,6 +1200,91 @@ final class Controller {
 		}
 		$res = UnsubService::eradicate_sender( $cid, $from_addr );
 		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
+	}
+
+	/**
+	 * GET /me/eradicate-domains — Liste der aktivierten Auto-Vernichten-Domains
+	 * fuer den eingeloggten Kunden. Payload enthaelt Hit-Stats fuer die UI.
+	 */
+	public static function eradicate_domains_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		return new WP_REST_Response( [
+			'ok'    => true,
+			'items' => EradicateDomains::list_for_customer( $cid ),
+		], 200 );
+	}
+
+	/**
+	 * POST /me/eradicate-domains — Neue Domain in die Auto-Vernichten-Liste
+	 * aufnehmen. Body: { domain: "example.com", purge_history?: bool }.
+	 *
+	 * Mit `purge_history: true` (default: false) laeuft direkt einmalig
+	 * PurgeService::hard_purge_domain gegen alle bereits eingegangenen Mails
+	 * der Domain — sinnvoll wenn der User "und Altbestand loeschen" will.
+	 * Ohne purge_history greift der Filter nur fuer zukuenftige Pulls.
+	 *
+	 * Confirm-Guard analog zu subscriptions_eradicate: nur mit
+	 * `confirm: "VERNICHTEN"` schreiben wir. So kann kein versehentlich
+	 * durchgereichter POST eine ganze Domain sperren.
+	 */
+	public static function eradicate_domains_create( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json          = (array) $req->get_json_params();
+		$domain        = strtolower( trim( (string) ( $json['domain'] ?? '' ) ) );
+		$purge_history = ! empty( $json['purge_history'] );
+		$confirm       = trim( (string) ( $json['confirm'] ?? '' ) );
+		if ( $domain === '' ) {
+			return new WP_Error( 'bad_input', __( 'domain fehlt.', 'itdatex-mailguard' ), [ 'status' => 400 ] );
+		}
+		if ( strtoupper( $confirm ) !== 'VERNICHTEN' ) {
+			return new WP_Error(
+				'confirm_missing',
+				__( 'Bestätigung fehlt — bitte "VERNICHTEN" eintippen, damit diese endgültige Aktion ausgeführt wird.', 'itdatex-mailguard' ),
+				[ 'status' => 422 ]
+			);
+		}
+
+		$added = EradicateDomains::add( $cid, $domain );
+		if ( empty( $added['ok'] ) ) {
+			return new WP_Error(
+				(string) ( $added['error'] ?? 'insert_failed' ),
+				__( 'Domain konnte nicht angelegt werden.', 'itdatex-mailguard' ),
+				[ 'status' => 422 ]
+			);
+		}
+
+		$out = [
+			'ok'      => true,
+			'id'      => (int) $added['id'],
+			'domain'  => (string) $added['domain'],
+			'existed' => ! empty( $added['existed'] ),
+		];
+		if ( $purge_history ) {
+			$purge = PurgeService::hard_purge_domain( $cid, (string) $added['domain'] );
+			$out['purge'] = $purge;
+		}
+		return new WP_REST_Response( $out, 200 );
+	}
+
+	/**
+	 * DELETE /me/eradicate-domains/{id} — Domain wieder freigeben. Zukuenftige
+	 * Mails der Domain landen ab dem naechsten Pull wieder ganz normal in
+	 * der Inbox.
+	 */
+	public static function eradicate_domains_delete( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req['id'];
+		if ( $id <= 0 ) {
+			return new WP_Error( 'bad_input', __( 'id fehlt.', 'itdatex-mailguard' ), [ 'status' => 400 ] );
+		}
+		$removed = EradicateDomains::remove( $cid, $id );
+		if ( ! $removed ) {
+			return new WP_Error( 'not_found', __( 'Domain nicht gefunden.', 'itdatex-mailguard' ), [ 'status' => 404 ] );
+		}
+		return new WP_REST_Response( [ 'ok' => true, 'id' => $id ], 200 );
 	}
 
 	public static function unsubs_status( WP_REST_Request $req ) {

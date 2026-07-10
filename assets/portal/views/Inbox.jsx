@@ -369,6 +369,19 @@ function SenderList({ filter, setFilter, onReload }) {
       alert('Abgebrochen — Bestätigung stimmt nicht.');
       return;
     }
+
+    // Zweiter Schritt: Auto-Vernichten auf die gesamte Absender-Domain
+    // anbieten. Fängt Sub-Adress-Wechsel (news@, angebote@, service@…) ab,
+    // die die Sender-Blacklist-Rule nicht abdeckt.
+    const at = String(from_addr || '').lastIndexOf('@');
+    const domain = at >= 0 ? String(from_addr).slice(at + 1).toLowerCase().trim() : '';
+    const alsoDomain = !!domain && window.confirm(
+      `Auch alle zukünftigen Mails von *@${domain} automatisch vernichten?\n\n` +
+      `Sobald aktiv, filtert MailGuard jede neue Mail dieser Domain beim` +
+      ` Abrufen direkt vom Server — sie landet nie in deiner Inbox.\n\n` +
+      `Kann jederzeit unter "Auto-Vernichten-Domains" wieder aufgehoben werden.`
+    );
+
     setSenderBusy((b) => ({ ...b, [from_addr]: 'eradicate' }));
     try {
       const { body, status } = await apiPost('subscriptions/eradicate', {
@@ -379,7 +392,17 @@ function SenderList({ filter, setFilter, onReload }) {
         alert('Abgebrochen: ' + (body.message || 'Bestätigung fehlgeschlagen.'));
         return;
       }
-      alert(formatEradicateResult(body, from_addr));
+      let extra = '';
+      if (alsoDomain) {
+        const res = await apiPost('me/eradicate-domains', {
+          domain,
+          confirm: 'VERNICHTEN',
+        });
+        extra = res?.body?.ok
+          ? `\n\n✔ Domain *@${domain} auf Auto-Vernichten gesetzt.`
+          : `\n\n⚠ Domain-Auto-Vernichten fehlgeschlagen: ${res?.body?.message || 'unbekannter Fehler'}`;
+      }
+      alert(formatEradicateResult(body, from_addr) + extra);
       reloadAll();
     } finally {
       setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });

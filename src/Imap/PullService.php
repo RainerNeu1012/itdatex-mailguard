@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Itdatex\Mailguard\Imap;
 
+use Itdatex\Mailguard\Antiphish\EradicateDomains;
+
 /**
  * Pull-Orchestrierung pro Folder. Ein Account kann mehrere Folder haben
  * (INBOX, Junk, Custom-Labels), pro Folder eigenes last_uid.
@@ -132,7 +134,11 @@ final class PullService {
 			return [ 'folder_id' => $folder_id, 'ok' => false, 'error' => 'list_failed', 'detail' => $e->getMessage() ];
 		}
 
-		$inserted = 0; $dup = 0; $err = 0; $max_uid = (int) $folder['last_uid'];
+		$inserted = 0; $dup = 0; $err = 0; $eradicated = 0; $max_uid = (int) $folder['last_uid'];
+		// UIDs, die per Auto-Vernichten geblockt wurden, sammeln wir und
+		// expungen sie am Ende gesammelt — ein EXPUNGE pro UID waere N Roundtrips,
+		// eine Batch spart die Latenz auf grossen IONOS-Konten.
+		$eradicate_uids = [];
 		foreach ( $uids as $uid ) {
 			try {
 				$msg = $client->fetch_message( $uid );
@@ -140,18 +146,44 @@ final class PullService {
 				$err++;
 				continue;
 			}
+
+			// Auto-Vernichten-Check: bevor die Mail ueberhaupt in mg_messages
+			// landet, pruefen wir die Domain gegen die Liste des Kunden. Bei
+			// Treffer: UID zum Sammel-EXPUNGE vormerken, Hit zaehlen, weiter.
+			$from_addr = (string) ( $msg['from_addr'] ?? '' );
+			$domain    = EradicateDomains::extract_domain( $from_addr );
+			if ( $domain && EradicateDomains::is_active( $customer_id, $domain ) ) {
+				$eradicate_uids[] = $uid;
+				EradicateDomains::record_hit( $customer_id, $domain );
+				$eradicated++;
+				if ( $uid > $max_uid ) { $max_uid = $uid; }
+				continue;
+			}
+
 			$status = Message::ingest( $customer_id, (int) $folder['account_id'], (string) $folder['folder_name'], $msg );
 			if ( $status === 'inserted' ) { $inserted++; }
 			elseif ( $status === 'duplicate' ) { $dup++; }
 			else { $err++; }
 			if ( $uid > $max_uid ) { $max_uid = $uid; }
 		}
+		// Batch-EXPUNGE der auto-vernichteten UIDs. Failures nicht fatal:
+		// wenn das EXPUNGE scheitert, hat der User beim naechsten Pull-Lauf
+		// eine "unerwartet gelandete" Mail in der Inbox — der Domain-Filter
+		// greift dann aber trotzdem erneut und versucht es nochmal.
+		if ( $eradicate_uids ) {
+			try {
+				$client->expunge_uids( $eradicate_uids );
+			} catch ( \Throwable $e ) {
+				// bewusst still — Log via Folder::record_test unten wuerde nur
+				// den Erfolgsfall verwaessern; die naechste Runde faengt's ab.
+			}
+		}
 		$client->close();
 
 		if ( $max_uid > (int) $folder['last_uid'] ) {
 			Folder::update_last_uid( $folder_id, $customer_id, $max_uid );
 		}
-		Folder::record_test( $folder_id, $customer_id, true, sprintf( 'pull ok · +%d dup=%d err=%d', $inserted, $dup, $err ) );
+		Folder::record_test( $folder_id, $customer_id, true, sprintf( 'pull ok · +%d dup=%d era=%d err=%d', $inserted, $dup, $eradicated, $err ) );
 
 		return [
 			'folder_id'   => $folder_id,
@@ -159,6 +191,7 @@ final class PullService {
 			'ok'          => true,
 			'fetched'     => $inserted,
 			'duplicates'  => $dup,
+			'eradicated'  => $eradicated,
 			'errors'      => $err,
 			'last_uid'    => $max_uid,
 		];

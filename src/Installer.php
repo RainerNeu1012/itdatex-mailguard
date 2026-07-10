@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 16;
+	public const CURRENT_DB_VERSION = 17;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -31,6 +31,7 @@ final class Installer {
 	public const TABLE_WEB_SESSIONS  = 'mg_web_sessions';
 	public const TABLE_ATTACHMENTS   = 'mg_attachments';
 	public const TABLE_NOTIFICATIONS = 'mg_notifications';
+	public const TABLE_ERADICATE_DOMAINS = 'mg_eradicate_domains';
 
 	public const CRON_UNDO_EXPIRY_HOOK = 'itdatex_mailguard_undo_expiry_check';
 
@@ -409,6 +410,23 @@ final class Installer {
 			KEY idx_customer (customer_id, revoked_at)
 		) {$charset};";
 
+		// Persistente Absender-Domain-Auto-Vernichtung: sobald hier eine Domain
+		// eingetragen ist, filtert der Pull-Service jede neue Mail vom passenden
+		// Absender direkt beim IMAP-Fetch heraus (kein Ingest, keine DB-Zeile).
+		// last_hit_at + hit_count sind rein informativ fuer den User.
+		$t_erd = $wpdb->prefix . self::TABLE_ERADICATE_DOMAINS;
+		$sql_erd = "CREATE TABLE {$t_erd} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			domain VARCHAR(190) NOT NULL,
+			created_at DATETIME NOT NULL,
+			last_hit_at DATETIME NULL,
+			hit_count INT UNSIGNED NOT NULL DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uniq_customer_domain (customer_id, domain),
+			KEY idx_customer (customer_id)
+		) {$charset};";
+
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		dbDelta( $sql_customers );
 		dbDelta( $sql_imap );
@@ -421,6 +439,7 @@ final class Installer {
 		dbDelta( $sql_dev );
 		dbDelta( $sql_web );
 		dbDelta( $sql_att );
+		dbDelta( $sql_erd );
 		dbDelta( $sql_not );
 
 		// One-shot Migration: aus jedem bestehenden Account einen Folder-Eintrag

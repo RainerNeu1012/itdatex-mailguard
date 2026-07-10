@@ -35,6 +35,7 @@ export function currentRoute() {
     case 'newsletters':     return { name: 'newsletters',      params };
     case 'scanner':         return { name: 'scanner',          params };
     case 'rules':           return { name: 'rules',            params };
+    case 'eradicate-domains': return { name: 'eradicate-domains', params };
     case 'plan':            return { name: 'plan',             params };
     case 'actions':         return { name: 'actions',          params };
     case 'devices':         return { name: 'devices',          params };
