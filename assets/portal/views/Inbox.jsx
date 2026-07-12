@@ -379,6 +379,41 @@ function SenderList({ filter, setFilter, onReload }) {
     }
   };
 
+  // Domain-Block bzw. Whitelist per POST /rules. Nutzt die Rules-Engine
+  // direkt, weil /inbox/senders/block nur from_addr kennt.
+  const addSenderRule = async (from_addr, kind, matchType, busyKey) => {
+    const addr = String(from_addr || '').toLowerCase().trim();
+    if (!addr) { alert('Kein Absender bekannt.'); return; }
+    const pattern = matchType === 'from_domain'
+      ? addr.slice(addr.lastIndexOf('@') + 1)
+      : addr;
+    if (!pattern) { alert('Kein gueltiges Muster ableitbar.'); return; }
+    const scope = matchType === 'from_domain' ? `*@${pattern}` : pattern;
+    const label = kind === 'whitelist' ? 'als sicher einstufen' : 'blockieren';
+    const note  = kind === 'whitelist'
+      ? 'Scan-Ergebnisse werden uebersteuert — nicht mehr als gefaehrlich markiert.'
+      : 'Kuenftige Mails werden als gefaehrlich eingestuft (Auto-Quarantaene ggf. aktiv).';
+    if (!window.confirm(`Alle kuenftigen Mails von ${scope} ${label}?\n\n${note}\n\nBereits vorhandene Mails bleiben unveraendert.`)) return;
+    setSenderBusy((b) => ({ ...b, [from_addr]: busyKey }));
+    try {
+      const { body, status } = await apiPost('rules', {
+        kind, match_type: matchType, pattern,
+        note: 'Aus Absender-Uebersicht',
+      });
+      if ((status === 200 || status === 201) && body && body.ok) {
+        alert(`✔ ${scope} in ${kind === 'whitelist' ? 'Whitelist' : 'Blacklist'} eingetragen.`);
+      } else {
+        alert('Regel-Anlage fehlgeschlagen: ' + ((body && body.error) || status));
+      }
+      reloadAll();
+    } finally {
+      setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
+    }
+  };
+  const blockDomain     = (from_addr) => addSenderRule(from_addr, 'blacklist', 'from_domain', 'bl_domain');
+  const whitelistAddr   = (from_addr) => addSenderRule(from_addr, 'whitelist', 'from_addr',  'wl_addr');
+  const whitelistDomain = (from_addr) => addSenderRule(from_addr, 'whitelist', 'from_domain', 'wl_domain');
+
   const eradicateSender = async (from_addr, msg_count) => {
     // Type-in-Confirmation — muscle-memory-sicher, weil EXPUNGE nicht rückholbar.
     const answer = window.prompt(
@@ -464,6 +499,9 @@ function SenderList({ filter, setFilter, onReload }) {
                 onUnsub={() => unsubSender(s.from_addr)}
                 onPurgeAll={() => eradicateSender(s.from_addr, s.msg_count)}
                 onBlock={() => blockSender(s.from_addr)}
+                onBlockDomain={() => blockDomain(s.from_addr)}
+                onWhitelistAddr={() => whitelistAddr(s.from_addr)}
+                onWhitelistDomain={() => whitelistDomain(s.from_addr)}
                 renderRow={(m) => (
                   <Row
                     key={m.id} m={m}
@@ -489,7 +527,7 @@ function SenderList({ filter, setFilter, onReload }) {
   );
 }
 
-function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBlock, renderRow }) {
+function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBlock, onBlockDomain, onWhitelistAddr, onWhitelistDomain, renderRow }) {
   const s = sender;
   const worst = s.worst_verdict;
   const worstClass = worst === 'dangerous' ? ' mg-sender--danger' : '';
@@ -531,16 +569,40 @@ function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBloc
             {busy === 'unsub' ? '…' : '✉ Newsletter abmelden'}
           </button>
         )}
+        <button
+          className="mg-btn"
+          disabled={!!busy}
+          onClick={(e) => { e.stopPropagation(); onWhitelistAddr && onWhitelistAddr(); }}
+          title={`Whitelist-Regel für ${s.from_addr} — kuenftige Mails immer als sauber durchlassen`}
+        >
+          {busy === 'wl_addr' ? '…' : '✓ Absender als sicher'}
+        </button>
+        <button
+          className="mg-btn"
+          disabled={!!busy}
+          onClick={(e) => { e.stopPropagation(); onWhitelistDomain && onWhitelistDomain(); }}
+          title="Whitelist-Regel fuer die ganze Absender-Domain"
+        >
+          {busy === 'wl_domain' ? '…' : '✓ Domain als sicher'}
+        </button>
         {!isBlocked && (
           <button
             className="mg-btn mg-btn--warn"
             disabled={!!busy}
             onClick={(e) => { e.stopPropagation(); onBlock(); }}
-            title={`Blacklist-Regel für ${s.from_addr} anlegen — künftige Mails werden als gefährlich markiert und ggf. automatisch quarantänisiert`}
+            title={`Blacklist-Regel für ${s.from_addr} anlegen`}
           >
             {busy === 'block' ? '…' : '⛔ Absender blockieren'}
           </button>
         )}
+        <button
+          className="mg-btn mg-btn--warn"
+          disabled={!!busy}
+          onClick={(e) => { e.stopPropagation(); onBlockDomain && onBlockDomain(); }}
+          title="Ganze Absender-Domain blockieren"
+        >
+          {busy === 'bl_domain' ? '…' : '⛔ Domain blockieren'}
+        </button>
         <button
           className="mg-btn mg-btn--danger"
           disabled={!!busy}

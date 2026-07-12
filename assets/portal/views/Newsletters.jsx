@@ -116,6 +116,30 @@ function Subscriptions({ accountId }) {
     }
   };
 
+  const blockDomain = async (from_addr) => {
+    const at = String(from_addr || '').lastIndexOf('@');
+    const domain = at >= 0 ? String(from_addr).slice(at + 1).toLowerCase().trim() : '';
+    if (!domain) { alert('Kein gueltiges Muster ableitbar.'); return; }
+    if (!window.confirm(
+      `Ganze Domain *@${domain} blockieren?\n\n` +
+      `Es wird eine Blacklist-Regel fuer die Domain angelegt. Kuenftige Mails jedes Absenders unter dieser Domain ` +
+      `werden als gefaehrlich markiert und ggf. automatisch quarantaeniert.\n\n` +
+      `Bereits vorhandene Mails bleiben unveraendert.`
+    )) return;
+    setBusy((b) => ({ ...b, [from_addr]: 'bl_domain' }));
+    try {
+      const { body, status } = await apiPost('rules', {
+        kind: 'blacklist', match_type: 'from_domain', pattern: domain,
+        note: 'Aus Newsletter-Uebersicht',
+      });
+      if ((status === 200 || status === 201) && body && body.ok) alert(`✔ *@${domain} in Blacklist eingetragen.`);
+      else alert('Regel-Anlage fehlgeschlagen: ' + ((body && body.error) || status));
+      load();
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
+    }
+  };
+
   const purge = async (from_addr, msg_count) => {
     const ok = window.confirm(
       `${msg_count} Newsletter-Mail${msg_count === 1 ? '' : 's'} von ${from_addr} in den Papierkorb verschieben ` +
@@ -257,16 +281,22 @@ function Subscriptions({ accountId }) {
                   {busy[s.from_addr] === 'unsub' ? '…' : '✉ Vom Newsletter abmelden'}
                 </button>
               )}
-              {lastFailed && (
-                <button
-                  className="mg-btn mg-btn--warn"
-                  disabled={!!busy[s.from_addr]}
-                  onClick={() => block(s.from_addr)}
-                  title="Blacklist-Regel anlegen — künftige Mails dieses Absenders werden als gefährlich markiert und ggf. automatisch quarantänisiert"
-                >
-                  {busy[s.from_addr] === 'block' ? '…' : '⛔ Sender blockieren'}
-                </button>
-              )}
+              <button
+                className="mg-btn mg-btn--warn"
+                disabled={!!busy[s.from_addr]}
+                onClick={() => block(s.from_addr)}
+                title="Blacklist-Regel anlegen — künftige Mails dieses Absenders werden als gefährlich markiert und ggf. automatisch quarantänisiert"
+              >
+                {busy[s.from_addr] === 'block' ? '…' : '⛔ Sender blockieren'}
+              </button>
+              <button
+                className="mg-btn mg-btn--warn"
+                disabled={!!busy[s.from_addr]}
+                onClick={() => blockDomain(s.from_addr)}
+                title="Ganze Absender-Domain in Blacklist — faengt auch andere Absender unter dieser Domain ab"
+              >
+                {busy[s.from_addr] === 'bl_domain' ? '…' : '⛔ Domain blockieren'}
+              </button>
               {unsubscribed && s.msg_count > 0 && (
                 <button
                   className="mg-btn"
