@@ -44,9 +44,13 @@ final class Mailer {
 		$lines[] = '';
 
 		if ( $set_password_token !== '' ) {
-			$set_url = self::portal_url( 'reset-password?token=' . rawurlencode( $set_password_token ) );
+			$set_url_web = self::portal_url( 'reset-password?token=' . rawurlencode( $set_password_token ) );
+			$set_url_app = self::app_deep_link( 'reset', $set_password_token );
 			$lines[] = __( 'Passwort setzen (gültig 7 Tage):', 'itdatex-mailguard' );
-			$lines[] = $set_url;
+			$lines[] = __( '· In der MailGuard-Desktop-App (falls installiert):', 'itdatex-mailguard' );
+			$lines[] = '  ' . $set_url_app;
+			$lines[] = __( '· Im Browser:', 'itdatex-mailguard' );
+			$lines[] = '  ' . $set_url_web;
 			$lines[] = '';
 		}
 
@@ -74,13 +78,27 @@ final class Mailer {
 	}
 
 	public static function send_password_reset( string $email, string $token ) : bool {
-		$url = self::portal_url( 'reset-password?token=' . rawurlencode( $token ) );
+		$url_web = self::portal_url( 'reset-password?token=' . rawurlencode( $token ) );
+		$url_app = self::app_deep_link( 'reset', $token );
 		$subject = sprintf( __( '[%s] Passwort zuruecksetzen', 'itdatex-mailguard' ), get_bloginfo( 'name' ) );
 		$body = sprintf(
-			__( "Du hast ein neues Passwort angefordert.\n\nKlicke innerhalb von 60 Minuten auf den folgenden Link, um ein neues Passwort zu setzen:\n\n%s\n\nFalls du das nicht warst, ignoriere diese Mail — dein bisheriges Passwort bleibt gueltig.", 'itdatex-mailguard' ),
-			$url
+			__( "Du hast ein neues Passwort angefordert.\n\nDu hast 60 Minuten Zeit — waehle einen der Wege:\n\nDirekt in der MailGuard-Desktop-App (falls installiert):\n%s\n\nOder im Browser:\n%s\n\nFalls du das nicht warst, ignoriere diese Mail — dein bisheriges Passwort bleibt gueltig.", 'itdatex-mailguard' ),
+			$url_app,
+			$url_web
 		);
 		return self::send( $email, $subject, $body );
+	}
+
+	/**
+	 * Baut Deep-Links fuer die MailGuard-Desktop-App (mailguard://…).
+	 * Die App registriert das URI-Scheme im Windows-Installer (siehe
+	 * itdatex-mailguard-app/src-tauri/tauri.conf.json plugins.deep-link).
+	 * Ist die App nicht installiert, springt Windows auf ein Auswahl-Dialog
+	 * bzw. der Link wird als broken gemeldet — der zweite Link (Portal) im
+	 * gleichen Mail-Body funktioniert dann als Fallback.
+	 */
+	private static function app_deep_link( string $action, string $token ) : string {
+		return 'mailguard://' . $action . '?token=' . rawurlencode( $token );
 	}
 
 	private static function send( string $to, string $subject, string $body ) : bool {
