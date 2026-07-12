@@ -27,8 +27,10 @@ export default function Rules() {
     setSaving(true); setError(null);
     try {
       const { status, body } = await apiPost('rules', form);
-      if (status >= 400) {
-        setError(body.message || body.error || ('HTTP ' + status));
+      if (status === 402 && body && body.error === 'plan_limit_reached') {
+        setError('⚠ Free-Plan-Limit erreicht: ' + body.used + ' von ' + body.limit + ' Regeln in Nutzung. Upgrade unter „Plan" für unbegrenzt.');
+      } else if (status >= 400) {
+        setError((body && (body.message || body.error)) || ('HTTP ' + status));
       } else {
         setForm({ kind: form.kind, match_type: form.match_type, pattern: '', note: '' });
         load();

@@ -67,6 +67,11 @@ export default function Actions() {
 
       <AccountTabs accounts={accounts} activeId={accountId} onSwitch={switchAccount} />
 
+      {data.retention_days && (
+        <div className="mg-card mg-muted" style={{ padding: '10px 14px', fontSize: 13 }}>
+          ℹ Free-Plan zeigt nur die letzten <strong>{data.retention_days} Tage</strong>. Für unbegrenzte Historie: Upgrade unter „Plan".
+        </div>
+      )}
       {error && <div className="mg-card mg-error">{error}</div>}
       {loading && <div className="mg-card">Lade …</div>}
 

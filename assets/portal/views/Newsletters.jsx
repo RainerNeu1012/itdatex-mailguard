@@ -466,6 +466,9 @@ function formatEradicateResult(body, from_addr) {
  * der User sonst denkt, das System sei kaputt.
  */
 function formatUnsubError(body, status) {
+  if (status === 402 && body.error === 'plan_limit_reached') {
+    return '⚠ Free-Plan-Limit erreicht: ' + body.used + ' von ' + body.limit + ' Abmeldungen in diesem Monat verbraucht. Upgrade unter „Plan" für unbegrenzt.';
+  }
   if (status === 409) return 'ℹ Es läuft bereits eine Abmeldung — bitte kurz warten und Seite neu laden.';
   if (status === 422 || body.error === 'no_options' || body.error === 'no_option_picked') {
     return '⚠ Diese Mail enthält keine gültige Abmelde-Information. Bitte manuell im Newsletter selbst abmelden oder Sender blockieren.';
