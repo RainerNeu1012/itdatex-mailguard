@@ -1373,9 +1373,38 @@ final class Controller {
 	}
 
 	public static function verify_email( WP_REST_Request $req ) {
-		$json  = (array) $req->get_json_params();
-		$token = (string) ( $json['token'] ?? '' );
-		return self::respond( Auth::verify_email( $token ) );
+		$json     = (array) $req->get_json_params();
+		$token    = (string) ( $json['token'] ?? '' );
+		$platform = trim( (string) ( $json['platform'] ?? '' ) );
+		$name     = trim( (string) ( $json['device_name'] ?? '' ) );
+
+		$res = Auth::verify_email( $token );
+
+		// Nur bei erfolgreichem Verify + explizit angegebener platform
+		// zusaetzlich Access/Refresh-Token ausgeben (fuer Auto-Login in der
+		// Desktop-/Mobile-App via mailguard://verify?token=…). Der klassische
+		// Browser-Flow ohne platform aendert sich nicht — er nutzt weiter
+		// Cookie/Session und leitet dann zum Login weiter.
+		if ( empty( $res['ok'] ) || $platform === '' ) {
+			return self::respond( $res );
+		}
+
+		$cid = (int) $res['customer_id'];
+		Session::start( $cid );
+		$pair = ApiToken::issue( $cid, $platform, $name );
+		$me   = Auth::current();
+
+		return new WP_REST_Response( [
+			'ok'                 => true,
+			'customer_id'        => $cid,
+			'email'              => (string) ( $res['email'] ?? '' ),
+			'token_id'           => $pair['token_id'],
+			'access_token'       => $pair['access_token'],
+			'refresh_token'      => $pair['refresh_token'],
+			'access_expires_at'  => gmdate( 'c', $pair['access_expires_at'] ),
+			'refresh_expires_at' => gmdate( 'c', $pair['refresh_expires_at'] ),
+			'customer'           => $me,
+		], 200 );
 	}
 
 	public static function forgot_password( WP_REST_Request $req ) {

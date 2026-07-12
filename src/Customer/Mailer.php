@@ -13,11 +13,13 @@ use Itdatex\Mailguard\Portal\Rewrite;
 final class Mailer {
 
 	public static function send_verification( string $email, string $token ) : bool {
-		$url = self::portal_url( 'verify-email?token=' . rawurlencode( $token ) );
+		$url_web = self::portal_url( 'verify-email?token=' . rawurlencode( $token ) );
+		$url_app = self::app_deep_link( 'verify', $token );
 		$subject = sprintf( __( '[%s] Bitte E-Mail-Adresse bestaetigen', 'itdatex-mailguard' ), get_bloginfo( 'name' ) );
 		$body = sprintf(
-			__( "Willkommen!\n\nBitte bestaetige deine E-Mail-Adresse mit dem folgenden Link (gueltig 24 Stunden):\n\n%s\n\nFalls du diese Registrierung nicht angefordert hast, ignoriere diese Mail.", 'itdatex-mailguard' ),
-			$url
+			__( "Willkommen bei MailGuard!\n\nBitte bestaetige deine E-Mail-Adresse mit einem der folgenden Links (gueltig 24 Stunden):\n\nIn der MailGuard-Desktop-App (falls installiert — meldet dich direkt an):\n%s\n\nOder im Browser:\n%s\n\nFalls du diese Registrierung nicht angefordert hast, ignoriere diese Mail.", 'itdatex-mailguard' ),
+			$url_app,
+			$url_web
 		);
 		return self::send( $email, $subject, $body );
 	}
