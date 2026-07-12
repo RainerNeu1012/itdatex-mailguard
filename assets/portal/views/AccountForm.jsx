@@ -8,13 +8,15 @@ const DEFAULTS = {
   auto_quarantine_min_score: null,
 };
 
-// Auswahlwerte für Auto-Quarantäne. Untergrenze 70 entspricht der internen
-// "dangerous"-Schwelle aus dem Phishing-Tuning — alles darunter wäre zu aggressiv.
+// Auswahlwerte für Auto-Quarantäne. Feinere Stufen: 50 (aggressiv, faengt
+// auch verdaechtige mit ab), 70 (Standard, alles 'gefaehrlich'), 85 (streng,
+// nur eindeutige Phishing-Muster), 100 (nur bei Score exakt 100).
 const AUTO_Q_OPTIONS = [
-  { value: '',   label: 'aus (nur manuell)' },
-  { value: '70', label: 'ab Score 70 (alle „gefährlich") — empfohlen' },
-  { value: '80', label: 'ab Score 80 (deutlich gefährlich)' },
-  { value: '90', label: 'ab Score 90 (nahezu sicher Phishing)' },
+  { value: '',    label: 'aus (nur manuell)' },
+  { value: '50',  label: 'Aggressiv — ab Score 50 (auch verdächtige)' },
+  { value: '70',  label: 'Standard — ab Score 70 (alle „gefährlich") — empfohlen' },
+  { value: '85',  label: 'Streng — ab Score 85 (nur klare Phishing-Muster)' },
+  { value: '100', label: 'Nur eindeutig — nur bei Score 100' },
 ];
 
 const EMAIL_RE = /^[^\s@]+@([^\s@]+\.[^\s@]+)$/;

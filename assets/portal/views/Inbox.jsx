@@ -15,7 +15,7 @@ function saveTab(v) {
   try { localStorage.setItem(TAB_STORAGE_KEY, v); } catch { /* ignore */ }
 }
 
-const EMPTY_FILTER = { account_id: 0, unsub_only: 0, verdict: '', q: '', page: 1 };
+const EMPTY_FILTER = { account_id: 0, unsub_only: 0, verdict: '', q: '', page: 1, hide_quarantine: 1 };
 
 export default function Inbox() {
   const [accounts, setAccounts]     = useState([]);
@@ -156,6 +156,10 @@ export default function Inbox() {
               <input type="checkbox" checked={!!filter.unsub_only} onChange={(e) => setFilter({ ...filter, unsub_only: e.target.checked ? 1 : 0, page: 1 })} />
               {' '}Nur Newsletter (List-Unsubscribe vorhanden)
             </label>
+            <label className="mg-form__checkbox" title="Automatisch quarantinierte Mails aus der Liste ausblenden — 24h widerrufbar unter Aktionen.">
+              <input type="checkbox" checked={!!filter.hide_quarantine} onChange={(e) => setFilter({ ...filter, hide_quarantine: e.target.checked ? 1 : 0, page: 1 })} />
+              {' '}Quarantäne verbergen
+            </label>
             {activeFilterCount > 0 && (
               <button className="mg-btn mg-btn--ghost" onClick={() => setFilter((f) => ({ ...EMPTY_FILTER, account_id: f.account_id }))}>
                 Zurücksetzen
@@ -178,6 +182,8 @@ function countActive(f) {
   if (f.verdict)    n++;
   if (f.q)          n++;
   if (f.unsub_only) n++;
+  // hide_quarantine=1 ist Default → nur zaehlen wenn ausgeschaltet.
+  if (!f.hide_quarantine) n++;
   return n;
 }
 
@@ -218,19 +224,38 @@ function ChronoList({ filter, setFilter, onReload }) {
           Keine Mails. Tipp: erst „↓ Jetzt abholen" klicken, dann zeigen wir hier alles was reinkommt.
         </div>
       )}
-      {!loading && data.items.length > 0 && (
-        <div className="mg-stack">
-          {data.items.map((m) => (
-            <Row
-              key={m.id} m={m}
-              expanded={expanded === m.id}
-              busy={busy[m.id]}
-              onToggle={() => setExpanded(expanded === m.id ? null : m.id)}
-              {...handlers.for(m)}
-            />
-          ))}
-        </div>
-      )}
+      {!loading && data.items.length > 0 && (() => {
+        // Quarantaene-Filter clientseitig: der aktuelle /inbox/messages-Endpoint
+        // liefert quarantinierte Mails weiterhin mit — wir blenden sie nur aus.
+        const visible = filter.hide_quarantine
+          ? data.items.filter((m) => !m.quarantine_action_id)
+          : data.items;
+        const hiddenCount = data.items.length - visible.length;
+        return (
+          <>
+            {hiddenCount > 0 && (
+              <div className="mg-card mg-muted" style={{ padding: '8px 12px', fontSize: 13 }}>
+                🛡 {hiddenCount} quarantinierte Mail{hiddenCount === 1 ? '' : 's'} ausgeblendet — Haekchen „Quarantaene verbergen" oben umschalten.
+              </div>
+            )}
+            {visible.length === 0 ? (
+              <div className="mg-card mg-muted">Alle Mails auf dieser Seite sind in Quarantaene.</div>
+            ) : (
+              <div className="mg-stack">
+                {visible.map((m) => (
+                  <Row
+                    key={m.id} m={m}
+                    expanded={expanded === m.id}
+                    busy={busy[m.id]}
+                    onToggle={() => setExpanded(expanded === m.id ? null : m.id)}
+                    {...handlers.for(m)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        );
+      })()}
       {totalPages > 1 && (
         <div className="mg-card mg-pager">
           <button className="mg-btn" disabled={filter.page <= 1} onClick={() => setFilter({ ...filter, page: filter.page - 1 })}>‹ Zurück</button>
@@ -551,7 +576,37 @@ function useRowHandlers(busy, setBusy, reload) {
   return useMemo(() => ({
     for(m, from_addr = null) {
       const finish = () => reloadRef.current && reloadRef.current(from_addr || null);
+      // Whitelist/Blacklist-Regel-Anlage aus einer Nachricht heraus.
+      const addRule = async (kind, matchType) => {
+        const addr = (m.from_addr || '').toLowerCase().trim();
+        if (!addr) return alert('Kein Absender bekannt.');
+        const pattern = matchType === 'from_domain'
+          ? addr.slice(addr.lastIndexOf('@') + 1)
+          : addr;
+        if (!pattern) return alert('Kein gueltiges Muster ableitbar.');
+        const scope = matchType === 'from_domain' ? `*@${pattern}` : pattern;
+        const kindLabel = kind === 'whitelist' ? 'als sicher einstufen' : 'blockieren';
+        const kindNote  = kind === 'whitelist'
+          ? 'Whitelist-Regel — Scan-Ergebnisse fuer diesen Absender werden uebersteuert.'
+          : 'Blacklist-Regel — als gefaehrlich einstufen.';
+        if (!window.confirm(`Alle kuenftigen Mails von ${scope} ${kindLabel}?\n\n${kindNote}\n\nBereits vorhandene Mails bleiben unveraendert.`)) return;
+        const busyKey = (kind === 'whitelist' ? 'wl_' : 'bl_') + (matchType === 'from_domain' ? 'domain' : 'addr');
+        setBusy((b) => ({ ...b, [m.id]: busyKey }));
+        try {
+          const { body, status } = await apiPost('rules', { kind, match_type: matchType, pattern, note: 'Aus Nachricht ' + m.id });
+          if ((status === 200 || status === 201) && body && body.ok) {
+            alert(kind === 'whitelist' ? `${scope} in Whitelist eingetragen.` : `${scope} in Blacklist eingetragen.`);
+          } else {
+            alert('Regel-Anlage fehlgeschlagen: ' + ((body && body.error) || status));
+          }
+          finish();
+        } finally { setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; }); }
+      };
       return {
+        onWhitelistAddr:   () => addRule('whitelist', 'from_addr'),
+        onWhitelistDomain: () => addRule('whitelist', 'from_domain'),
+        onBlacklistAddr:   () => addRule('blacklist', 'from_addr'),
+        onBlacklistDomain: () => addRule('blacklist', 'from_domain'),
         onRescan: async () => {
           setBusy((b) => ({ ...b, [m.id]: 'rescan' }));
           try { await apiPost(`inbox/messages/${m.id}/rescan`); finish(); }
@@ -646,7 +701,7 @@ function Stat({ label, value, tone }) {
   );
 }
 
-function Row({ m, expanded, busy, onToggle, onRescan, onUnsub, onQuarantine, onUndoQuarantine, onPurge }) {
+function Row({ m, expanded, busy, onToggle, onRescan, onUnsub, onQuarantine, onUndoQuarantine, onPurge, onWhitelistAddr, onWhitelistDomain, onBlacklistAddr, onBlacklistDomain }) {
   const dangerous   = m.scan_verdict === 'dangerous';
   const quarantined = !!m.quarantine_action_id;
   const attachmentCount = (m.attachment_count | 0);
@@ -687,6 +742,34 @@ function Row({ m, expanded, busy, onToggle, onRescan, onUnsub, onQuarantine, onU
           <div className="mg-mail__actions">
             <button className="mg-btn" disabled={!!busy} onClick={(e) => { e.stopPropagation(); onRescan(); }}>
               {busy === 'rescan' ? '…' : '↻ Erneut scannen'}
+            </button>
+            <button
+              className="mg-btn" disabled={!!busy || !m.from_addr}
+              onClick={(e) => { e.stopPropagation(); onWhitelistAddr && onWhitelistAddr(); }}
+              title="Whitelist-Regel fuer diesen Absender — kuenftige Mails immer als sauber durchlassen"
+            >
+              {busy === 'wl_addr' ? '…' : '✓ Absender als sicher'}
+            </button>
+            <button
+              className="mg-btn" disabled={!!busy || !m.from_addr}
+              onClick={(e) => { e.stopPropagation(); onWhitelistDomain && onWhitelistDomain(); }}
+              title="Whitelist-Regel fuer die ganze Absender-Domain"
+            >
+              {busy === 'wl_domain' ? '…' : '✓ Domain als sicher'}
+            </button>
+            <button
+              className="mg-btn" disabled={!!busy || !m.from_addr}
+              onClick={(e) => { e.stopPropagation(); onBlacklistAddr && onBlacklistAddr(); }}
+              title="Blacklist-Regel fuer diesen Absender"
+            >
+              {busy === 'bl_addr' ? '…' : '⛔ Absender blocken'}
+            </button>
+            <button
+              className="mg-btn" disabled={!!busy || !m.from_addr}
+              onClick={(e) => { e.stopPropagation(); onBlacklistDomain && onBlacklistDomain(); }}
+              title="Blacklist-Regel fuer die ganze Absender-Domain"
+            >
+              {busy === 'bl_domain' ? '…' : '⛔ Domain blocken'}
             </button>
             {m.has_unsub && !m.sender_unsubscribed && (
               <button className="mg-btn mg-btn--primary" disabled={!!busy} onClick={(e) => { e.stopPropagation(); onUnsub(); }}>
