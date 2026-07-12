@@ -862,7 +862,8 @@ final class Controller {
 		$json = (array) $req->get_json_params();
 		$res = Rule::create( $cid, $json );
 		if ( empty( $res['ok'] ) ) {
-			return new WP_Error( 'bad_input', $res['error'] ?? '', [ 'status' => 400 ] );
+			$status = ( $res['error'] ?? '' ) === 'plan_limit_reached' ? 402 : 400;
+			return new WP_REST_Response( $res, $status );
 		}
 		$row = Rule::find_for_customer( (int) $res['id'], $cid );
 		return new WP_REST_Response( [ 'ok' => true, 'item' => Rule::public_view( $row ) ], 201 );
@@ -918,6 +919,7 @@ final class Controller {
 		if ( ! empty( $res['needs_manual'] ) ) return 200;
 		if ( ( $res['reason'] ?? '' ) === 'endpoints_dead' ) return 200;
 		return match ( (string) ( $res['error'] ?? '' ) ) {
+			'plan_limit_reached' => 402,
 			'not_found'      => 404,
 			'in_progress'    => 409,
 			'no_options',

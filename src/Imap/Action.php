@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Itdatex\Mailguard\Imap;
 
 use Itdatex\Mailguard\Installer;
+use Itdatex\Mailguard\Saas\Plans;
 
 /**
  * Audit-Log für reversible IMAP-Server-Aktionen (Quarantäne-MOVE, Undo).
@@ -45,22 +46,37 @@ final class Action {
 		$per_page = max( 1, min( 100, $per_page ) );
 		$page     = max( 1, $page );
 		$offset   = ( $page - 1 ) * $per_page;
+
+		// Plan-Retention: Free-Plan sieht nur die letzten N Tage. Kostenpflichtige
+		// Plans haben retention_days=0 → keine Filterung.
+		$retention_days = Plans::customer_limit( $customer_id, 'actions_retention_days' );
+		$retention_where = '';
+		$retention_args  = [];
+		if ( $retention_days > 0 ) {
+			$retention_where = ' AND created_at >= %s';
+			$retention_args[] = gmdate( 'Y-m-d H:i:s', time() - $retention_days * DAY_IN_SECONDS );
+		}
+
 		$scope    = $account_id > 0 ? ' AND account_id = %d' : '';
-		$rows_args  = $account_id > 0 ? [ $customer_id, $account_id, $per_page, $offset ] : [ $customer_id, $per_page, $offset ];
-		$count_args = $account_id > 0 ? [ $customer_id, $account_id ] : [ $customer_id ];
+		$account_args = $account_id > 0 ? [ $account_id ] : [];
+
+		$rows_args  = array_merge( [ $customer_id ], $account_args, $retention_args, [ $per_page, $offset ] );
+		$count_args = array_merge( [ $customer_id ], $account_args, $retention_args );
+
 		$rows = $wpdb->get_results( $wpdb->prepare(
-			'SELECT * FROM ' . self::table() . ' WHERE customer_id = %d' . $scope . ' ORDER BY id DESC LIMIT %d OFFSET %d',
+			'SELECT * FROM ' . self::table() . ' WHERE customer_id = %d' . $scope . $retention_where . ' ORDER BY id DESC LIMIT %d OFFSET %d',
 			$rows_args
 		), ARRAY_A );
 		$total = (int) $wpdb->get_var( $wpdb->prepare(
-			'SELECT COUNT(*) FROM ' . self::table() . ' WHERE customer_id = %d' . $scope,
+			'SELECT COUNT(*) FROM ' . self::table() . ' WHERE customer_id = %d' . $scope . $retention_where,
 			$count_args
 		) );
 		return [
-			'items'    => array_map( [ __CLASS__, 'public_view' ], $rows ?: [] ),
-			'total'    => $total,
-			'page'     => $page,
-			'per_page' => $per_page,
+			'items'          => array_map( [ __CLASS__, 'public_view' ], $rows ?: [] ),
+			'total'          => $total,
+			'page'           => $page,
+			'per_page'       => $per_page,
+			'retention_days' => $retention_days > 0 ? $retention_days : null,
 		];
 	}
 

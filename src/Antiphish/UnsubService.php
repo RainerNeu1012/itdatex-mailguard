@@ -7,6 +7,7 @@ use Itdatex\Mailguard\Imap\Message as ImapMessage;
 use Itdatex\Mailguard\Antiphish\Subscriptions;
 use Itdatex\Mailguard\Antiphish\PurgeService;
 use Itdatex\Mailguard\Installer;
+use Itdatex\Mailguard\Saas\Plans;
 
 /**
  * Hochlevel-Orchestrator fuer Newsletter-Unsubscribe.
@@ -38,9 +39,51 @@ final class UnsubService {
 		];
 	}
 
+	/**
+	 * Prueft, ob der Kunde im aktuellen Monat sein Unsub-Kontingent
+	 * (rules_monthly_limit im Plan) schon erreicht hat. Free = 5,
+	 * kostenpflichtige Plans = unbegrenzt (0). Nutzt die mg_unsubs-Tabelle
+	 * als Zaehler ueber die letzten 30 Tage.
+	 */
+	public static function check_monthly_limit( int $customer_id ) : array {
+		$limit = Plans::customer_limit( $customer_id, 'unsubs_monthly_limit' );
+		if ( $limit <= 0 ) { return [ 'ok' => true ]; }
+
+		global $wpdb;
+		$t_u = $wpdb->prefix . Installer::TABLE_UNSUBS;
+		// Erfolgreiche Abmeldungen im laufenden Kalender-Monat.
+		$used = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$t_u}
+			 WHERE customer_id = %d
+			   AND api_status = 'unsubscribed'
+			   AND created_at >= %s",
+			$customer_id,
+			gmdate( 'Y-m-01 00:00:00' )
+		) );
+		if ( $used >= $limit ) {
+			return [
+				'ok'           => false,
+				'error'        => 'plan_limit_reached',
+				'limit'        => $limit,
+				'used'         => $used,
+				'feature'      => 'unsubs_monthly',
+				'upgrade_hint' => 'Free-Plan erlaubt ' . $limit . ' Newsletter-Abmeldungen pro Kalendermonat. Upgrade auf Solo/Plus/Pro fuer unbegrenzt.',
+			];
+		}
+		return [ 'ok' => true ];
+	}
+
 	public static function execute_for_message( int $message_id, int $customer_id, ?int $option_idx = null ) : array {
 		$row = ImapMessage::find_for_customer( $message_id, $customer_id );
 		if ( ! $row ) { return [ 'ok' => false, 'error' => 'not_found' ]; }
+
+		// Plan-Limit-Check: schuetzt Free-Kontingent. Falls schon abgemeldet
+		// (idempotenter Zweig unten), verpuffen wir keine Quota — die Pruefung
+		// steht bewusst vor der Idempotenz-Weiche.
+		$limit_check = self::check_monthly_limit( $customer_id );
+		if ( ! empty( $limit_check['error'] ) ) {
+			return $limit_check;
+		}
 
 		// Idempotenz: schon erfolgreich abgemeldet → nicht nochmal die API anhauen.
 		// Spart Roundtrip, verhindert Doppel-Abmeldung bei mailto, und schützt vor
@@ -267,6 +310,12 @@ final class UnsubService {
 	 * Mail den Abmelde-Klick trägt — Hauptsache es klappt.
 	 */
 	public static function execute_for_sender( int $customer_id, string $from_addr ) : array {
+		// Plan-Limit: Free-Nutzer bekommen N Abmeldungen pro Kalendermonat.
+		$limit_check = self::check_monthly_limit( $customer_id );
+		if ( ! empty( $limit_check['error'] ) ) {
+			return $limit_check;
+		}
+
 		$ids = Subscriptions::messages_for_sender( $customer_id, $from_addr, 5 );
 		if ( ! $ids ) {
 			return [ 'ok' => false, 'error' => 'not_found', 'from_addr' => $from_addr ];

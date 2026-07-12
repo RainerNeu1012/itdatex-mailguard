@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Itdatex\Mailguard\Rules;
 
 use Itdatex\Mailguard\Installer;
+use Itdatex\Mailguard\Saas\Plans;
 
 /**
  * Persistenz fuer mg_rules. Whitelist + Blacklist pro Customer.
@@ -51,6 +52,27 @@ final class Rule {
 		if ( $type === 'from_addr' || $type === 'from_domain' ) {
 			$pattern = strtolower( $pattern );
 		}
+
+		// Plan-Limit: Free bekommt max. N Regeln.
+		$limit = Plans::customer_limit( $customer_id, 'rules_limit' );
+		if ( $limit > 0 ) {
+			global $wpdb;
+			$count = (int) $wpdb->get_var( $wpdb->prepare(
+				'SELECT COUNT(*) FROM ' . self::table() . ' WHERE customer_id = %d',
+				$customer_id
+			) );
+			if ( $count >= $limit ) {
+				return [
+					'ok'           => false,
+					'error'        => 'plan_limit_reached',
+					'limit'        => $limit,
+					'used'         => $count,
+					'feature'      => 'rules',
+					'upgrade_hint' => 'Free-Plan erlaubt maximal ' . $limit . ' Regeln. Upgrade auf Solo/Plus/Pro fuer unbegrenzt.',
+				];
+			}
+		}
+
 		global $wpdb;
 		$ok = $wpdb->insert( self::table(), [
 			'customer_id' => $customer_id,
