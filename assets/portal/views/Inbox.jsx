@@ -15,7 +15,7 @@ function saveTab(v) {
   try { localStorage.setItem(TAB_STORAGE_KEY, v); } catch { /* ignore */ }
 }
 
-const EMPTY_FILTER = { account_id: 0, unsub_only: 0, verdict: '', q: '', page: 1, hide_quarantine: 1 };
+const EMPTY_FILTER = { account_id: 0, unsub_only: 0, verdict: '', q: '', page: 1, hide_quarantine: 1, hide_blocked: 1 };
 
 export default function Inbox() {
   const [accounts, setAccounts]     = useState([]);
@@ -160,6 +160,10 @@ export default function Inbox() {
               <input type="checkbox" checked={!!filter.hide_quarantine} onChange={(e) => setFilter({ ...filter, hide_quarantine: e.target.checked ? 1 : 0, page: 1 })} />
               {' '}Quarantäne verbergen
             </label>
+            <label className="mg-form__checkbox" title="Mails von Absendern die per Blacklist-Regel blockiert sind ausblenden — sie sind auf dem Server noch da, nur unsichtbar in der Liste.">
+              <input type="checkbox" checked={!!filter.hide_blocked} onChange={(e) => setFilter({ ...filter, hide_blocked: e.target.checked ? 1 : 0, page: 1 })} />
+              {' '}Blockierte Absender verbergen
+            </label>
             {activeFilterCount > 0 && (
               <button className="mg-btn mg-btn--ghost" onClick={() => setFilter((f) => ({ ...EMPTY_FILTER, account_id: f.account_id }))}>
                 Zurücksetzen
@@ -184,6 +188,7 @@ function countActive(f) {
   if (f.unsub_only) n++;
   // hide_quarantine=1 ist Default → nur zaehlen wenn ausgeschaltet.
   if (!f.hide_quarantine) n++;
+  if (!f.hide_blocked)    n++;
   return n;
 }
 
@@ -197,14 +202,31 @@ function ChronoList({ filter, setFilter, onReload }) {
   const [busy, setBusy]     = useState({});
   const [expanded, setExpanded] = useState(null);
   const [error, setError]   = useState(null);
+  // Blacklist-Ausblenden: Mails von Absendern die in einer Blacklist-Regel
+  // stehen werden per Default weggefiltert — sonst sieht der Nutzer die
+  // Nachrichten weiterhin obwohl er 'blockiert' geklickt hat.
+  const [blacklist, setBlacklist] = useState({ addrs: new Set(), domains: new Set() });
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
       const qs = buildQS(filter);
-      const { body, status } = await apiGet('inbox/messages?' + qs.toString());
-      if (status >= 400) setError('HTTP ' + status);
-      else setData(body);
+      const [msg, rules] = await Promise.all([
+        apiGet('inbox/messages?' + qs.toString()),
+        apiGet('rules'),
+      ]);
+      if (msg.status >= 400) setError('HTTP ' + msg.status);
+      else setData(msg.body);
+      if (rules.status === 200 && rules.body && rules.body.ok) {
+        const items = rules.body.items || [];
+        const addrs = new Set(), domains = new Set();
+        for (const r of items) {
+          if (r.kind !== 'blacklist' || !r.pattern) continue;
+          if (r.match_type === 'from_addr')   addrs.add(r.pattern.toLowerCase());
+          if (r.match_type === 'from_domain') domains.add(r.pattern.toLowerCase());
+        }
+        setBlacklist({ addrs, domains });
+      }
     } catch (e) { setError(String(e)); }
     finally { setLoading(false); }
   }, [filter]);
@@ -225,21 +247,38 @@ function ChronoList({ filter, setFilter, onReload }) {
         </div>
       )}
       {!loading && data.items.length > 0 && (() => {
-        // Quarantaene-Filter clientseitig: der aktuelle /inbox/messages-Endpoint
-        // liefert quarantinierte Mails weiterhin mit — wir blenden sie nur aus.
-        const visible = filter.hide_quarantine
-          ? data.items.filter((m) => !m.quarantine_action_id)
-          : data.items;
-        const hiddenCount = data.items.length - visible.length;
+        // Clientseitige Filter: quarantinierte und blockierte Absender werden
+        // per Default versteckt. Der /inbox/messages-Endpoint liefert sie
+        // weiterhin mit, wir blenden nur die Anzeige aus.
+        const isBlocked = (m) => {
+          const addr = (m.from_addr || '').toLowerCase();
+          if (!addr) return false;
+          if (blacklist.addrs.has(addr)) return true;
+          const at = addr.lastIndexOf('@');
+          if (at < 0) return false;
+          return blacklist.domains.has(addr.slice(at + 1));
+        };
+        const quarantinedCount = data.items.filter((m) => !!m.quarantine_action_id).length;
+        const blockedCount     = data.items.filter(isBlocked).length;
+        const visible = data.items.filter((m) => {
+          if (filter.hide_quarantine && m.quarantine_action_id) return false;
+          if (filter.hide_blocked    && isBlocked(m))            return false;
+          return true;
+        });
+        const hiddenParts = [];
+        if (filter.hide_quarantine && quarantinedCount > 0)
+          hiddenParts.push(`${quarantinedCount} in Quarantäne`);
+        if (filter.hide_blocked && blockedCount > 0)
+          hiddenParts.push(`${blockedCount} von blockierten Absendern`);
         return (
           <>
-            {hiddenCount > 0 && (
+            {hiddenParts.length > 0 && (
               <div className="mg-card mg-muted" style={{ padding: '8px 12px', fontSize: 13 }}>
-                🛡 {hiddenCount} quarantinierte Mail{hiddenCount === 1 ? '' : 's'} ausgeblendet — Haekchen „Quarantaene verbergen" oben umschalten.
+                🛡 {hiddenParts.join(', ')} ausgeblendet — Filter oben umschalten.
               </div>
             )}
             {visible.length === 0 ? (
-              <div className="mg-card mg-muted">Alle Mails auf dieser Seite sind in Quarantaene.</div>
+              <div className="mg-card mg-muted">Alle Mails auf dieser Seite sind ausgeblendet.</div>
             ) : (
               <div className="mg-stack">
                 {visible.map((m) => (
