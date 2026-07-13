@@ -166,6 +166,39 @@ final class ScanService {
 			$score += 40;
 		}
 
+		// Kaltakquise-Heuristik: Sales/Kaltakquise-Mails haben typisch drei
+		// Merkmale: (1) List-Unsubscribe-Header (Mass-Mail-Merkmal), (2) neuer
+		// Absender ohne Vorgeschichte im Postfach (kein regulaerer Newsletter,
+		// den der Nutzer laenger abonniert hat), (3) kein Phishing-Verdict vom
+		// LLM. Wir markieren als "cold_outreach" mit +30 Score — genau auf der
+		// suspicious-Schwelle, damit die Mail durch die Escalation unten in
+		// suspicious rutscht, aber nicht direkt "dangerous" wird. False-Positive-
+		// Fall (legitime Erst-Registrierungsbestaetigung) laesst sich mit einem
+		// Klick auf "Als sicher" in der Inbox beseitigen — die Whitelist-Regel
+		// verhindert kuenftige cold_outreach-Flags fuer denselben Absender.
+		// Nicht anwenden wenn Customer-Rule (Whitelist/Blacklist) das Verdict
+		// bereits gesetzt hat — dann respektieren wir die Nutzer-Entscheidung.
+		$has_unsub = (int) ( $row['has_unsub'] ?? 0 ) === 1;
+		if ( ! $override && $has_unsub && $verdict === 'clean' && ! empty( $row['from_addr'] ) ) {
+			$prior_count = self::count_prior_messages(
+				$customer_id,
+				(string) $row['from_addr'],
+				(int) $row['id']
+			);
+			if ( $prior_count < 3 ) {
+				$reasons[] = [
+					'rule'        => 'cold_outreach',
+					'description' => sprintf(
+						'Neuer Absender mit Abmelde-Link und keiner regelmaessigen Historie (%d vorherige Mail%s). Typisch fuer unangefragte Kaltakquise/Werbung.',
+						$prior_count,
+						$prior_count === 1 ? '' : 'en'
+					),
+					'score'       => 30,
+				];
+				$score += 30;
+			}
+		}
+
 		// Attachment-Heuristik einweben: pro Anhang aus mg_attachments die
 		// gespeicherten suspicion_reasons in scan_reasons mergen und den
 		// hoechsten Attachment-Score dazuaddieren. Wir addieren NUR den max
@@ -203,11 +236,21 @@ final class ScanService {
 		if ( $av_infections ) {
 			$verdict      = 'dangerous';
 			$score_capped = 100;
-		} elseif ( $att_max_score >= 40 && in_array( $verdict, [ '', 'clean' ], true ) ) {
-			// Wenn Anhaenge selbst schon >= suspicious-Schwelle liefern und der
-			// Body-Verdict "clean" war, dann nachziehen — sonst blieben Malware-
-			// Anhaenge in einer sonst harmlos wirkenden Mail als "clean" markiert.
-			$verdict = $score_capped >= 70 ? 'dangerous' : 'suspicious';
+		} elseif ( in_array( $verdict, [ '', 'clean' ], true ) ) {
+			// Wenn der Antiphish-Client "clean" (oder leer) liefert, aber unsere
+			// Server-seitigen Zusatz-Signale (DNS-Check, Kaltakquise, Anhaenge,
+			// Attachment-Malware) den Gesamt-Score in verdaechtig- oder
+			// gefaehrlich-Bereich schieben, muss das Verdict nachziehen. Vorher
+			// (< v0.23.0) blieben solche Mails faelschlich "clean" markiert,
+			// obwohl die Reasons klare Bedenken zeigten. Threshold 30 fuer
+			// suspicious ist konservativ und schnappt fuer Kaltakquise + LLM-
+			// Marketing-Ton-Anteil zu; 70 fuer dangerous ist die Standard-
+			// Grenze wie beim Auto-Quarantaene-Preset.
+			if ( $score_capped >= 70 ) {
+				$verdict = 'dangerous';
+			} elseif ( $score_capped >= 30 ) {
+				$verdict = 'suspicious';
+			}
 		}
 
 		$wpdb->update( $t, [
@@ -450,6 +493,27 @@ final class ScanService {
 			'scan_reasons'=> null,
 			'scanned_at'  => null,
 		], [ 'id' => $id, 'customer_id' => $customer_id ] );
+	}
+
+	/**
+	 * Zaehlt frueher empfangene Mails vom selben Absender fuer denselben
+	 * Customer. Wird von der Kaltakquise-Heuristik gebraucht: ein neuer
+	 * Absender (0-2 vorherige Mails) mit Abmelde-Link ist typisch Sales-
+	 * Kaltakquise, ein bekannter Absender mit vielen Mails ist meist ein
+	 * abonnierter Newsletter.
+	 * Die exclude_id ist die ID der aktuell gescannten Mail — wir zaehlen
+	 * strikt kleiner (in der Vergangenheit).
+	 */
+	private static function count_prior_messages( int $customer_id, string $from_addr, int $exclude_id ) : int {
+		if ( $from_addr === '' ) { return 0; }
+		global $wpdb;
+		$t = $wpdb->prefix . Installer::TABLE_MESSAGES;
+		return (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$t} WHERE customer_id = %d AND from_addr = %s AND id < %d",
+			$customer_id,
+			strtolower( trim( $from_addr ) ),
+			$exclude_id
+		) );
 	}
 
 	/**
