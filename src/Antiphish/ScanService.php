@@ -111,6 +111,61 @@ final class ScanService {
 		}
 		$blacklist_hit = $override && ( ( $override['reason']['rule'] ?? '' ) === 'customer_blacklist' );
 
+		// DNS-Check auf die Absender-Domain. Echte Mail-Absender haben immer
+		// entweder einen MX- oder A-Record. Phisher benutzen manchmal Domains,
+		// die sie nur im From-Header fuehren, ohne echten Mail-Empfang — die
+		// haben dann weder MX noch A. Sehr starkes Phishing-Signal.
+		// Ergebnis wird 24h pro Domain gecached (Transient), damit ein Absender
+		// mit 100 Mails am Tag nur einen DNS-Query ausloest. Bei echten
+		// Netzwerkfehlern (dns_get_record liefert false) markieren wir bewusst
+		// NICHT als phishing — sonst waeren waehrend DNS-Hiccups alle Mails
+		// falsch-positiv.
+		$from_domain = self::from_domain( (string) ( $row['from_addr'] ?? '' ) );
+		if ( $from_domain !== '' ) {
+			$dns_state = self::check_domain_dns( $from_domain );
+			if ( $dns_state === 'unresolvable' ) {
+				$reasons[] = [
+					'rule'        => 'unresolvable_sender_domain',
+					'description' => sprintf(
+						'Die Absender-Domain "%s" hat weder MX- noch A-Record — sie existiert im DNS praktisch nicht und kann keine Antwort-Mail empfangen. Sehr starkes Phishing-Signal.',
+						$from_domain
+					),
+					'score'       => 40,
+				];
+				$score += 40;
+			}
+		}
+
+		// DNS-Check auf Links im Mail-Body. Phishing-Mails haben oft echte
+		// Text-URLs zu Fake-Domains, die genau wie beim Absender im DNS nicht
+		// existieren. Wir extrahieren alle http/https-Hosts aus body_preview,
+		// dedupen gegen die From-Domain (die haben wir schon oben geprueft)
+		// und pruefen jeden Host. Score ist pauschal +40 bei mindestens einem
+		// nicht-aufloesbaren Link-Host — die Anzahl wird nicht multipliziert,
+		// damit eine Mail mit 5 broken Links nicht 200 Score bekommt.
+		$body_hosts = self::extract_hosts_from_body( (string) ( $row['body_preview'] ?? '' ) );
+		$unresolvable_link_hosts = [];
+		foreach ( $body_hosts as $host ) {
+			if ( $host === $from_domain ) { continue; }
+			if ( self::check_domain_dns( $host ) === 'unresolvable' ) {
+				$unresolvable_link_hosts[] = $host;
+			}
+		}
+		if ( ! empty( $unresolvable_link_hosts ) ) {
+			$listed = array_slice( $unresolvable_link_hosts, 0, 5 );
+			$more   = count( $unresolvable_link_hosts ) - count( $listed );
+			$reasons[] = [
+				'rule'        => 'unresolvable_link_domain',
+				'description' => sprintf(
+					'Mail enthaelt Link(s) auf Domain(s), die im DNS nicht existieren: %s%s. Solche Domains koennen keine Antwort empfangen — klassisches Phishing-Muster.',
+					implode( ', ', $listed ),
+					$more > 0 ? sprintf( ' (+ %d weitere)', $more ) : ''
+				),
+				'score'       => 40,
+			];
+			$score += 40;
+		}
+
 		// Attachment-Heuristik einweben: pro Anhang aus mg_attachments die
 		// gespeicherten suspicion_reasons in scan_reasons mergen und den
 		// hoechsten Attachment-Score dazuaddieren. Wir addieren NUR den max
@@ -395,5 +450,84 @@ final class ScanService {
 			'scan_reasons'=> null,
 			'scanned_at'  => null,
 		], [ 'id' => $id, 'customer_id' => $customer_id ] );
+	}
+
+	/**
+	 * Extrahiert alle Hosts aus http/https-URLs im Text. Duplikate werden
+	 * entfernt, alles lowercased. Port-Suffixe (:8080), User-Info (user@host)
+	 * und Trailing-Dot werden abgeschnitten. Path/Query/Fragment weggeworfen.
+	 * Bei ungueltigen/leeren Texten: leeres Array.
+	 */
+	private static function extract_hosts_from_body( string $text ) : array {
+		if ( $text === '' ) { return []; }
+		if ( ! preg_match_all( '#https?://([^\s"\'<>)]+)#i', $text, $m ) ) { return []; }
+		$hosts = [];
+		foreach ( $m[1] as $urlpart ) {
+			$host_only = preg_split( '~[/?#]~', $urlpart, 2 )[0];
+			if ( strpos( $host_only, '@' ) !== false ) {
+				$host_only = substr( $host_only, strrpos( $host_only, '@' ) + 1 );
+			}
+			if ( strpos( $host_only, ':' ) !== false ) {
+				$host_only = substr( $host_only, 0, strpos( $host_only, ':' ) );
+			}
+			$host_only = strtolower( rtrim( $host_only, '.' ) );
+			// Nur "echte" Hostnamen mit Punkt akzeptieren — sonst waeren
+			// http://localhost oder http://intranet auch drin.
+			if ( $host_only !== '' && strpos( $host_only, '.' ) !== false ) {
+				$hosts[ $host_only ] = true;
+			}
+		}
+		return array_keys( $hosts );
+	}
+
+	/**
+	 * Extrahiert die Domain aus einer E-Mail-Adresse (lowercased, ohne
+	 * Trailing-Dot). Leerstring wenn keine gueltige Adresse.
+	 */
+	private static function from_domain( string $from_addr ) : string {
+		$addr = strtolower( trim( $from_addr ) );
+		$at   = strrpos( $addr, '@' );
+		if ( $at === false || $at === strlen( $addr ) - 1 ) { return ''; }
+		return rtrim( substr( $addr, $at + 1 ), '.' );
+	}
+
+	/**
+	 * Prueft, ob die Absender-Domain im DNS existiert (MX bevorzugt, A als Fallback).
+	 * Return-Werte:
+	 *   'resolves'      → Domain hat MX oder A → normaler Absender.
+	 *   'unresolvable'  → Weder MX noch A → Phishing-Signal.
+	 *   'error'         → DNS-Query komplett gescheitert (Netzwerk/Nameserver) →
+	 *                     kein Flag, kein Cache, beim naechsten Scan neu versuchen.
+	 *
+	 * Cache: 24h pro Domain via WordPress-Transient. mg_dns_ + md5-Hash der
+	 * Domain als Key (md5 nur damit ungewoehnliche Domain-Zeichen den Transient-
+	 * Namen nicht sprengen, kein Security-Zweck).
+	 */
+	private static function check_domain_dns( string $domain ) : string {
+		$cache_key = 'mg_dns_' . md5( $domain );
+		$cached    = get_transient( $cache_key );
+		if ( $cached === 'resolves' || $cached === 'unresolvable' ) {
+			return $cached;
+		}
+
+		$mx = @dns_get_record( $domain, DNS_MX );
+		if ( is_array( $mx ) && count( $mx ) > 0 ) {
+			set_transient( $cache_key, 'resolves', DAY_IN_SECONDS );
+			return 'resolves';
+		}
+		$a = @dns_get_record( $domain, DNS_A );
+		if ( is_array( $a ) && count( $a ) > 0 ) {
+			set_transient( $cache_key, 'resolves', DAY_IN_SECONDS );
+			return 'resolves';
+		}
+
+		// Wenn beide Queries false liefern, ist der Nameserver wahrscheinlich
+		// nicht erreichbar. Nicht cachen, nicht flaggen — beim naechsten Scan
+		// versuchen wir es nochmal.
+		if ( $mx === false && $a === false ) {
+			return 'error';
+		}
+		set_transient( $cache_key, 'unresolvable', DAY_IN_SECONDS );
+		return 'unresolvable';
 	}
 }
