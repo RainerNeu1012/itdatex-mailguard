@@ -4,6 +4,8 @@ declare( strict_types = 1 );
 namespace Itdatex\Mailguard\Imap;
 
 use Itdatex\Mailguard\Antiphish\EradicateDomains;
+use Itdatex\Mailguard\Antiphish\ScanService;
+use Itdatex\Mailguard\Installer;
 
 /**
  * Pull-Orchestrierung pro Folder. Ein Account kann mehrere Folder haben
@@ -102,6 +104,7 @@ final class PullService {
 	}
 
 	public static function pull_folder( int $folder_id, int $customer_id ) : array {
+		global $wpdb;
 		$folder = Folder::find_for_customer( $folder_id, $customer_id );
 		if ( ! $folder ) {
 			return [ 'folder_id' => $folder_id, 'ok' => false, 'error' => 'not_found' ];
@@ -183,13 +186,38 @@ final class PullService {
 		if ( $max_uid > (int) $folder['last_uid'] ) {
 			Folder::update_last_uid( $folder_id, $customer_id, $max_uid );
 		}
-		Folder::record_test( $folder_id, $customer_id, true, sprintf( 'pull ok · +%d dup=%d era=%d err=%d', $inserted, $dup, $eradicated, $err ) );
+
+		// Neu eingefuegte Nachrichten sofort synchron scannen — sonst laege
+		// die Pull-Response fertig vor, aber die neuen Mails haetten noch
+		// keinen Verdict-Badge, bis der 5-min-Cron drueberlaeuft. Wir holen
+		// uns die IDs der zuletzt-eingefuegten $inserted Mails aus dieser
+		// Folder (nach id DESC + LIMIT) und scannen chronologisch aeltere-
+		// zuerst. Fehler beim Scan sind nicht fatal — die Mail bleibt in
+		// pending und der naechste Cron-Lauf versucht es erneut.
+		$scanned_ok = 0;
+		if ( $inserted > 0 ) {
+			$t = $wpdb->prefix . Installer::TABLE_MESSAGES;
+			$new_ids = $wpdb->get_col( $wpdb->prepare(
+				"SELECT id FROM {$t} WHERE customer_id = %d AND account_id = %d AND folder = %s AND scan_status = 'pending' ORDER BY id DESC LIMIT %d",
+				$customer_id,
+				(int) $folder['account_id'],
+				(string) $folder['folder_name'],
+				$inserted
+			) );
+			foreach ( array_reverse( $new_ids ) as $mid ) {
+				$res = ScanService::scan_message( (int) $mid );
+				if ( ! empty( $res['ok'] ) ) { $scanned_ok++; }
+			}
+		}
+
+		Folder::record_test( $folder_id, $customer_id, true, sprintf( 'pull ok · +%d dup=%d era=%d err=%d scan=%d', $inserted, $dup, $eradicated, $err, $scanned_ok ) );
 
 		return [
 			'folder_id'   => $folder_id,
 			'folder_name' => (string) $folder['folder_name'],
 			'ok'          => true,
 			'fetched'     => $inserted,
+			'scanned'     => $scanned_ok,
 			'duplicates'  => $dup,
 			'eradicated'  => $eradicated,
 			'errors'      => $err,

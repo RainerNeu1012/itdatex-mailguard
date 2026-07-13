@@ -77,7 +77,10 @@ export default function Inbox() {
       const active = accounts.find((a) => a.id === filter.account_id);
       if (!active) { alert('Kein Konto ausgewaehlt.'); return; }
       const { body } = await apiPost(`accounts/${active.id}/pull`);
-      alert(`${active.label || active.host}: ` + (body.ok ? `+${body.fetched} (dup ${body.duplicates})` : `Fehler ${body.error}`));
+      // scanned kommt seit Plugin v0.25.0 mit — Backend scannt neue Mails jetzt
+      // direkt im Pull statt asynchron via Cron.
+      const scanned = body.scanned ?? 0;
+      alert(`${active.label || active.host}: ` + (body.ok ? `+${body.fetched} (dup ${body.duplicates}${body.fetched > 0 ? `, ${scanned} gescannt` : ''})` : `Fehler ${body.error}`));
       loadStats(filter.account_id);
       setFilter((f) => ({ ...f }));
     } finally {
