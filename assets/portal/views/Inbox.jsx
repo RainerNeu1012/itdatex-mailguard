@@ -206,6 +206,7 @@ function ChronoList({ filter, setFilter, onReload }) {
   // stehen werden per Default weggefiltert — sonst sieht der Nutzer die
   // Nachrichten weiterhin obwohl er 'blockiert' geklickt hat.
   const [blacklist, setBlacklist] = useState({ addrs: new Set(), domains: new Set() });
+  const [whitelist, setWhitelist] = useState({ addrs: new Set(), domains: new Set() });
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -219,13 +220,21 @@ function ChronoList({ filter, setFilter, onReload }) {
       else setData(msg.body);
       if (rules.status === 200 && rules.body && rules.body.ok) {
         const items = rules.body.items || [];
-        const addrs = new Set(), domains = new Set();
+        const blAddrs = new Set(), blDomains = new Set();
+        const wlAddrs = new Set(), wlDomains = new Set();
         for (const r of items) {
-          if (r.kind !== 'blacklist' || !r.pattern) continue;
-          if (r.match_type === 'from_addr')   addrs.add(r.pattern.toLowerCase());
-          if (r.match_type === 'from_domain') domains.add(r.pattern.toLowerCase());
+          if (!r.pattern) continue;
+          const p = r.pattern.toLowerCase();
+          if (r.kind === 'blacklist') {
+            if (r.match_type === 'from_addr')   blAddrs.add(p);
+            if (r.match_type === 'from_domain') blDomains.add(p);
+          } else if (r.kind === 'whitelist') {
+            if (r.match_type === 'from_addr')   wlAddrs.add(p);
+            if (r.match_type === 'from_domain') wlDomains.add(p);
+          }
         }
-        setBlacklist({ addrs, domains });
+        setBlacklist({ addrs: blAddrs, domains: blDomains });
+        setWhitelist({ addrs: wlAddrs, domains: wlDomains });
       }
     } catch (e) { setError(String(e)); }
     finally { setLoading(false); }
@@ -258,6 +267,14 @@ function ChronoList({ filter, setFilter, onReload }) {
           if (at < 0) return false;
           return blacklist.domains.has(addr.slice(at + 1));
         };
+        const isWhitelisted = (m) => {
+          const addr = (m.from_addr || '').toLowerCase();
+          if (!addr) return false;
+          if (whitelist.addrs.has(addr)) return true;
+          const at = addr.lastIndexOf('@');
+          if (at < 0) return false;
+          return whitelist.domains.has(addr.slice(at + 1));
+        };
         const quarantinedCount = data.items.filter((m) => !!m.quarantine_action_id).length;
         const blockedCount     = data.items.filter(isBlocked).length;
         const visible = data.items.filter((m) => {
@@ -286,6 +303,7 @@ function ChronoList({ filter, setFilter, onReload }) {
                     key={m.id} m={m}
                     expanded={expanded === m.id}
                     busy={busy[m.id]}
+                    whitelisted={isWhitelisted(m)}
                     onToggle={() => setExpanded(expanded === m.id ? null : m.id)}
                     {...handlers.for(m)}
                   />
@@ -802,17 +820,21 @@ function Stat({ label, value, tone }) {
   );
 }
 
-function Row({ m, expanded, busy, onToggle, onRescan, onUnsub, onQuarantine, onUndoQuarantine, onPurge, onWhitelistAddr, onWhitelistDomain, onBlacklistAddr, onBlacklistDomain }) {
+function Row({ m, expanded, busy, whitelisted, onToggle, onRescan, onUnsub, onQuarantine, onUndoQuarantine, onPurge, onWhitelistAddr, onWhitelistDomain, onBlacklistAddr, onBlacklistDomain }) {
   const dangerous   = m.scan_verdict === 'dangerous';
+  const suspicious  = m.scan_verdict === 'suspicious';
+  const flagged     = dangerous || suspicious;
   const quarantined = !!m.quarantine_action_id;
   const attachmentCount = (m.attachment_count | 0);
   const hasAttachments  = attachmentCount > 0 || m.has_attachments === 1;
+  const showQuickWhitelist = flagged && !!m.from_addr && !whitelisted;
   return (
     <div className={'mg-mail' + (dangerous ? ' mg-mail--danger' : '') + (quarantined ? ' mg-mail--quarantined' : '')}>
       <div className="mg-mail__head" onClick={onToggle} role="button" tabIndex={0}>
         <div className="mg-mail__from">
           <strong>{m.from_name || m.from_addr || '(unbekannt)'}</strong>
           {m.from_name && m.from_addr && <span className="mg-muted mg-tiny"> · {m.from_addr}</span>}
+          {whitelisted && <span className="mg-pill mg-pill--ok" style={{ marginLeft: 6 }} title="Absender ist als sicher eingetragen">✓ sicher</span>}
         </div>
         <div className="mg-mail__subject">{m.subject || '(kein Subject)'}</div>
         <div className="mg-mail__meta">
@@ -827,6 +849,19 @@ function Row({ m, expanded, busy, onToggle, onRescan, onUnsub, onQuarantine, onU
           {m.has_unsub && (m.sender_unsubscribed
             ? <span className="mg-pill mg-pill--muted" title="Sender wurde bereits abgemeldet">✓ abgemeldet</span>
             : <span className="mg-pill mg-pill--ok">Newsletter</span>)}
+          {showQuickWhitelist && (
+            <button
+              type="button"
+              className="mg-btn"
+              disabled={!!busy}
+              onClick={(e) => { e.stopPropagation(); onWhitelistAddr && onWhitelistAddr(); }}
+              onKeyDown={(e) => e.stopPropagation()}
+              title="Absender als sicher eintragen — kuenftige Mails werden nicht mehr als gefaehrlich/verdaechtig markiert"
+              style={{ padding: '2px 8px', height: 22, fontSize: 11 }}
+            >
+              {busy === 'wl_addr' ? '…' : '✓ Als sicher'}
+            </button>
+          )}
           <span className="mg-muted mg-tiny">{fmtDate(m.date_hdr || m.fetched_at)}</span>
         </div>
       </div>
