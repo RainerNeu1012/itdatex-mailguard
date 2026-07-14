@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 21;
+	public const CURRENT_DB_VERSION = 22;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -212,12 +212,14 @@ final class Installer {
 			scan_reasons LONGTEXT NULL,
 			scanned_at DATETIME NULL,
 			quarantine_action_id BIGINT UNSIGNED NULL,
+			body_fingerprint CHAR(16) NULL,
 			PRIMARY KEY (id),
 			UNIQUE KEY uniq_acct_uid_folder (account_id, imap_uid, folder),
 			KEY idx_customer (customer_id),
 			KEY idx_account_fetched (account_id, fetched_at),
 			KEY idx_scan_status (scan_status),
-			KEY idx_quarantine (quarantine_action_id)
+			KEY idx_quarantine (quarantine_action_id),
+			KEY idx_customer_fingerprint (customer_id, body_fingerprint)
 		) {$charset};";
 
 		$t_uns = $wpdb->prefix . self::TABLE_UNSUBS;
@@ -624,6 +626,34 @@ final class Installer {
 					quarantine_kept_count = VALUES(quarantine_kept_count),
 					updated_at            = UTC_TIMESTAMP()
 			" );
+		}
+
+		// DB v22: body_fingerprint backfill fuer alle bestehenden Rows, damit
+		// die Kampagnen-Gruppierung sofort tragfaehig ist. In Batches, damit
+		// grosse Postfaecher (12k+) nicht in einem einzigen PHP-Request laufen.
+		if ( $installed < 22 ) {
+			$t_msg = $wpdb->prefix . self::TABLE_MESSAGES;
+			$done = 0;
+			while ( true ) {
+				$rows = $wpdb->get_results(
+					"SELECT id, from_addr, subject, body_preview
+					 FROM {$t_msg}
+					 WHERE body_fingerprint IS NULL
+					 ORDER BY id ASC LIMIT 500",
+					ARRAY_A
+				) ?: [];
+				if ( ! $rows ) { break; }
+				foreach ( $rows as $r ) {
+					$fp = \Itdatex\Mailguard\Antiphish\Fingerprint::compute(
+						(string) $r['from_addr'],
+						(string) $r['subject'],
+						(string) ( $r['body_preview'] ?? '' )
+					);
+					$wpdb->update( $t_msg, [ 'body_fingerprint' => $fp ], [ 'id' => (int) $r['id'] ] );
+					$done++;
+				}
+				if ( count( $rows ) < 500 ) { break; }
+			}
 		}
 
 		update_option( self::OPTION_DB_VERSION, self::CURRENT_DB_VERSION, false );

@@ -312,12 +312,34 @@ final class Controller {
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'inbox_list' ],
 			'args'                => [
-				'account_id' => [ 'type' => 'integer' ],
-				'unsub_only' => [ 'type' => 'integer' ],
-				'q'          => [ 'type' => 'string' ],
-				'from_addr'  => [ 'type' => 'string' ],
-				'page'       => [ 'type' => 'integer', 'default' => 1 ],
-				'per_page'   => [ 'type' => 'integer', 'default' => 25 ],
+				'account_id'  => [ 'type' => 'integer' ],
+				'unsub_only'  => [ 'type' => 'integer' ],
+				'q'           => [ 'type' => 'string' ],
+				'from_addr'   => [ 'type' => 'string' ],
+				'fingerprint' => [ 'type' => 'string' ],
+				'page'        => [ 'type' => 'integer', 'default' => 1 ],
+				'per_page'    => [ 'type' => 'integer', 'default' => 25 ],
+			],
+		] );
+
+		// Newsletter-Kampagnen-Gruppierung ueber body_fingerprint. Ein Klick
+		// laesst den User alle Mails einer Kampagne mit einer Aktion abarbeiten,
+		// statt jede einzeln.
+		register_rest_route( self::NAMESPACE, '/inbox/campaigns', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_campaigns_list' ],
+			'args'                => [
+				'min_count' => [ 'type' => 'integer', 'default' => 3 ],
+				'limit'     => [ 'type' => 'integer', 'default' => 100 ],
+			],
+		] );
+		register_rest_route( self::NAMESPACE, '/inbox/campaigns/(?P<fp>[a-f0-9]{16})/action', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_campaigns_action' ],
+			'args'                => [
+				'action' => [ 'type' => 'string', 'required' => true ],
 			],
 		] );
 
@@ -728,12 +750,98 @@ final class Controller {
 			'verdict'    => trim( (string) $req->get_param( 'verdict' ) ),
 			'q'          => trim( (string) $req->get_param( 'q' ) ),
 			'from_addr'  => trim( (string) $req->get_param( 'from_addr' ) ),
+			'fingerprint'=> trim( (string) $req->get_param( 'fingerprint' ) ),
 		];
 		$page     = (int) $req->get_param( 'page' );
 		$per_page = (int) $req->get_param( 'per_page' );
 		$data = ImapMessage::list_for_customer( $cid, $filter, $page, $per_page );
 		$data['ok'] = true;
 		return new WP_REST_Response( $data, 200 );
+	}
+
+	public static function inbox_campaigns_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		global $wpdb;
+		$min   = max( 2, min( 100, (int) $req['min_count'] ) );
+		$limit = max( 1, min( 500, (int) $req['limit'] ) );
+		$t     = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_MESSAGES;
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT body_fingerprint,
+					COUNT(*) AS message_count,
+					MIN(from_addr) AS from_addr,
+					MIN(from_name) AS from_name,
+					SUM(quarantine_action_id IS NOT NULL) AS quarantined_count,
+					SUM(has_unsub) AS unsub_count,
+					SUBSTRING_INDEX(GROUP_CONCAT(subject ORDER BY id DESC SEPARATOR '\\n'), '\\n', 1) AS sample_subject,
+					MIN(COALESCE(date_hdr, fetched_at)) AS first_seen,
+					MAX(COALESCE(date_hdr, fetched_at)) AS last_seen,
+					MAX(scan_verdict) AS max_verdict,
+					MAX(scan_score) AS max_score
+			 FROM {$t}
+			 WHERE customer_id = %d AND body_fingerprint IS NOT NULL AND body_fingerprint <> ''
+			 GROUP BY body_fingerprint
+			 HAVING message_count >= %d
+			 ORDER BY message_count DESC, last_seen DESC
+			 LIMIT %d",
+			$cid, $min, $limit
+		), ARRAY_A ) ?: [];
+		return new WP_REST_Response( [ 'ok' => true, 'items' => $rows ], 200 );
+	}
+
+	public static function inbox_campaigns_action( WP_REST_Request $req ) {
+		$cid    = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$fp     = (string) $req['fp'];
+		$json   = (array) $req->get_json_params();
+		$action = strtolower( (string) ( $json['action'] ?? '' ) );
+		if ( ! in_array( $action, [ 'quarantine', 'purge', 'whitelist', 'blacklist' ], true ) ) {
+			return new WP_Error( 'bad_action', 'action muss quarantine|purge|whitelist|blacklist sein', [ 'status' => 400 ] );
+		}
+		global $wpdb;
+		$t = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_MESSAGES;
+
+		if ( $action === 'whitelist' || $action === 'blacklist' ) {
+			// Absender aus der Kampagne holen (kann bei sehr generischen Kampagnen
+			// mehrere sein — dann Regel pro Absender). LOWER dedupliziert.
+			$addrs = $wpdb->get_col( $wpdb->prepare(
+				"SELECT DISTINCT LOWER(from_addr) FROM {$t}
+				 WHERE customer_id = %d AND body_fingerprint = %s AND from_addr <> ''",
+				$cid, $fp
+			) ) ?: [];
+			$created = 0;
+			foreach ( $addrs as $addr ) {
+				$res = \Itdatex\Mailguard\Rules\Rule::create( $cid, [
+					'kind'       => $action,
+					'match_type' => 'from_addr',
+					'pattern'    => $addr,
+					'note'       => 'Kampagne ' . substr( $fp, 0, 8 ),
+				] );
+				if ( ! empty( $res['ok'] ) ) { $created++; }
+			}
+			return new WP_REST_Response( [ 'ok' => true, 'rules_created' => $created, 'senders' => $addrs ], 200 );
+		}
+
+		// quarantine / purge: iteriere alle IDs, wende Aktion an.
+		$ids = $wpdb->get_col( $wpdb->prepare(
+			"SELECT id FROM {$t} WHERE customer_id = %d AND body_fingerprint = %s ORDER BY id ASC",
+			$cid, $fp
+		) ) ?: [];
+		$done = 0; $skipped = 0; $errors = 0;
+		foreach ( $ids as $mid ) {
+			if ( $action === 'quarantine' ) {
+				$res = \Itdatex\Mailguard\Imap\QuarantineService::quarantine( (int) $mid, $cid, \Itdatex\Mailguard\Imap\Action::ACTOR_USER );
+			} else {
+				$res = \Itdatex\Mailguard\Imap\QuarantineService::purge_message( (int) $mid, $cid );
+			}
+			if ( ! empty( $res['ok'] ) ) { $done++; }
+			elseif ( ( $res['error'] ?? '' ) === 'already_quarantined' ) { $skipped++; }
+			else { $errors++; }
+		}
+		return new WP_REST_Response( [
+			'ok' => true, 'action' => $action,
+			'total' => count( $ids ), 'done' => $done, 'skipped' => $skipped, 'errors' => $errors,
+		], 200 );
 	}
 
 	public static function inbox_senders_purge( WP_REST_Request $req ) {
@@ -815,6 +923,16 @@ final class Controller {
 				'thumbs' => (string) $fb['thumbs'],
 				'note'   => (string) $fb['note'],
 			];
+		}
+		// Kampagnen-Groesse fuer den Chip in MessageDetail — 1 Query, indexiert.
+		$fp = (string) ( $row['body_fingerprint'] ?? '' );
+		if ( $fp !== '' ) {
+			$t_msg = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_MESSAGES;
+			$item['campaign_count'] = (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT COUNT(*) FROM {$t_msg}
+				 WHERE customer_id = %d AND body_fingerprint = %s",
+				$cid, $fp
+			) );
 		}
 		return new WP_REST_Response( [ 'ok' => true, 'item' => $item ], 200 );
 	}

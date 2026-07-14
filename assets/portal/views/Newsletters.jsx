@@ -30,6 +30,10 @@ export default function Newsletters() {
             onClick={() => setTab('subscriptions')}
           >Abos</button>
           <button
+            className={'mg-btn ' + (tab === 'campaigns' ? 'mg-btn--primary' : '')}
+            onClick={() => setTab('campaigns')}
+          >Kampagnen</button>
+          <button
             className={'mg-btn ' + (tab === 'history' ? 'mg-btn--primary' : '')}
             onClick={() => setTab('history')}
           >Historie</button>
@@ -38,7 +42,9 @@ export default function Newsletters() {
 
       <AccountTabs accounts={accounts} activeId={accountId} onSwitch={switchAccount} />
 
-      {tab === 'subscriptions' ? <Subscriptions accountId={accountId} /> : <History accountId={accountId} />}
+      {tab === 'subscriptions' && <Subscriptions accountId={accountId} />}
+      {tab === 'campaigns'     && <Campaigns />}
+      {tab === 'history'       && <History accountId={accountId} />}
     </div>
   );
 }
@@ -433,6 +439,117 @@ function History({ accountId }) {
  * User-lesbaren Text zusammen. Zeigt jede Teil-Aktion als eigene Zeile, damit
  * der User sieht, was durchging und was nicht (z.B. Abmeldung tot, Purge ok).
  */
+// Kampagnen-Ansicht: gruppiert Mails nach body_fingerprint (Newsletter-
+// oder Massenmail-Vorlagen). Aus jeder Kampagne ist mit einem Klick
+// alles zu quarantaenisieren/loeschen/whitelisten/blacklisten — statt
+// jede Mail einzeln.
+function Campaigns() {
+  const [items, setItems] = useState(null);
+  const [busy, setBusy]   = useState({});
+  const [error, setError] = useState(null);
+  const [expanded, setExpanded] = useState(null);
+  const [minCount, setMinCount] = useState(3);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const { status, body } = await apiGet(`inbox/campaigns?min_count=${minCount}`);
+      if (status === 200 && body?.ok) setItems(body.items || []);
+      else setError('HTTP ' + status);
+    } catch (e) { setError(String(e)); }
+  }, [minCount]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const doAction = async (fp, action, label) => {
+    if (!window.confirm(`${label} — bist du sicher? Betrifft alle Mails dieser Kampagne.`)) return;
+    setBusy((b) => ({ ...b, [fp]: action }));
+    try {
+      const { status, body } = await apiPost(`inbox/campaigns/${fp}/action`, { action });
+      if (status === 200 && body?.ok) {
+        const parts = [];
+        if (typeof body.done === 'number')          parts.push(`${body.done} bearbeitet`);
+        if (body.skipped)                            parts.push(`${body.skipped} übersprungen`);
+        if (body.errors)                             parts.push(`${body.errors} Fehler`);
+        if (typeof body.rules_created === 'number')  parts.push(`${body.rules_created} Regel(n) angelegt`);
+        alert(parts.join(', ') || 'ok');
+        load();
+      } else {
+        alert('Fehlgeschlagen: HTTP ' + status);
+      }
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[fp]; return n; });
+    }
+  };
+
+  if (error) return <div className="mg-card mg-error">{error}</div>;
+  if (items === null) return <div className="mg-card">Lade …</div>;
+
+  return (
+    <>
+      <div className="mg-row" style={{ gap: 6, marginBottom: 8, alignItems: 'center' }}>
+        <span className="mg-muted mg-tiny">Mindestgröße:</span>
+        {[3, 5, 10, 25].map((n) => (
+          <button
+            key={n}
+            className={'mg-btn mg-tiny ' + (minCount === n ? 'mg-btn--primary' : '')}
+            onClick={() => setMinCount(n)}
+          >≥ {n}</button>
+        ))}
+      </div>
+      {items.length === 0 ? (
+        <div className="mg-card mg-muted">Keine Kampagnen mit ≥ {minCount} Mails gefunden.</div>
+      ) : (
+        <div className="mg-stack">
+          {items.map((c) => {
+            const isOpen = expanded === c.body_fingerprint;
+            const dangerous  = c.max_verdict === 'dangerous';
+            const suspicious = c.max_verdict === 'suspicious';
+            return (
+              <div key={c.body_fingerprint} className="mg-card" style={{ padding: '12px 14px' }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }} onClick={() => setExpanded(isOpen ? null : c.body_fingerprint)} role="button" tabIndex={0}>
+                  <strong style={{ fontSize: 14 }}>{c.from_name || c.from_addr || '(unbekannt)'}</strong>
+                  {c.from_name && c.from_addr && <span className="mg-muted mg-tiny">{c.from_addr}</span>}
+                  <span className={'mg-pill ' + (dangerous ? 'mg-pill--err' : suspicious ? 'mg-pill--warn' : 'mg-pill--muted')}>
+                    {c.message_count} Mails
+                  </span>
+                  {c.quarantined_count > 0 && <span className="mg-pill mg-pill--muted">🛡 {c.quarantined_count} quar.</span>}
+                  {c.unsub_count > 0        && <span className="mg-pill mg-pill--ok">✉ {c.unsub_count} Unsub</span>}
+                  <span className="mg-muted mg-tiny" style={{ marginLeft: 'auto' }}>{fmtDate(c.last_seen)}</span>
+                </div>
+                <div style={{ fontSize: 13, marginTop: 6 }}>{c.sample_subject || <em className="mg-muted">(kein Betreff)</em>}</div>
+                {isOpen && (
+                  <div className="mg-form__row" style={{ marginTop: 10, gap: 6, flexWrap: 'wrap' }}>
+                    <button className="mg-btn mg-tiny" onClick={() => navigateInboxByFingerprint(c.body_fingerprint)}>Alle Mails zeigen</button>
+                    <button className="mg-btn mg-tiny" disabled={!!busy[c.body_fingerprint]} onClick={() => doAction(c.body_fingerprint, 'whitelist', 'Absender whitelisten')}>
+                      {busy[c.body_fingerprint] === 'whitelist' ? '…' : '✓ Absender als sicher'}
+                    </button>
+                    <button className="mg-btn mg-tiny" disabled={!!busy[c.body_fingerprint]} onClick={() => doAction(c.body_fingerprint, 'blacklist', 'Absender blockieren')}>
+                      {busy[c.body_fingerprint] === 'blacklist' ? '…' : '⛔ Absender blocken'}
+                    </button>
+                    <button className="mg-btn mg-tiny" disabled={!!busy[c.body_fingerprint]} onClick={() => doAction(c.body_fingerprint, 'quarantine', 'Alle Mails der Kampagne quarantänisieren')}>
+                      {busy[c.body_fingerprint] === 'quarantine' ? '…' : '🛡 Alle in Quarantäne'}
+                    </button>
+                    <button className="mg-btn mg-tiny" style={{ color: 'var(--mg-err)' }} disabled={!!busy[c.body_fingerprint]} onClick={() => doAction(c.body_fingerprint, 'purge', 'Alle Mails der Kampagne endgueltig löschen')}>
+                      {busy[c.body_fingerprint] === 'purge' ? '…' : '🗑 Alle endgültig weg'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+function navigateInboxByFingerprint(fp) {
+  // Portal-Inbox mit Fingerprint-Filter — die Inbox-View liest ?fingerprint aus URL-Params.
+  const base = (((window.itdatexMailguard || {}).portalUrl || '/portal/').replace(/\/$/, ''));
+  window.location.href = `${base}/inbox?fingerprint=${encodeURIComponent(fp)}`;
+}
+
 function formatEradicateResult(body, from_addr) {
   const lines = [`Ergebnis für ${from_addr}:`];
   const u = body.unsub || {};

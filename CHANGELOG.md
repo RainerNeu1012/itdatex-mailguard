@@ -7,6 +7,36 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.30.0] – 2026-07-14
+
+Neu: **Content-Fingerprint fuer Kampagnen**. MailGuard erkennt jetzt
+Newsletter-Vorlagen und Massenmail-Kampagnen — auch wenn Vorname,
+Kundennummer oder Betrag im Subject variieren. Ein Klick loest die
+ganze Kampagne auf einmal auf.
+
+### Added
+- **Spalte `body_fingerprint CHAR(16)`** in `mg_messages` mit Index
+  `(customer_id, body_fingerprint)`. 64-bit SHA-256-Truncate.
+- **`Antiphish\Fingerprint::compute()`** normalisiert Subject
+  (Ziffern → `#`, Emails → `@`, Punctuation raus) + Sender + Set aus
+  Link-Domains. Deterministisch, kein LSH-Kram.
+- **`Message::ingest`** berechnet fingerprint beim Insert.
+- **Migration DB v22** Backfill fuer alle bestehenden Rows in Batches
+  von 500. Bei customer_id=19: 12391 Mails, sinnvolle Cluster wie
+  590 Wordfence-Alerts, 274 Apple-Rechnungen, 90 PayPal-Abbuchungen.
+- **REST**:
+  - `GET /inbox/messages?fingerprint=xxx` — filter auf Kampagne.
+  - `GET /inbox/campaigns?min_count=N` — gruppierte Sicht.
+  - `POST /inbox/campaigns/{fp}/action` mit
+    `action=quarantine|purge|whitelist|blacklist`.
+  - `GET /inbox/messages/{id}` liefert `campaign_count` mit.
+- **Portal**: neuer Tab „Kampagnen" in Newsletters mit Bulk-Actions
+  („Alle in Quarantäne", „Alle endgültig weg", „Absender whitelisten/
+  blocken"). Klick auf „Alle Mails zeigen" öffnet die Inbox mit
+  Fingerprint-Filter — inklusive Filter-Banner + Zurücksetzen-Button.
+- **App-MessageDetail**: 📇-Chip „Kampagne · N Mails" in der
+  Meta-Chip-Reihe. Klick öffnet die Kampagne im Portal (Tauri-opener).
+
 ## [0.29.0] – 2026-07-14
 
 Neu: **KI-Bewertungen sichtbar + bewertbar**. Statt Reasoning nur als

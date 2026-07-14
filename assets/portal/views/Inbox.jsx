@@ -15,11 +15,24 @@ function saveTab(v) {
   try { localStorage.setItem(TAB_STORAGE_KEY, v); } catch { /* ignore */ }
 }
 
-const EMPTY_FILTER = { account_id: 0, unsub_only: 0, verdict: '', q: '', page: 1, hide_quarantine: 1, hide_blocked: 1 };
+const EMPTY_FILTER = { account_id: 0, unsub_only: 0, verdict: '', q: '', fingerprint: '', page: 1, hide_quarantine: 1, hide_blocked: 1 };
+
+function initialFilterFromUrl() {
+  try {
+    const p = new URLSearchParams(window.location.search);
+    const fp = p.get('fingerprint');
+    if (fp && /^[a-f0-9]{16}$/.test(fp)) {
+      // Kampagnen-Filter aktiviert Quarantaene-/Blocked-Rows, sonst wuerde die
+      // Kampagne bei bereits quarantaenisierten Mails leer wirken.
+      return { ...EMPTY_FILTER, fingerprint: fp, hide_quarantine: 0, hide_blocked: 0 };
+    }
+  } catch { /* ignore */ }
+  return EMPTY_FILTER;
+}
 
 export default function Inbox() {
   const [accounts, setAccounts]     = useState([]);
-  const [filter, setFilter]         = useState(EMPTY_FILTER);
+  const [filter, setFilter]         = useState(initialFilterFromUrl);
   const [tab, setTab]               = useState(loadTab);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [stats, setStats]           = useState(null);
@@ -116,6 +129,23 @@ export default function Inbox() {
           <Stat label="Verdächtig"     value={stats.suspicious} tone="susp" />
           <Stat label="Gefährlich"     value={stats.dangerous}  tone="danger" />
           <Stat label="Scan offen"     value={stats.pending_scan} tone="muted" />
+        </div>
+      )}
+
+      {filter.fingerprint && (
+        <div className="mg-card" style={{ borderLeft: '4px solid var(--mg-accent, #666)', padding: '10px 14px', display: 'flex', gap: 10, alignItems: 'center' }}>
+          <span style={{ fontSize: 20 }} aria-hidden>📇</span>
+          <div style={{ flex: 1 }}>
+            <strong>Kampagnen-Filter aktiv</strong>
+            <div className="mg-muted mg-tiny">Fingerprint: <code>{filter.fingerprint}</code></div>
+          </div>
+          <button
+            className="mg-btn"
+            onClick={() => {
+              try { window.history.replaceState({}, '', window.location.pathname); } catch { /* ignore */ }
+              setFilter({ ...EMPTY_FILTER, account_id: filter.account_id });
+            }}
+          >Filter zurücksetzen</button>
         </div>
       )}
 
@@ -1125,6 +1155,7 @@ function buildQS(filter, defaultPerPage = 25) {
   if (filter.unsub_only) qs.set('unsub_only', '1');
   if (filter.verdict)    qs.set('verdict', filter.verdict);
   if (filter.q)          qs.set('q', filter.q);
+  if (filter.fingerprint) qs.set('fingerprint', filter.fingerprint);
   qs.set('page', filter.page);
   qs.set('per_page', defaultPerPage);
   return qs;

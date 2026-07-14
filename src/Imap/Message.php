@@ -51,6 +51,10 @@ final class Message {
 			$where[]  = 'LOWER(from_addr) = %s';
 			$params[] = strtolower( (string) $filter['from_addr'] );
 		}
+		if ( ! empty( $filter['fingerprint'] ) ) {
+			$where[]  = 'body_fingerprint = %s';
+			$params[] = (string) $filter['fingerprint'];
+		}
 
 		$where_sql = 'WHERE ' . implode( ' AND ', $where );
 		$rows = $wpdb->get_results( $wpdb->prepare(
@@ -136,6 +140,11 @@ final class Message {
 			'has_attachments'  => ! empty( $attachments ) ? 1 : 0,
 			'attachment_count' => count( $attachments ),
 			'scan_status'      => 'pending',
+			'body_fingerprint' => \Itdatex\Mailguard\Antiphish\Fingerprint::compute(
+				(string) ( $msg['from_addr'] ?? '' ),
+				(string) ( $msg['subject']   ?? '' ),
+				(string) ( $msg['body_preview'] ?? '' )
+			),
 		];
 		$res = $wpdb->insert( self::table(), $payload );
 		if ( ! $res ) {
@@ -202,6 +211,7 @@ final class Message {
 			'body_preview'     => (string) ( $row['body_preview'] ?? '' ),
 			'has_attachments'  => isset( $row['has_attachments'] ) ? (int) $row['has_attachments'] : 0,
 			'attachment_count' => isset( $row['attachment_count'] ) ? (int) $row['attachment_count'] : 0,
+			'body_fingerprint' => (string) ( $row['body_fingerprint'] ?? '' ),
 			'scan_status'      => (string) $row['scan_status'],
 			'scan_verdict'     => (string) $row['scan_verdict'],
 			'scan_score'       => $row['scan_score'] !== null ? (int) $row['scan_score'] : null,
