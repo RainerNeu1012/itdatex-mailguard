@@ -199,6 +199,33 @@ final class ScanService {
 			}
 		}
 
+		// Sender-Trust: bekannte Absender kommen NICHT mehr in Auto-Quarantaene.
+		// Wir reduzieren den Score um bis zu -60 basierend auf received/whitelist/
+		// undo-Historie, boosten aber +30 wenn der User vorherige Auto-Quarantaenen
+		// selbst endgueltig geloescht hat (Absender ist toxisch). Hard signals
+		// (Blacklist, DNS-Fail Absender/Link) ueberstimmen den Trust: ein
+		// kompromittierter bekannter Account darf nicht durch Historie
+		// durchrutschen. AV-Hit setzt score_capped spaeter auf 100 und ueberstimmt
+		// Trust dadurch automatisch.
+		$hard_signal = $blacklist_hit;
+		foreach ( $reasons as $r ) {
+			if ( in_array( (string) ( $r['rule'] ?? '' ), [ 'unresolvable_sender_domain', 'unresolvable_link_domain' ], true ) ) {
+				$hard_signal = true;
+				break;
+			}
+		}
+		if ( ! $hard_signal && ! empty( $row['from_addr'] ) ) {
+			$trust = SenderTrust::get_score( $customer_id, (string) $row['from_addr'] );
+			if ( $trust['score'] !== 0 && ! empty( $trust['signals'] ) ) {
+				$reasons[] = [
+					'rule'        => 'sender_trust',
+					'description' => 'Absender-Vertrauen aus Historie: ' . implode( ', ', $trust['signals'] ) . '.',
+					'score'       => $trust['score'],
+				];
+				$score += $trust['score'];
+			}
+		}
+
 		// Attachment-Heuristik einweben: pro Anhang aus mg_attachments die
 		// gespeicherten suspicion_reasons in scan_reasons mergen und den
 		// hoechsten Attachment-Score dazuaddieren. Wir addieren NUR den max

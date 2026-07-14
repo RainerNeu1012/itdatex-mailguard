@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 19;
+	public const CURRENT_DB_VERSION = 20;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -32,6 +32,7 @@ final class Installer {
 	public const TABLE_ATTACHMENTS   = 'mg_attachments';
 	public const TABLE_NOTIFICATIONS = 'mg_notifications';
 	public const TABLE_ERADICATE_DOMAINS = 'mg_eradicate_domains';
+	public const TABLE_SENDER_TRUST      = 'mg_sender_trust';
 
 	public const CRON_UNDO_EXPIRY_HOOK = 'itdatex_mailguard_undo_expiry_check';
 
@@ -427,6 +428,31 @@ final class Installer {
 			KEY idx_customer (customer_id)
 		) {$charset};";
 
+		// Sender-Trust-Score: pro (customer_id, from_addr) akkumulieren wir
+		// Received/Whitelist/Blacklist/Undo/Purge-Signale. ScanService liest
+		// daraus einen negativen Score, damit bekannte Absender nicht mehr
+		// versehentlich in Quarantaene wandern. Domain-Aggregat via
+		// from_domain-Index laesst neue Sub-Absender einer bekannten Domain
+		// Basis-Trust erben.
+		$t_trust = $wpdb->prefix . self::TABLE_SENDER_TRUST;
+		$sql_trust = "CREATE TABLE {$t_trust} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			from_addr VARCHAR(320) NOT NULL,
+			from_domain VARCHAR(190) NOT NULL DEFAULT '',
+			received_count INT UNSIGNED NOT NULL DEFAULT 0,
+			whitelist_count SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+			blacklist_count SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+			quarantine_undo_count SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+			quarantine_kept_count SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+			first_seen_at DATETIME NOT NULL,
+			last_seen_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			UNIQUE KEY uniq_customer_addr (customer_id, from_addr),
+			KEY idx_customer_domain (customer_id, from_domain)
+		) {$charset};";
+
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		dbDelta( $sql_customers );
 		dbDelta( $sql_imap );
@@ -441,6 +467,7 @@ final class Installer {
 		dbDelta( $sql_att );
 		dbDelta( $sql_erd );
 		dbDelta( $sql_not );
+		dbDelta( $sql_trust );
 
 		// One-shot Migration: aus jedem bestehenden Account einen Folder-Eintrag
 		// erzeugen. Nur wenn die Folder-Tabelle leer ist UND mind. ein Account
@@ -469,6 +496,110 @@ final class Installer {
 					$wpdb->update( $t_fol, [ 'status' => 'disabled' ], [ 'id' => (int) $row['id'] ] );
 				}
 			}
+		}
+
+		// DB v20: Backfill Sender-Trust. Aggregiert Received-Count aus mg_messages,
+		// Whitelist/Blacklist-Count aus mg_rules, Undo/Kept-Count aus mg_actions.
+		// Damit startet der Trust-Score bei bestehenden Postfaechern nicht bei 0,
+		// sondern mit voller Historie — Stammabsender sind sofort trusted, nicht
+		// erst nach der naechsten Runde neuer Mails. INSERT ... SELECT ... ON
+		// DUPLICATE KEY UPDATE ist idempotent: bei erneutem Lauf ueberschreibt
+		// nur die aggregierten Zahlen, keine Duplikate.
+		if ( $installed < 20 ) {
+			$t_msg = $wpdb->prefix . self::TABLE_MESSAGES;
+			$t_rul = $wpdb->prefix . self::TABLE_RULES;
+			$t_act = $wpdb->prefix . self::TABLE_ACTIONS;
+			// Received: eine Row pro (customer_id, from_addr).
+			$wpdb->query( "
+				INSERT INTO {$t_trust}
+					(customer_id, from_addr, from_domain, received_count,
+					 first_seen_at, last_seen_at, updated_at)
+				SELECT
+					customer_id,
+					LOWER(TRIM(from_addr))                                             AS from_addr,
+					LOWER(TRIM(SUBSTRING_INDEX(from_addr, '@', -1)))                   AS from_domain,
+					COUNT(*)                                                           AS received_count,
+					COALESCE(MIN(date_hdr), MIN(fetched_at))                           AS first_seen_at,
+					COALESCE(MAX(date_hdr), MAX(fetched_at))                           AS last_seen_at,
+					UTC_TIMESTAMP()                                                    AS updated_at
+				FROM {$t_msg}
+				WHERE from_addr <> ''
+				GROUP BY customer_id, LOWER(TRIM(from_addr))
+				ON DUPLICATE KEY UPDATE
+					received_count = VALUES(received_count),
+					last_seen_at   = GREATEST(last_seen_at, VALUES(last_seen_at)),
+					updated_at     = UTC_TIMESTAMP()
+			" );
+			// Whitelist/Blacklist aus mg_rules mit match_type='from_addr'.
+			// Nur exakte Absender-Regeln zaehlen — Domain-/Regex-Regeln sind
+			// zu unscharf fuer Trust-Boost.
+			$wpdb->query( "
+				INSERT INTO {$t_trust}
+					(customer_id, from_addr, from_domain,
+					 whitelist_count, blacklist_count,
+					 first_seen_at, last_seen_at, updated_at)
+				SELECT
+					customer_id,
+					LOWER(TRIM(pattern))                                         AS from_addr,
+					LOWER(TRIM(SUBSTRING_INDEX(pattern, '@', -1)))               AS from_domain,
+					SUM(CASE WHEN kind = 'whitelist' THEN 1 ELSE 0 END)          AS whitelist_count,
+					SUM(CASE WHEN kind = 'blacklist' THEN 1 ELSE 0 END)          AS blacklist_count,
+					UTC_TIMESTAMP()                                              AS first_seen_at,
+					UTC_TIMESTAMP()                                              AS last_seen_at,
+					UTC_TIMESTAMP()                                              AS updated_at
+				FROM {$t_rul}
+				WHERE match_type = 'from_addr' AND pattern <> ''
+				GROUP BY customer_id, LOWER(TRIM(pattern))
+				ON DUPLICATE KEY UPDATE
+					whitelist_count = VALUES(whitelist_count),
+					blacklist_count = VALUES(blacklist_count),
+					updated_at      = UTC_TIMESTAMP()
+			" );
+			// Undo-Count aus mg_actions: quarantine-Aktion + actor=auto + status=undone
+			// (der User hat MailGuards Auto-Quarantaene rueckgaengig gemacht).
+			$wpdb->query( "
+				INSERT INTO {$t_trust}
+					(customer_id, from_addr, from_domain,
+					 quarantine_undo_count, first_seen_at, last_seen_at, updated_at)
+				SELECT
+					customer_id,
+					LOWER(TRIM(from_addr_snap))                                  AS from_addr,
+					LOWER(TRIM(SUBSTRING_INDEX(from_addr_snap, '@', -1)))        AS from_domain,
+					COUNT(*)                                                     AS quarantine_undo_count,
+					MIN(created_at)                                              AS first_seen_at,
+					MAX(created_at)                                              AS last_seen_at,
+					UTC_TIMESTAMP()                                              AS updated_at
+				FROM {$t_act}
+				WHERE action = 'quarantine' AND actor = 'auto' AND status = 'undone'
+				  AND from_addr_snap <> ''
+				GROUP BY customer_id, LOWER(TRIM(from_addr_snap))
+				ON DUPLICATE KEY UPDATE
+					quarantine_undo_count = VALUES(quarantine_undo_count),
+					updated_at            = UTC_TIMESTAMP()
+			" );
+			// Kept-Count: purge-Action, deren zugrundeliegende Quarantaene actor=auto war.
+			// (der User hat MailGuards Auto-Verdict bestaetigt, indem er die Mail endgueltig geloescht hat).
+			$wpdb->query( "
+				INSERT INTO {$t_trust}
+					(customer_id, from_addr, from_domain,
+					 quarantine_kept_count, first_seen_at, last_seen_at, updated_at)
+				SELECT
+					p.customer_id,
+					LOWER(TRIM(p.from_addr_snap))                                AS from_addr,
+					LOWER(TRIM(SUBSTRING_INDEX(p.from_addr_snap, '@', -1)))      AS from_domain,
+					COUNT(*)                                                     AS quarantine_kept_count,
+					MIN(p.created_at)                                            AS first_seen_at,
+					MAX(p.created_at)                                            AS last_seen_at,
+					UTC_TIMESTAMP()                                              AS updated_at
+				FROM {$t_act} p
+				JOIN {$t_act} q ON q.message_id = p.message_id
+					AND q.action = 'quarantine' AND q.actor = 'auto'
+				WHERE p.action = 'purge' AND p.from_addr_snap <> ''
+				GROUP BY p.customer_id, LOWER(TRIM(p.from_addr_snap))
+				ON DUPLICATE KEY UPDATE
+					quarantine_kept_count = VALUES(quarantine_kept_count),
+					updated_at            = UTC_TIMESTAMP()
+			" );
 		}
 
 		update_option( self::OPTION_DB_VERSION, self::CURRENT_DB_VERSION, false );

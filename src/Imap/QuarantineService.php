@@ -260,6 +260,15 @@ final class QuarantineService {
 			'undo_until'    => null,
 		] );
 
+		// Sender-Trust: nur wenn die Original-Quarantaene auto war, ist der Undo
+		// ein Signal "MailGuard lag falsch, Absender vertrauen". User-Quarantaene-
+		// Undo ist Selbstkorrektur und veraendert kein Vertrauen.
+		if ( (string) ( $row['actor'] ?? '' ) === Action::ACTOR_AUTO ) {
+			\Itdatex\Mailguard\Antiphish\SenderTrust::record_quarantine_undo(
+				$customer_id, (string) ( $row['from_addr_snap'] ?? '' )
+			);
+		}
+
 		return [ 'ok' => true ];
 	}
 
@@ -376,6 +385,16 @@ final class QuarantineService {
 			'actor'              => Action::ACTOR_USER,
 			'undo_until'         => null,
 		] );
+
+		// Sender-Trust: der User hat MailGuards Auto-Quarantaene bestaetigt,
+		// indem er die Mail endgueltig geloescht hat — starkes Signal, dass
+		// der Absender toxisch ist. Bei User-Quarantaene ist der Purge kein
+		// Modell-Feedback (der User hat selbst entschieden).
+		if ( (string) ( $row['actor'] ?? '' ) === Action::ACTOR_AUTO ) {
+			\Itdatex\Mailguard\Antiphish\SenderTrust::record_quarantine_kept(
+				$customer_id, (string) ( $row['from_addr_snap'] ?? '' )
+			);
+		}
 
 		// mg_messages-Row entfernen — die Mail existiert nicht mehr, die
 		// Referenz waere nur noch Ballast in der Inbox-Liste.

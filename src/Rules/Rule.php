@@ -83,6 +83,18 @@ final class Rule {
 			'created_at'  => current_time( 'mysql', true ),
 		] );
 		if ( ! $ok ) { return [ 'ok' => false, 'error' => 'insert_failed' ]; }
+
+		// Sender-Trust-Score updaten. Nur exakte From-Addr-Regeln fliessen ein —
+		// Domain- oder Subject-Regeln sind zu unscharf, um sie einer einzelnen
+		// Absender-Trust-Row zuzuschreiben.
+		if ( $type === 'from_addr' ) {
+			if ( $kind === 'whitelist' ) {
+				\Itdatex\Mailguard\Antiphish\SenderTrust::record_whitelist( $customer_id, $pattern );
+			} elseif ( $kind === 'blacklist' ) {
+				\Itdatex\Mailguard\Antiphish\SenderTrust::record_blacklist( $customer_id, $pattern );
+			}
+		}
+
 		return [ 'ok' => true, 'id' => (int) $wpdb->insert_id ];
 	}
 

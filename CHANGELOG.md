@@ -7,6 +7,47 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.27.0] – 2026-07-14
+
+Neu: **Sender-Trust-Score**. MailGuard lernt jetzt aus deiner Historie,
+welche Absender du kennst und welchen du vertraust — und laesst bekannte
+Absender nicht mehr versehentlich in die Auto-Quarantaene wandern. Dein
+Undo-Klick von vorhin war nicht mehr verloren, sondern trainiert das
+System dauerhaft.
+
+### Added
+- **Neue Tabelle `mg_sender_trust`** (customer_id, from_addr, from_domain,
+  received_count, whitelist_count, blacklist_count, quarantine_undo_count,
+  quarantine_kept_count, first_seen_at, last_seen_at, updated_at) mit
+  UNIQUE-Index auf `(customer_id, from_addr)` und Sekundaerindex
+  `(customer_id, from_domain)` fuer Domain-Aggregate.
+- **`Antiphish\SenderTrust`-Klasse** mit `record_received`,
+  `record_whitelist`, `record_blacklist`, `record_quarantine_undo`,
+  `record_quarantine_kept` und `get_score`. Alle Signale sind
+  idempotente `INSERT ... ON DUPLICATE KEY UPDATE`-Upserts.
+- **Signal-Hooks** verdrahtet in:
+  - `PullService::pull_folder` beim Message-Insert → `received_count++`
+  - `Rules\Rule::create` (match_type=from_addr) → whitelist/blacklist
+  - `QuarantineService::undo` (Original-Action war ACTOR_AUTO) → undo
+  - `QuarantineService::purge` (Original-Action war ACTOR_AUTO) → kept
+- **`sender_trust`-Rule in `ScanService::scan_message`** vor der
+  Attachment-Heuristik. Score-Formel:
+  - received ≥ 10 → -10, ≥ 50 → -20
+  - whitelist ≥ 1 → -30
+  - quarantine_undo → -20 pro Undo, max -40
+  - quarantine_kept ≥ 2 → **+30** (Absender ist toxisch)
+  - Domain-Aggregat: falls Adress-Trust schwach + Domain hat ≥20 empfangene Mails → -10
+  - Untergrenze -60.
+- **Hard-Signal-Schranke**: Blacklist-Hit, `unresolvable_sender_domain`
+  oder `unresolvable_link_domain` deaktivieren den Trust-Bonus. AV-Hit
+  ueberstimmt Trust ohnehin via `score_capped = 100`.
+
+### Migration (DB v20)
+- One-shot Backfill aus vorhandenen `mg_messages` (Received-Count),
+  `mg_rules` (Whitelist/Blacklist-Count) und `mg_actions`
+  (Undo/Kept-Count). Damit startet der Trust-Score direkt mit voller
+  Postfach-Historie, statt bei null.
+
 ## [0.26.0] – 2026-07-14
 
 Bugfix: Systemordner (Sent/Drafts/Trash/Deleted/Outbox/Notes/Archive)

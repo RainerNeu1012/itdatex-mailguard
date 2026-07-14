@@ -5,6 +5,7 @@ namespace Itdatex\Mailguard\Imap;
 
 use Itdatex\Mailguard\Antiphish\EradicateDomains;
 use Itdatex\Mailguard\Antiphish\ScanService;
+use Itdatex\Mailguard\Antiphish\SenderTrust;
 use Itdatex\Mailguard\Installer;
 
 /**
@@ -164,7 +165,17 @@ final class PullService {
 			}
 
 			$status = Message::ingest( $customer_id, (int) $folder['account_id'], (string) $folder['folder_name'], $msg );
-			if ( $status === 'inserted' ) { $inserted++; }
+			if ( $status === 'inserted' ) {
+				$inserted++;
+				if ( $from_addr !== '' ) {
+					$date_hdr = (string) ( $msg['date_hdr'] ?? '' );
+					SenderTrust::record_received(
+						$customer_id,
+						$from_addr,
+						$date_hdr !== '' && $date_hdr !== '0000-00-00 00:00:00' ? $date_hdr : null
+					);
+				}
+			}
 			elseif ( $status === 'duplicate' ) { $dup++; }
 			else { $err++; }
 			if ( $uid > $max_uid ) { $max_uid = $uid; }
