@@ -390,6 +390,29 @@ final class Controller {
 			'callback'            => [ __CLASS__, 'inbox_rescan' ],
 		] );
 
+		// LLM-Feedback pro Mail: 👍/👎 auf das Modell-Verdict. Wird als
+		// Snapshot gespeichert, damit spaeteres Feintuning die
+		// urspruengliche Ground-Truth kennt (nicht das aktuelle
+		// Rescan-Ergebnis).
+		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/llm-feedback', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'llm_feedback_post' ],
+			'args'                => [
+				'thumbs' => [ 'type' => 'string', 'required' => true ],
+				'note'   => [ 'type' => 'string' ],
+			],
+		] );
+		register_rest_route( self::NAMESPACE, '/llm-feedback/recent', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'llm_feedback_recent' ],
+			'args'                => [
+				'limit'      => [ 'type' => 'integer', 'default' => 50 ],
+				'filter'     => [ 'type' => 'string' ], // 'unrated' | 'up' | 'down' | ''
+			],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/attachments', [
 			'methods'             => 'GET',
 			'permission_callback' => '__return_true',
@@ -767,6 +790,7 @@ final class Controller {
 	public static function inbox_get( WP_REST_Request $req ) {
 		$cid = self::require_customer();
 		if ( is_wp_error( $cid ) ) { return $cid; }
+		global $wpdb;
 		$row = ImapMessage::find_for_customer( (int) $req['id'], $cid );
 		if ( ! $row ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
 		$item = ImapMessage::public_view( $row );
@@ -778,6 +802,19 @@ final class Controller {
 		);
 		if ( $suggestion !== null ) {
 			$item['sender_suggestion'] = $suggestion;
+		}
+		// Bereits abgegebenes LLM-Feedback, damit die App die 👍/👎-Buttons
+		// beim erneuten Oeffnen vorbelegt.
+		$t_fb = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_LLM_FEEDBACK;
+		$fb = $wpdb->get_row( $wpdb->prepare(
+			"SELECT thumbs, note FROM {$t_fb} WHERE customer_id = %d AND message_id = %d LIMIT 1",
+			$cid, (int) $row['id']
+		), ARRAY_A );
+		if ( $fb ) {
+			$item['llm_feedback'] = [
+				'thumbs' => (string) $fb['thumbs'],
+				'note'   => (string) $fb['note'],
+			];
 		}
 		return new WP_REST_Response( [ 'ok' => true, 'item' => $item ], 200 );
 	}
@@ -808,6 +845,116 @@ final class Controller {
 		if ( is_wp_error( $cid ) ) { return $cid; }
 		ImapMessage::delete( (int) $req['id'], $cid );
 		return new WP_REST_Response( [ 'ok' => true ], 200 );
+	}
+
+	public static function llm_feedback_post( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$mid  = (int) $req['id'];
+		$body = (array) $req->get_json_params();
+		$thumbs = strtolower( (string) ( $body['thumbs'] ?? '' ) );
+		if ( ! in_array( $thumbs, [ 'up', 'down' ], true ) ) {
+			return new WP_Error( 'bad_thumbs', 'thumbs muss up oder down sein', [ 'status' => 400 ] );
+		}
+		$note = mb_substr( (string) ( $body['note'] ?? '' ), 0, 500 );
+
+		$msg = ImapMessage::find_for_customer( $mid, $cid );
+		if ( ! $msg ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
+
+		// LLM-Reasoning aus scan_reasons ziehen — genau das was der User beim
+		// Klicken vor Augen hatte, damit die Trainingsdaten dazu passen.
+		$reasons = json_decode( (string) ( $msg['scan_reasons'] ?? '[]' ), true );
+		$llm_txt = '';
+		if ( is_array( $reasons ) ) {
+			foreach ( $reasons as $r ) {
+				if ( ( $r['rule'] ?? '' ) === 'llm_analysis' ) {
+					$llm_txt = (string) ( $r['description'] ?? '' );
+					break;
+				}
+			}
+		}
+
+		global $wpdb;
+		$t = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_LLM_FEEDBACK;
+		$wpdb->query( $wpdb->prepare(
+			"INSERT INTO {$t}
+				(customer_id, message_id, from_addr_snap, verdict_snap, score_snap,
+				 llm_reasoning_snap, thumbs, note, created_at)
+			 VALUES (%d, %d, %s, %s, %s, %s, %s, %s, UTC_TIMESTAMP())
+			 ON DUPLICATE KEY UPDATE
+				thumbs             = VALUES(thumbs),
+				note               = VALUES(note),
+				verdict_snap       = VALUES(verdict_snap),
+				score_snap         = VALUES(score_snap),
+				llm_reasoning_snap = VALUES(llm_reasoning_snap),
+				created_at         = UTC_TIMESTAMP()",
+			$cid, $mid,
+			(string) ( $msg['from_addr'] ?? '' ),
+			(string) ( $msg['scan_verdict'] ?? '' ),
+			$msg['scan_score'] !== null ? (int) $msg['scan_score'] : null,
+			$llm_txt,
+			$thumbs, $note
+		) );
+		return new WP_REST_Response( [ 'ok' => true, 'thumbs' => $thumbs ], 200 );
+	}
+
+	public static function llm_feedback_recent( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		global $wpdb;
+		$limit  = max( 1, min( 200, (int) ( $req['limit'] ?? 50 ) ) );
+		$filter = (string) ( $req['filter'] ?? '' );
+		$t_msg  = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_MESSAGES;
+		$t_fb   = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_LLM_FEEDBACK;
+
+		// LEFT JOIN, damit bereits bewertete Mails den bisherigen thumbs-Status
+		// mitliefern — die Batch-View markiert sie dann farblich.
+		$where = "m.customer_id = %d AND m.scan_reasons LIKE '%%llm_analysis%%'";
+		$args  = [ $cid ];
+		if ( $filter === 'unrated' ) {
+			$where .= ' AND f.id IS NULL';
+		} elseif ( $filter === 'up' || $filter === 'down' ) {
+			$where .= ' AND f.thumbs = %s';
+			$args[] = $filter;
+		}
+		$args[] = $limit;
+
+		$sql = "SELECT m.id, m.from_addr, m.from_name, m.subject, m.scan_verdict, m.scan_score,
+				m.scan_reasons, m.date_hdr, m.fetched_at,
+				f.thumbs AS feedback_thumbs, f.note AS feedback_note
+			FROM {$t_msg} m
+			LEFT JOIN {$t_fb} f ON f.message_id = m.id AND f.customer_id = m.customer_id
+			WHERE {$where}
+			ORDER BY m.id DESC
+			LIMIT %d";
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, $args ), ARRAY_A ) ?: [];
+
+		$out = [];
+		foreach ( $rows as $r ) {
+			$reasons = json_decode( (string) ( $r['scan_reasons'] ?? '[]' ), true );
+			$llm_txt = '';
+			if ( is_array( $reasons ) ) {
+				foreach ( $reasons as $rr ) {
+					if ( ( $rr['rule'] ?? '' ) === 'llm_analysis' ) {
+						$llm_txt = (string) ( $rr['description'] ?? '' );
+						break;
+					}
+				}
+			}
+			$out[] = [
+				'id'              => (int) $r['id'],
+				'from_addr'       => (string) $r['from_addr'],
+				'from_name'       => (string) $r['from_name'],
+				'subject'         => (string) $r['subject'],
+				'scan_verdict'    => (string) $r['scan_verdict'],
+				'scan_score'      => $r['scan_score'] !== null ? (int) $r['scan_score'] : null,
+				'llm_reasoning'   => $llm_txt,
+				'date_hdr'        => $r['date_hdr'],
+				'feedback_thumbs' => $r['feedback_thumbs'] ?: null,
+				'feedback_note'   => (string) ( $r['feedback_note'] ?? '' ),
+			];
+		}
+		return new WP_REST_Response( [ 'ok' => true, 'items' => $out ], 200 );
 	}
 
 	public static function manual_scan_url( WP_REST_Request $req ) {

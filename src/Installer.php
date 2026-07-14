@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 20;
+	public const CURRENT_DB_VERSION = 21;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -33,6 +33,7 @@ final class Installer {
 	public const TABLE_NOTIFICATIONS = 'mg_notifications';
 	public const TABLE_ERADICATE_DOMAINS = 'mg_eradicate_domains';
 	public const TABLE_SENDER_TRUST      = 'mg_sender_trust';
+	public const TABLE_LLM_FEEDBACK      = 'mg_llm_feedback';
 
 	public const CRON_UNDO_EXPIRY_HOOK = 'itdatex_mailguard_undo_expiry_check';
 
@@ -434,6 +435,28 @@ final class Installer {
 		// versehentlich in Quarantaene wandern. Domain-Aggregat via
 		// from_domain-Index laesst neue Sub-Absender einer bekannten Domain
 		// Basis-Trust erben.
+		// Trainingsdaten fuer spaeteres LLM-Feintuning. Ein User kann pro Mail
+		// genau einmal 👍 oder 👎 abgeben — die snap-Felder frieren Reasoning
+		// und Verdict-Score zum Feedback-Zeitpunkt ein, damit spaetere Rescans
+		// nicht die Ground-Truth-Referenz verschieben.
+		$t_llmfb = $wpdb->prefix . self::TABLE_LLM_FEEDBACK;
+		$sql_llmfb = "CREATE TABLE {$t_llmfb} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			message_id BIGINT UNSIGNED NOT NULL,
+			from_addr_snap VARCHAR(320) NOT NULL DEFAULT '',
+			verdict_snap VARCHAR(20) NOT NULL DEFAULT '',
+			score_snap TINYINT UNSIGNED NULL,
+			llm_reasoning_snap TEXT NULL,
+			thumbs ENUM('up','down') NOT NULL,
+			note VARCHAR(500) NOT NULL DEFAULT '',
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			UNIQUE KEY uniq_customer_message (customer_id, message_id),
+			KEY idx_customer_created (customer_id, created_at),
+			KEY idx_thumbs (thumbs)
+		) {$charset};";
+
 		$t_trust = $wpdb->prefix . self::TABLE_SENDER_TRUST;
 		$sql_trust = "CREATE TABLE {$t_trust} (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -468,6 +491,7 @@ final class Installer {
 		dbDelta( $sql_erd );
 		dbDelta( $sql_not );
 		dbDelta( $sql_trust );
+		dbDelta( $sql_llmfb );
 
 		// One-shot Migration: aus jedem bestehenden Account einen Folder-Eintrag
 		// erzeugen. Nur wenn die Folder-Tabelle leer ist UND mind. ein Account

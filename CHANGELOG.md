@@ -7,6 +7,31 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.29.0] – 2026-07-14
+
+Neu: **KI-Bewertungen sichtbar + bewertbar**. Statt Reasoning nur als
+Chip-Tooltip zu verstecken zeigt MailGuard jetzt eine eigene Card in
+MessageDetail (App) und im aufgeklappten Row (Portal). Neue Portal-View
+"KI-Bewertungen" listet die letzten 100 Mails fuer Batch-Feedback.
+
+### Added
+- **Neue Tabelle `mg_llm_feedback`** (customer_id, message_id,
+  from_addr_snap, verdict_snap, score_snap, llm_reasoning_snap,
+  thumbs ENUM(up,down), note, created_at). UNIQUE (customer_id,
+  message_id) — ein User bewertet jede Mail genau einmal.
+- **REST `POST /inbox/messages/{id}/llm-feedback`** speichert die
+  Bewertung inkl. Reasoning-Snapshot. **`GET /llm-feedback/recent`**
+  fuer die Batch-View mit Filter `unrated|up|down`.
+- **`GET /inbox/messages/{id}`** liefert jetzt `llm_feedback` mit,
+  damit die Buttons in der App beim erneuten Oeffnen vorbelegt sind.
+- **Portal-Route `/portal/llm-feedback`** und Nav-Eintrag
+  "KI-Bewertungen". Neue View: Filter-Tabs + Reasoning-Preview pro Row
+  + optimistic Update auf 👍/👎-Klick.
+- **Inline-Reasoning-Card** im aufgeklappten Portal-Inbox-Row und
+  Reasoning-Card in der App-MessageDetail. Semikolon-Split in
+  Bullet-Punkte wenn Aufzaehlung, sonst Absatz. Score-abhaengige
+  Farbgebung (rot ab 60, gelb ab 30).
+
 ## [0.28.0] – 2026-07-14
 
 Neu: **Auto-Whitelist-Vorschlaege**. MailGuard erkennt jetzt, wenn du

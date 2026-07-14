@@ -3,7 +3,7 @@
  * Plugin Name:       itdatex MailGuard
  * Plugin URI:        https://wp.itdatex.support/itdatex-mailguard/
  * Description:       Multi-Tenant Phishing-/Spam-/Newsletter-Schutz fuer die Endkunden des Site-Owners. Endkunden verbinden Outlook/Gmail per OAuth oder eigenes IMAP per Auto-Discovery, eingehende Mails werden automatisch gegen die antiphish-API (lokales LLM) gescannt, Newsletter pro Sender abmeldbar.
- * Version:           0.28.0
+ * Version:           0.29.0
  * Requires at least: 6.4
  * Requires PHP:      8.1
  * Author:            !tdatex
@@ -16,7 +16,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-define( 'ITDATEX_MAILGUARD_VERSION', '0.28.0' );
+define( 'ITDATEX_MAILGUARD_VERSION', '0.29.0' );
 define( 'ITDATEX_MAILGUARD_FILE',    __FILE__ );
 define( 'ITDATEX_MAILGUARD_DIR',     plugin_dir_path( __FILE__ ) );
 define( 'ITDATEX_MAILGUARD_URL',     plugin_dir_url( __FILE__ ) );

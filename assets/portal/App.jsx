@@ -19,6 +19,7 @@ import EradicateDomainsView from './views/EradicateDomains.jsx';
 import Plan           from './views/Plan.jsx';
 import Actions        from './views/Actions.jsx';
 import Devices        from './views/Devices.jsx';
+import LlmFeedback    from './views/LlmFeedback.jsx';
 import NotificationsBell from './components/NotificationsBell.jsx';
 
 export default function App() {
@@ -104,6 +105,7 @@ export default function App() {
               <button className="mg-nav__btn" onClick={() => navigate('rules')}>Regeln</button>
               <button className="mg-nav__btn" onClick={() => navigate('eradicate-domains')}>Auto-Vernichten</button>
               <button className="mg-nav__btn" onClick={() => navigate('actions')}>Aktionen</button>
+              <button className="mg-nav__btn" onClick={() => navigate('llm-feedback')}>KI-Bewertungen</button>
               <button className="mg-nav__btn" onClick={() => navigate('accounts')}>Postfächer</button>
               <button className="mg-nav__btn" onClick={() => navigate('plan')}>Plan</button>
               <button className="mg-nav__btn" onClick={() => navigate('devices')}>Geräte</button>
@@ -158,6 +160,7 @@ function pickView(name) {
     case 'eradicate-domains': return EradicateDomainsView;
     case 'plan':            return Plan;
     case 'actions':         return Actions;
+    case 'llm-feedback':    return LlmFeedback;
     case 'devices':         return Devices;
     case 'logout':          return Empty;
     default:                return NotFound;

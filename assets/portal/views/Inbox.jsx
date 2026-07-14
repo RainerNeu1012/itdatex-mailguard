@@ -933,6 +933,7 @@ function Row({ m, expanded, busy, whitelisted, suggestion, onDismissSuggestion, 
               >×</button>
             </div>
           )}
+          <LlmReasoningInline reasons={m.scan_reasons} messageId={m.id} score={m.scan_score} />
           <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{m.body_preview || <em className="mg-muted">(keine Vorschau)</em>}</p>
           {hasAttachments && <AttachmentList messageId={m.id} />}
           {Array.isArray(m.scan_reasons) && m.scan_reasons.length > 0 && (
@@ -1045,6 +1046,66 @@ function AttachmentList({ messageId }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+// LLM-Reasoning gross und lesbar in der aufgeklappten Row + Feedback-
+// Buttons fuer spaeteres Modell-Feintuning. Portal-Pendant zur
+// LlmReasoningCard in der App-MessageDetail.
+function LlmReasoningInline({ reasons, messageId, score }) {
+  const [feedback, setFeedback] = useState(null);
+  const [busy, setBusy] = useState(false);
+  if (!Array.isArray(reasons)) return null;
+  const llm = reasons.find((r) => r && r.rule === 'llm_analysis');
+  if (!llm) return null;
+  const desc = String(llm.description || '').trim();
+  if (!desc) return null;
+  const llmScore = Number.isFinite(+llm.score) ? +llm.score : (score || 0);
+  const cached   = reasons.some((r) => r && r.rule === 'llm_cache_hit');
+  const parts = desc.split(/\s*;\s*/).map((p) => p.trim()).filter(Boolean);
+  const asBullets = parts.length >= 2;
+  const tone = llmScore >= 60 ? 'var(--mg-err)' : llmScore >= 30 ? 'var(--mg-warn)' : 'var(--mg-fg-muted, #888)';
+
+  const rate = async (t) => {
+    if (busy) return;
+    setBusy(true);
+    const prev = feedback;
+    setFeedback(t);
+    try { await apiPost(`inbox/messages/${messageId}/llm-feedback`, { thumbs: t }); }
+    catch { setFeedback(prev); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ marginBottom: 12, padding: '10px 12px', background: 'var(--mg-surface-2)', borderLeft: `3px solid ${tone}`, borderRadius: 4 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+        <span style={{ fontSize: 16 }} aria-hidden>🧠</span>
+        <strong style={{ fontSize: 12, color: tone }}>KI-Bewertung · {llmScore}/100</strong>
+        {cached && <span className="mg-muted mg-tiny">💾 Cache</span>}
+      </div>
+      {asBullets ? (
+        <ul style={{ margin: '6px 0 0', paddingLeft: 22, fontSize: 13, lineHeight: 1.5 }}>
+          {parts.map((p, i) => <li key={i}>{p.replace(/\.$/, '')}</li>)}
+        </ul>
+      ) : (
+        <div style={{ marginTop: 4, fontSize: 13, lineHeight: 1.5 }}>{desc}</div>
+      )}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
+        <span className="mg-muted mg-tiny" style={{ alignSelf: 'center', marginRight: 4 }}>Passt die Bewertung?</span>
+        <button
+          className="mg-btn mg-tiny"
+          disabled={busy || feedback === 'up'}
+          onClick={(e) => { e.stopPropagation(); rate('up'); }}
+          style={{ borderColor: feedback === 'up' ? 'var(--mg-ok)' : undefined }}
+        >👍</button>
+        <button
+          className="mg-btn mg-tiny"
+          disabled={busy || feedback === 'down'}
+          onClick={(e) => { e.stopPropagation(); rate('down'); }}
+          style={{ borderColor: feedback === 'down' ? 'var(--mg-err)' : undefined }}
+        >👎</button>
+      </div>
     </div>
   );
 }
