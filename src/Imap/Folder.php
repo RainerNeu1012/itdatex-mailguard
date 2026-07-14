@@ -109,15 +109,10 @@ final class Folder {
 		foreach ( [ '\\sent', '\\drafts', '\\trash', '\\archive', '\\all', '\\important', '\\flagged' ] as $flag ) {
 			if ( in_array( $flag, $attrs_lower, true ) ) { return true; }
 		}
-		// Basename am haeufigsten benutzten Delimitern extrahieren — Gmail liefert
-		// z.B. "[Gmail]/Sent Mail", IONOS "INBOX.Sent".
-		$basename = $name;
-		foreach ( [ '/', '.' ] as $sep ) {
-			$pos = strrpos( $basename, $sep );
-			if ( $pos !== false ) { $basename = substr( $basename, $pos + 1 ); }
-		}
-		$basename = trim( $basename );
-		if ( $basename === '' ) { return false; }
+		// Alle Pfad-Segmente pruefen — Kinder von System-Ordnern
+		// ("Synchronisierungsprobleme/Konflikte", "Deleted/Quarantine",
+		// "[Gmail]/Sent Mail") gelten ebenfalls als System.
+		$segments = preg_split( '#[/.]+#', $name ) ?: [];
 		$patterns = [
 			'/^sent(\b|$| mail| items| messages)/i',
 			'/^gesend/i',
@@ -140,8 +135,12 @@ final class Folder {
 			'/^conversation history$/i',
 			'/^rss[- ]?feeds?$/i',
 		];
-		foreach ( $patterns as $rx ) {
-			if ( preg_match( $rx, $basename ) ) { return true; }
+		foreach ( $segments as $seg ) {
+			$seg = trim( $seg );
+			if ( $seg === '' ) { continue; }
+			foreach ( $patterns as $rx ) {
+				if ( preg_match( $rx, $seg ) ) { return true; }
+			}
 		}
 		return false;
 	}

@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 18;
+	public const CURRENT_DB_VERSION = 19;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -454,12 +454,15 @@ final class Installer {
 				FROM {$t_imap}" );
 		}
 
-		// DB v18: Systemordner (Sent/Drafts/Trash/Deleted/Outbox/Notes/Archive)
-		// wurden bis v0.25.0 als 'active' importiert und vom Pull gescannt. Das
-		// fuehrte zur Auto-Quarantaenisierung eigener und geloeschter Mails.
-		// Bestehende Rows werden hier auf 'disabled' zurueckgesetzt; der neue
-		// Filter in Folder::sync_from_imap verhindert das Wiederkommen.
-		if ( $installed < 18 ) {
+		// DB v18 (& v19-Nachlauf): Systemordner (Sent/Drafts/Trash/Deleted/Outbox/
+		// Notes/Archive/Synchronisierungsprobleme) wurden bis v0.25.0 als 'active'
+		// importiert und vom Pull gescannt. Das fuehrte zur Auto-Quarantaenisierung
+		// eigener und geloeschter Mails. Bestehende Rows werden hier auf 'disabled'
+		// zurueckgesetzt; der neue Filter in Folder::sync_from_imap verhindert das
+		// Wiederkommen. DB v19 nimmt zusaetzlich Sub-Folder von Systemordnern
+		// mit ("Deleted/Quarantine", "Synchronisierungsprobleme/Konflikte") —
+		// dafuer die Segment-basierte Erkennung in Folder::is_system_folder.
+		if ( $installed < 19 ) {
 			$rows = $wpdb->get_results( "SELECT id, folder_name FROM {$t_fol} WHERE status = 'active'", ARRAY_A ) ?: [];
 			foreach ( $rows as $row ) {
 				if ( \Itdatex\Mailguard\Imap\Folder::is_system_folder( (string) $row['folder_name'] ) ) {
