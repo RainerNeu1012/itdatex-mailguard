@@ -210,14 +210,20 @@ function ChronoList({ filter, setFilter, onReload }) {
   // Nachrichten weiterhin obwohl er 'blockiert' geklickt hat.
   const [blacklist, setBlacklist] = useState({ addrs: new Set(), domains: new Set() });
   const [whitelist, setWhitelist] = useState({ addrs: new Set(), domains: new Set() });
+  // MailGuard-Vorschlag pro Absender (Whitelist/Blacklist bei wiederholtem
+  // User-Verhalten). Client-Dismissal wird zusaetzlich in dismissedSug
+  // gehalten, damit ein "X"-Klick den Chip bis zum Reload ausblendet.
+  const [suggestions, setSuggestions] = useState({});
+  const [dismissedSug, setDismissedSug] = useState(new Set());
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
       const qs = buildQS(filter);
-      const [msg, rules] = await Promise.all([
+      const [msg, rules, sug] = await Promise.all([
         apiGet('inbox/messages?' + qs.toString()),
         apiGet('rules'),
+        apiGet('senders/suggestions'),
       ]);
       if (msg.status >= 400) setError('HTTP ' + msg.status);
       else setData(msg.body);
@@ -238,6 +244,11 @@ function ChronoList({ filter, setFilter, onReload }) {
         }
         setBlacklist({ addrs: blAddrs, domains: blDomains });
         setWhitelist({ addrs: wlAddrs, domains: wlDomains });
+      }
+      if (sug.status === 200 && sug.body && sug.body.ok) {
+        const map = {};
+        for (const s of sug.body.items || []) { map[s.from_addr] = s; }
+        setSuggestions(map);
       }
     } catch (e) { setError(String(e)); }
     finally { setLoading(false); }
@@ -301,16 +312,32 @@ function ChronoList({ filter, setFilter, onReload }) {
               <div className="mg-card mg-muted">Alle Mails auf dieser Seite sind ausgeblendet.</div>
             ) : (
               <div className="mg-stack">
-                {visible.map((m) => (
-                  <Row
-                    key={m.id} m={m}
-                    expanded={expanded === m.id}
-                    busy={busy[m.id]}
-                    whitelisted={isWhitelisted(m)}
-                    onToggle={() => setExpanded(expanded === m.id ? null : m.id)}
-                    {...handlers.for(m)}
-                  />
-                ))}
+                {visible.map((m) => {
+                  const addr = (m.from_addr || '').toLowerCase();
+                  const sug = addr && !dismissedSug.has(addr) ? suggestions[addr] : null;
+                  return (
+                    <Row
+                      key={m.id} m={m}
+                      expanded={expanded === m.id}
+                      busy={busy[m.id]}
+                      whitelisted={isWhitelisted(m)}
+                      suggestion={sug}
+                      onDismissSuggestion={() => setDismissedSug((s) => { const n = new Set(s); n.add(addr); return n; })}
+                      onApplySuggestion={async () => {
+                        if (!sug) return;
+                        setBusy((b) => ({ ...b, [m.id]: 'sug' }));
+                        try {
+                          await apiPost('rules', { kind: sug.kind, match_type: 'from_addr', pattern: sug.from_addr });
+                          reloadAll();
+                        } finally {
+                          setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; });
+                        }
+                      }}
+                      onToggle={() => setExpanded(expanded === m.id ? null : m.id)}
+                      {...handlers.for(m)}
+                    />
+                  );
+                })}
               </div>
             )}
           </>
@@ -823,7 +850,7 @@ function Stat({ label, value, tone }) {
   );
 }
 
-function Row({ m, expanded, busy, whitelisted, onToggle, onRescan, onUnsub, onQuarantine, onUndoQuarantine, onPurge, onWhitelistAddr, onWhitelistDomain, onBlacklistAddr, onBlacklistDomain }) {
+function Row({ m, expanded, busy, whitelisted, suggestion, onDismissSuggestion, onApplySuggestion, onToggle, onRescan, onUnsub, onQuarantine, onUndoQuarantine, onPurge, onWhitelistAddr, onWhitelistDomain, onBlacklistAddr, onBlacklistDomain }) {
   const dangerous   = m.scan_verdict === 'dangerous';
   const suspicious  = m.scan_verdict === 'suspicious';
   const flagged     = dangerous || suspicious;
@@ -865,11 +892,47 @@ function Row({ m, expanded, busy, whitelisted, onToggle, onRescan, onUnsub, onQu
               {busy === 'wl_addr' ? '…' : '✓ Als sicher'}
             </button>
           )}
+          {suggestion && (
+            <span
+              className={'mg-pill ' + (suggestion.kind === 'blacklist' ? 'mg-pill--err' : 'mg-pill--warn')}
+              title={suggestion.reason_text}
+              style={{ marginLeft: 4 }}
+            >
+              💡 Vorschlag
+            </span>
+          )}
           <span className="mg-muted mg-tiny">{fmtDate(m.date_hdr || m.fetched_at)}</span>
         </div>
       </div>
       {expanded && (
         <div className="mg-mail__body">
+          {suggestion && (
+            <div
+              className="mg-card"
+              style={{
+                padding: '10px 12px', marginBottom: 10,
+                borderLeft: suggestion.kind === 'blacklist' ? '4px solid var(--mg-err)' : '4px solid var(--mg-ok)',
+                display: 'flex', alignItems: 'center', gap: 10,
+              }}
+            >
+              <span style={{ fontSize: 18 }} aria-hidden>💡</span>
+              <div style={{ flex: 1, minWidth: 0, fontSize: 13 }}>
+                <strong>MailGuard-Vorschlag:</strong> {suggestion.reason_text}
+              </div>
+              <button
+                className="mg-btn"
+                disabled={busy === 'sug'}
+                onClick={(e) => { e.stopPropagation(); onApplySuggestion && onApplySuggestion(); }}
+              >
+                {busy === 'sug' ? '…' : (suggestion.kind === 'blacklist' ? '⛔ Blockieren' : '✓ Als sicher')}
+              </button>
+              <button
+                className="mg-btn"
+                title="Vorschlag verwerfen (erscheint beim naechsten Reload wieder)"
+                onClick={(e) => { e.stopPropagation(); onDismissSuggestion && onDismissSuggestion(); }}
+              >×</button>
+            </div>
+          )}
           <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{m.body_preview || <em className="mg-muted">(keine Vorschau)</em>}</p>
           {hasAttachments && <AttachmentList messageId={m.id} />}
           {Array.isArray(m.scan_reasons) && m.scan_reasons.length > 0 && (

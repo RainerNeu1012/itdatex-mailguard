@@ -221,4 +221,81 @@ final class SenderTrust {
 			'row'     => $row ?: null,
 		];
 	}
+
+	/**
+	 * Liefert einen Regel-Vorschlag, wenn der User sich wiederholt ueber
+	 * dasselbe Absender-Verhalten geaergert hat und keine passende Regel
+	 * angelegt ist:
+	 *  - `whitelist`  wenn quarantine_undo_count >= 2 UND keine
+	 *                 from_addr-Whitelist fuer den Absender existiert.
+	 *  - `blacklist`  wenn quarantine_kept_count >= 3 UND keine
+	 *                 from_addr-Blacklist existiert.
+	 *
+	 * Die App / das Portal ruft danach den bestehenden POST /rules-Endpoint —
+	 * kein neuer Endpoint noetig. Der Nutzer kann den Vorschlag im Client
+	 * per X-Klick verwerfen (Client-State, kein Persist in v1).
+	 *
+	 * @return array{kind:string,from_addr:string,reason_text:string,counts:array}|null
+	 */
+	public static function get_suggestion( int $customer_id, string $from_addr ) : ?array {
+		$addr = self::normalize_addr( $from_addr );
+		if ( $addr === '' ) { return null; }
+
+		global $wpdb;
+		$row = $wpdb->get_row( $wpdb->prepare(
+			'SELECT * FROM ' . self::table() . ' WHERE customer_id = %d AND from_addr = %s LIMIT 1',
+			$customer_id, $addr
+		), ARRAY_A );
+		if ( ! $row ) { return null; }
+
+		$undo = (int) $row['quarantine_undo_count'];
+		$kept = (int) $row['quarantine_kept_count'];
+		$recv = (int) $row['received_count'];
+
+		$t_rul  = $wpdb->prefix . Installer::TABLE_RULES;
+		$has_wl = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$t_rul}
+			 WHERE customer_id = %d AND kind = 'whitelist'
+			   AND match_type = 'from_addr' AND LOWER(pattern) = %s",
+			$customer_id, $addr
+		) ) > 0;
+		$has_bl = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$t_rul}
+			 WHERE customer_id = %d AND kind = 'blacklist'
+			   AND match_type = 'from_addr' AND LOWER(pattern) = %s",
+			$customer_id, $addr
+		) ) > 0;
+
+		// Sobald ueberhaupt eine from_addr-Regel (whitelist ODER blacklist)
+		// existiert, hat der User sich schon fuer eine Richtung entschieden —
+		// wir schweigen. Sonst kaeme z.B. bei einem historisch geblacklisteten
+		// Absender trotzdem noch ein Whitelist-Vorschlag, das wirkt paradox.
+		if ( $has_wl || $has_bl ) { return null; }
+
+		// Blacklist geht vor Whitelist: wenn beide Kriterien greifen, gewinnt
+		// das haeufigere Signal.
+		if ( $kept >= 3 && $kept >= $undo ) {
+			return [
+				'kind'        => 'blacklist',
+				'from_addr'   => $addr,
+				'reason_text' => sprintf(
+					'Du hast %d Auto-Quarantaenen dieses Absenders endgueltig geloescht. Willst du ihn generell blockieren?',
+					$kept
+				),
+				'counts'      => [ 'undo' => $undo, 'kept' => $kept, 'received' => $recv ],
+			];
+		}
+		if ( $undo >= 2 ) {
+			return [
+				'kind'        => 'whitelist',
+				'from_addr'   => $addr,
+				'reason_text' => sprintf(
+					'Du hast Auto-Quarantaenen dieses Absenders schon %dx zurueckgeholt. Als sicher merken?',
+					$undo
+				),
+				'counts'      => [ 'undo' => $undo, 'kept' => $kept, 'received' => $recv ],
+			];
+		}
+		return null;
+	}
 }

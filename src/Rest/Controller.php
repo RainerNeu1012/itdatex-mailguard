@@ -321,6 +321,15 @@ final class Controller {
 			],
 		] );
 
+		// Alle offenen Regel-Vorschlaege des Customers in einem Rutsch —
+		// spart Round-Trips in der Inbox, die pro Row entscheiden muss ob
+		// ein Suggestion-Chip anzuzeigen ist.
+		register_rest_route( self::NAMESPACE, '/senders/suggestions', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'sender_suggestions' ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/inbox/senders/purge', [
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
@@ -760,7 +769,38 @@ final class Controller {
 		if ( is_wp_error( $cid ) ) { return $cid; }
 		$row = ImapMessage::find_for_customer( (int) $req['id'], $cid );
 		if ( ! $row ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
-		return new WP_REST_Response( [ 'ok' => true, 'item' => ImapMessage::public_view( $row ) ], 200 );
+		$item = ImapMessage::public_view( $row );
+		// Regel-Vorschlag aus Trust-Historie mitschicken — App/Portal rendert
+		// den Banner in MessageDetail und ruft POST /rules an, wenn der User
+		// zustimmt. Kein neuer Endpoint noetig.
+		$suggestion = \Itdatex\Mailguard\Antiphish\SenderTrust::get_suggestion(
+			$cid, (string) ( $row['from_addr'] ?? '' )
+		);
+		if ( $suggestion !== null ) {
+			$item['sender_suggestion'] = $suggestion;
+		}
+		return new WP_REST_Response( [ 'ok' => true, 'item' => $item ], 200 );
+	}
+
+	public static function sender_suggestions( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		global $wpdb;
+		$t = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_SENDER_TRUST;
+		// Nur Rows die potenziell einen Vorschlag ausloesen — die eigentliche
+		// Regel-Existence-Pruefung macht get_suggestion() selbst.
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT from_addr FROM {$t}
+			 WHERE customer_id = %d
+			   AND (quarantine_undo_count >= 2 OR quarantine_kept_count >= 3)",
+			$cid
+		), ARRAY_A ) ?: [];
+		$out = [];
+		foreach ( $rows as $r ) {
+			$s = \Itdatex\Mailguard\Antiphish\SenderTrust::get_suggestion( $cid, (string) $r['from_addr'] );
+			if ( $s !== null ) { $out[] = $s; }
+		}
+		return new WP_REST_Response( [ 'ok' => true, 'items' => $out, 'count' => count( $out ) ], 200 );
 	}
 
 	public static function inbox_delete( WP_REST_Request $req ) {

@@ -7,6 +7,33 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.28.0] – 2026-07-14
+
+Neu: **Auto-Whitelist-Vorschlaege**. MailGuard erkennt jetzt, wenn du
+dich wiederholt ueber denselben Absender aergerst — und schlaegt eine
+passende Regel vor. Ein Klick, statt jedes Mal von Hand.
+
+### Added
+- **`SenderTrust::get_suggestion($customer_id, $from_addr)`** liest die
+  Trust-Row und liefert einen Vorschlag, wenn:
+  - `quarantine_undo_count >= 2` UND keine from_addr-Whitelist existiert
+    → **whitelist**-Vorschlag ("Als sicher merken").
+  - `quarantine_kept_count >= 3` UND keine from_addr-Blacklist
+    → **blacklist**-Vorschlag ("Blockieren").
+  - Sobald eine from_addr-Regel welcher Art auch immer existiert:
+    kein Vorschlag mehr — der User hat sich entschieden.
+- **REST `GET /inbox/messages/{id}`** liefert jetzt `sender_suggestion`
+  im Item-Objekt (falls vorhanden).
+- **REST `GET /senders/suggestions`** liefert alle offenen Vorschlaege
+  des Customers in einem Rutsch — die Inbox-View muss nicht pro Row
+  einen extra Query machen.
+- **App MessageDetail**: gelber/roter Banner oben mit Reason-Text,
+  „Als sicher merken"/„Blockieren"-Button und X-Dismiss (Client-State).
+  Ein Klick ruft POST /rules und blendet den Banner aus.
+- **Portal-Inbox** (Chrono-Liste): 💡 Vorschlag-Pill neben dem
+  Absender-Namen; im aufgeklappten Body ein Banner mit demselben
+  Apply/Dismiss-Verhalten wie in der App.
+
 ## [0.27.0] – 2026-07-14
 
 Neu: **Sender-Trust-Score**. MailGuard lernt jetzt aus deiner Historie,
