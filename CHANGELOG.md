@@ -7,6 +7,29 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.31.0] – 2026-07-14
+
+Neu: **TLD-Sperre** (Geo-/Endungs-Block). Analog zu Auto-Vernichten,
+aber matched auf Absender-Domain-Endung. `.tm` blockt jede Mail deren
+Absender auf `.tm` endet — `foo.tm`, `bar.gmx.tm`, etc.
+
+### Added
+- **Neue Tabelle `mg_blocked_tlds`** (customer_id, tld, hit_count) mit
+  UNIQUE-Index `(customer_id, tld)`. Speichert TLD-Muster ohne Punkt
+  (`tm`, `co.uk`).
+- **`Antiphish\BlockedTlds`-Klasse** mit `normalize`, `matches`,
+  `list_tlds`, `add/remove/list_for_customer/record_hit`. Match ueber
+  `str_ends_with('.$tld')`, kein LIKE-Query pro Mail (Hot-Path).
+- **PullService-Hook** nach EradicateDomains-Check: pro Cycle einmal
+  die TLD-Liste laden, dann in-memory matchen. Treffer werden per
+  `expunge_uids` gebatcht (kein Ingest in mg_messages).
+- **REST**: `GET/POST/DELETE /me/blocked-tlds` — analog zu
+  `/me/eradicate-domains`.
+- **Portal**: „Auto-Vernichten"-View bekommt zwei Tabs
+  („Absender-Domains" / „TLD-Sperre") mit Schnellauswahl-Chips fuer
+  typische Spam-TLDs (`.tm`, `.tk`, `.ml`, `.ga`, `.cf`, `.icu`,
+  `.top`, `.xyz`, `.rest`, `.zip`).
+
 ## [0.30.0] – 2026-07-14
 
 Neu: **Content-Fingerprint fuer Kampagnen**. MailGuard erkennt jetzt

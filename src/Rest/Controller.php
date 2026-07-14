@@ -591,6 +591,26 @@ final class Controller {
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'eradicate_domains_delete' ],
 		] );
+
+		// TLD-Block: gleiche Semantik wie EradicateDomains, aber matched
+		// auf Absender-Domain-Endung (Geo-/TLD-Filter, z.B. `.tm`, `.icu`).
+		register_rest_route( self::NAMESPACE, '/me/blocked-tlds', [
+			[
+				'methods'             => 'GET',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'blocked_tlds_list' ],
+			],
+			[
+				'methods'             => 'POST',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'blocked_tlds_create' ],
+			],
+		] );
+		register_rest_route( self::NAMESPACE, '/me/blocked-tlds/(?P<id>\d+)', [
+			'methods'             => 'DELETE',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'blocked_tlds_delete' ],
+		] );
 	}
 
 	/**
@@ -1590,6 +1610,42 @@ final class Controller {
 		$removed = EradicateDomains::remove( $cid, $id );
 		if ( ! $removed ) {
 			return new WP_Error( 'not_found', __( 'Domain nicht gefunden.', 'itdatex-mailguard' ), [ 'status' => 404 ] );
+		}
+		return new WP_REST_Response( [ 'ok' => true, 'id' => $id ], 200 );
+	}
+
+	public static function blocked_tlds_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		return new WP_REST_Response( [
+			'ok'    => true,
+			'items' => \Itdatex\Mailguard\Antiphish\BlockedTlds::list_for_customer( $cid ),
+		], 200 );
+	}
+
+	public static function blocked_tlds_create( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json = (array) $req->get_json_params();
+		$tld  = trim( (string) ( $json['tld'] ?? '' ) );
+		if ( $tld === '' ) {
+			return new WP_Error( 'missing_tld', 'tld fehlt', [ 'status' => 400 ] );
+		}
+		$res = \Itdatex\Mailguard\Antiphish\BlockedTlds::add( $cid, $tld );
+		$status = ! empty( $res['ok'] ) ? 200 : ( ( $res['error'] ?? '' ) === 'bad_tld' ? 400 : 500 );
+		return new WP_REST_Response( $res, $status );
+	}
+
+	public static function blocked_tlds_delete( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req['id'];
+		if ( $id <= 0 ) {
+			return new WP_Error( 'bad_input', 'id fehlt', [ 'status' => 400 ] );
+		}
+		$removed = \Itdatex\Mailguard\Antiphish\BlockedTlds::remove( $cid, $id );
+		if ( ! $removed ) {
+			return new WP_Error( 'not_found', 'Eintrag nicht gefunden', [ 'status' => 404 ] );
 		}
 		return new WP_REST_Response( [ 'ok' => true, 'id' => $id ], 200 );
 	}

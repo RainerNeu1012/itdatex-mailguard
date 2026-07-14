@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Itdatex\Mailguard\Imap;
 
+use Itdatex\Mailguard\Antiphish\BlockedTlds;
 use Itdatex\Mailguard\Antiphish\EradicateDomains;
 use Itdatex\Mailguard\Antiphish\ScanService;
 use Itdatex\Mailguard\Antiphish\SenderTrust;
@@ -138,7 +139,9 @@ final class PullService {
 			return [ 'folder_id' => $folder_id, 'ok' => false, 'error' => 'list_failed', 'detail' => $e->getMessage() ];
 		}
 
-		$inserted = 0; $dup = 0; $err = 0; $eradicated = 0; $max_uid = (int) $folder['last_uid'];
+		$inserted = 0; $dup = 0; $err = 0; $eradicated = 0; $tld_blocked = 0; $max_uid = (int) $folder['last_uid'];
+		// TLD-Blockliste einmal pro Cycle laden — pro Mail nur in-memory-Match.
+		$blocked_tlds = BlockedTlds::list_tlds( $customer_id );
 		// UIDs, die per Auto-Vernichten geblockt wurden, sammeln wir und
 		// expungen sie am Ende gesammelt — ein EXPUNGE pro UID waere N Roundtrips,
 		// eine Batch spart die Latenz auf grossen IONOS-Konten.
@@ -162,6 +165,19 @@ final class PullService {
 				$eradicated++;
 				if ( $uid > $max_uid ) { $max_uid = $uid; }
 				continue;
+			}
+
+			// TLD-Block: gleiches Prinzip wie EradicateDomains, aber matched
+			// per Endung. Trifft z.B. `.tm`, `.tk`, `.icu`, `co.uk`.
+			if ( $domain && $blocked_tlds ) {
+				$matched_tld = BlockedTlds::matches( $domain, $blocked_tlds );
+				if ( $matched_tld !== null ) {
+					$eradicate_uids[] = $uid;
+					BlockedTlds::record_hit( $customer_id, $matched_tld );
+					$tld_blocked++;
+					if ( $uid > $max_uid ) { $max_uid = $uid; }
+					continue;
+				}
 			}
 
 			$status = Message::ingest( $customer_id, (int) $folder['account_id'], (string) $folder['folder_name'], $msg );
@@ -221,7 +237,7 @@ final class PullService {
 			}
 		}
 
-		Folder::record_test( $folder_id, $customer_id, true, sprintf( 'pull ok · +%d dup=%d era=%d err=%d scan=%d', $inserted, $dup, $eradicated, $err, $scanned_ok ) );
+		Folder::record_test( $folder_id, $customer_id, true, sprintf( 'pull ok · +%d dup=%d era=%d tld=%d err=%d scan=%d', $inserted, $dup, $eradicated, $tld_blocked, $err, $scanned_ok ) );
 
 		return [
 			'folder_id'   => $folder_id,
@@ -231,6 +247,7 @@ final class PullService {
 			'scanned'     => $scanned_ok,
 			'duplicates'  => $dup,
 			'eradicated'  => $eradicated,
+			'tld_blocked' => $tld_blocked,
 			'errors'      => $err,
 			'last_uid'    => $max_uid,
 		];

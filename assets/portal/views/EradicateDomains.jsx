@@ -13,6 +13,33 @@ import { apiGet, apiPost, apiDelete } from '../api.js';
  *     aktuelle Mail zum Rechtsklicken haben.
  */
 export default function EradicateDomains() {
+  const [tab, setTab] = useState('domains');
+  return (
+    <div className="mg-stack">
+      <div className="mg-card">
+        <h2 style={{ margin: '0 0 0.25rem' }}>Auto-Vernichten</h2>
+        <p className="mg-muted" style={{ margin: 0 }}>
+          Filter die vor dem Ingest greifen — die Mail landet nie in deiner Inbox,
+          wird direkt am IMAP-Server verworfen. Zwei Achsen: einzelne Absender-Domains
+          oder ganze Top-Level-Endungen (Geo-/TLD-Block).
+        </p>
+        <div className="mg-form__row" style={{ marginTop: '0.75rem', gap: '0.4rem' }}>
+          <button
+            className={'mg-btn ' + (tab === 'domains' ? 'mg-btn--primary' : '')}
+            onClick={() => setTab('domains')}
+          >Absender-Domains</button>
+          <button
+            className={'mg-btn ' + (tab === 'tlds' ? 'mg-btn--primary' : '')}
+            onClick={() => setTab('tlds')}
+          >TLD-Sperre</button>
+        </div>
+      </div>
+      {tab === 'domains' ? <DomainsList /> : <TldsList />}
+    </div>
+  );
+}
+
+function DomainsList() {
   const [items, setItems]   = useState(null);
   const [error, setError]   = useState(null);
   const [busy, setBusy]     = useState({});
@@ -93,17 +120,7 @@ export default function EradicateDomains() {
   };
 
   return (
-    <div className="mg-stack">
-      <div className="mg-card">
-        <h2 style={{ margin: '0 0 0.25rem' }}>Auto-Vernichten-Domains</h2>
-        <p className="mg-muted" style={{ margin: 0 }}>
-          Jede eingetragene Domain wird beim IMAP-Abruf sofort verworfen — die Mail
-          landet nie in deiner Inbox. Sinnvoll bei hartnäckigen Absendern, die die
-          Sub-Adresse ändern (news@, angebote@, service@ …) und deshalb an einer
-          Sender-Regel vorbeirutschen.
-        </p>
-      </div>
-
+    <>
       <form className="mg-card mg-form" onSubmit={add}>
         <h3 style={{ margin: '0 0 0.5rem' }}>Neue Domain</h3>
         <label>Domain
@@ -176,7 +193,139 @@ export default function EradicateDomains() {
           </table>
         </div>
       )}
-    </div>
+    </>
+  );
+}
+
+// TLD-Sperre: gleiche Wirkung wie Absender-Domain, aber matched per
+// Endung. `.tm`, `.icu`, `co.uk` — was auf `.<tld>` endet wird beim
+// naechsten Pull direkt am IMAP-Server verworfen.
+function TldsList() {
+  const [items, setItems] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy]   = useState({});
+  const [tld, setTld]     = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setError(null);
+    const { status, body } = await apiGet('me/blocked-tlds');
+    if (status >= 400) setError('HTTP ' + status);
+    else setItems(body.items || []);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const add = async (e) => {
+    e.preventDefault();
+    const v = (tld || '').trim().toLowerCase().replace(/^\.+/, '');
+    if (!v) return;
+    if (!window.confirm(`Alle Mails deren Absender auf ".${v}" endet automatisch verwerfen?\n\nSchon in der Inbox liegende Mails bleiben. Nur neue Zustellungen ab jetzt.`)) return;
+    setSaving(true); setError(null);
+    try {
+      const { status, body } = await apiPost('me/blocked-tlds', { tld: v });
+      if (status >= 400 || !body?.ok) {
+        setError(body?.error || ('HTTP ' + status));
+        return;
+      }
+      setTld('');
+      load();
+    } finally { setSaving(false); }
+  };
+
+  const remove = async (id, v) => {
+    if (!window.confirm(`TLD-Sperre für ".${v}" wieder aufheben? Mails der Endung landen dann wieder in deiner Inbox.`)) return;
+    setBusy((b) => ({ ...b, [id]: 'del' }));
+    try {
+      const { status, body } = await apiDelete(`me/blocked-tlds/${id}`);
+      if (status >= 400) { alert('Löschen fehlgeschlagen: HTTP ' + status); return; }
+      load();
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[id]; return n; });
+    }
+  };
+
+  const SUGGESTIONS = ['tm', 'tk', 'ml', 'ga', 'cf', 'icu', 'top', 'xyz', 'rest', 'zip'];
+
+  return (
+    <>
+      <form className="mg-card mg-form" onSubmit={add}>
+        <h3 style={{ margin: '0 0 0.5rem' }}>Neue TLD sperren</h3>
+        <label>Endung (ohne führenden Punkt)
+          <input
+            type="text"
+            required
+            value={tld}
+            onChange={(e) => setTld(e.target.value)}
+            placeholder="tm  oder  co.uk"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+          />
+        </label>
+        <div className="mg-muted mg-tiny">
+          Schnellauswahl:{' '}
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className="mg-btn mg-tiny"
+              style={{ padding: '2px 8px', fontSize: 11, marginRight: 4 }}
+              onClick={() => setTld(s)}
+            >.{s}</button>
+          ))}
+        </div>
+        {error && <div className="mg-error">{error}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button type="submit" className="mg-btn mg-btn--danger" disabled={saving}>
+            {saving ? '…' : '+ Hinzufügen'}
+          </button>
+        </div>
+      </form>
+
+      {items === null && <div className="mg-card">Lade …</div>}
+      {items !== null && items.length === 0 && (
+        <div className="mg-card mg-muted">
+          Noch keine TLD gesperrt. Beispiele wie <code>.tm</code>, <code>.icu</code>,{' '}
+          <code>.tk</code> sind statistisch fast ausschliesslich Spam-Quellen — ein
+          Klick oben blockiert sie komplett.
+        </div>
+      )}
+      {items !== null && items.length > 0 && (
+        <div className="mg-card">
+          <table className="mg-rules">
+            <thead>
+              <tr>
+                <th>Endung</th>
+                <th>Aktiv seit</th>
+                <th>Zuletzt gefangen</th>
+                <th>Treffer</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((r) => (
+                <tr key={r.id}>
+                  <td><code>*.{r.tld}</code></td>
+                  <td className="mg-muted mg-tiny">{fmtDate(r.created_at)}</td>
+                  <td className="mg-muted mg-tiny">{r.last_hit_at ? fmtDate(r.last_hit_at) : '—'}</td>
+                  <td>{r.hit_count}</td>
+                  <td>
+                    <button
+                      className="mg-btn"
+                      disabled={!!busy[r.id]}
+                      onClick={() => remove(r.id, r.tld)}
+                    >
+                      {busy[r.id] === 'del' ? '…' : '×'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
 }
 

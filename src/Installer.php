@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 22;
+	public const CURRENT_DB_VERSION = 23;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -34,6 +34,7 @@ final class Installer {
 	public const TABLE_ERADICATE_DOMAINS = 'mg_eradicate_domains';
 	public const TABLE_SENDER_TRUST      = 'mg_sender_trust';
 	public const TABLE_LLM_FEEDBACK      = 'mg_llm_feedback';
+	public const TABLE_BLOCKED_TLDS      = 'mg_blocked_tlds';
 
 	public const CRON_UNDO_EXPIRY_HOOK = 'itdatex_mailguard_undo_expiry_check';
 
@@ -431,6 +432,22 @@ final class Installer {
 			KEY idx_customer (customer_id)
 		) {$charset};";
 
+		// TLD-Block pro Customer: filtert alle Mails deren Absender-Domain
+		// auf ".<tld>" endet direkt vor dem Ingest weg. `tld` speichert das
+		// Muster ohne fuehrenden Punkt (z.B. `tm`, `co.uk`).
+		$t_btlds = $wpdb->prefix . self::TABLE_BLOCKED_TLDS;
+		$sql_btlds = "CREATE TABLE {$t_btlds} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			tld VARCHAR(190) NOT NULL,
+			created_at DATETIME NOT NULL,
+			last_hit_at DATETIME NULL,
+			hit_count INT UNSIGNED NOT NULL DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uniq_customer_tld (customer_id, tld),
+			KEY idx_customer (customer_id)
+		) {$charset};";
+
 		// Sender-Trust-Score: pro (customer_id, from_addr) akkumulieren wir
 		// Received/Whitelist/Blacklist/Undo/Purge-Signale. ScanService liest
 		// daraus einen negativen Score, damit bekannte Absender nicht mehr
@@ -491,6 +508,7 @@ final class Installer {
 		dbDelta( $sql_web );
 		dbDelta( $sql_att );
 		dbDelta( $sql_erd );
+		dbDelta( $sql_btlds );
 		dbDelta( $sql_not );
 		dbDelta( $sql_trust );
 		dbDelta( $sql_llmfb );
