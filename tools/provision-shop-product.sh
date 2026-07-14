@@ -13,7 +13,7 @@ set -euo pipefail
 WP_DIR="/var/www/wp.itdatex.support/html"
 ASSET_DIR="/opt/itdatex-plugins/itdatex-mailguard/branding"
 PLUGIN_SLUG="itdatex-mailguard"
-VERSION="0.8.3"
+VERSION="0.25.0"
 
 PRICE_CENTS="4900"             # 49 EUR / Monat
 BILLING_MODE="subscription"
@@ -40,7 +40,7 @@ DESCRIPTION_HTML=$(cat <<'HTML'
 <p>Jeder Kunde verbindet eigene Postfächer (SSL/STARTTLS oder OAuth-XOAUTH2). Cron pullt alle 15 Minuten neue Mails. Passwörter UND OAuth-Tokens werden verschlüsselt (AES-256-GCM, Key aus WP-Salts) gespeichert. Token-Refresh läuft automatisch.</p>
 
 <h3>🛡 Passives Phishing-Scanning</h3>
-<p>Jede eingehende Mail wird automatisch gegen die Anti-Phishing-API geprüft (LLM-Deep-Scan via Ollama Cloud / GLM-5.2 — externer US-Anbieter, AVV erforderlich). Verdict-Badges (clean/suspicious/dangerous) direkt in der Inbox, konservativ kalibriert — echte Phishes werden erkannt ohne dass legitime Service-Mails als Verdacht markiert werden.</p>
+<p>Jede eingehende Mail wird gegen sechs unabhängige Signalquellen geprüft: Heuristik (Marken-Impersonation, Credential-Keywords, verdächtige URLs), <strong>SPF/DKIM/DMARC-Auswertung</strong> (Killer-Signal gegen Absender-Spoofing), <strong>URLhaus</strong>-Live-Blocklist (abuse.ch, kostenlos), <strong>Google Safe Browsing</strong> (Chrome-Threat-Feed), <strong>AbuseIPDB</strong> (Origin-IP-Reputation) und optionaler <strong>!tdatex KI</strong>-Deep-Scan (Cloud-Inferenz bei Ollama Inc., USA — AVV erforderlich). Verdict-Badges (clean/suspicious/dangerous) direkt in der Inbox, konservativ kalibriert — echte Phishes werden erkannt ohne dass legitime Service-Mails als Verdacht markiert werden.</p>
 
 <h3>📰 Newsletter-Bulk-Unsubscribe pro Sender</h3>
 <p>Newsletter-View gruppiert alle Mails pro Absender. Ein Klick reicht: RFC-8058 HTTP One-Click oder signierte mailto (DKIM/SPF/DMARC pass via gehärtetem Postfix). Bestehende und künftige Mails desselben Senders werden automatisch als „abgemeldet" markiert. Bounce-Status wird via DSN-Monitor nachverfolgt.</p>
@@ -62,6 +62,66 @@ HTML
 )
 
 CHANGELOG=$(cat <<'CL'
+= 0.25.0 — Synchron-Scan im Pull =
+* CHANGE: Der 15-min-IMAP-Pull startet den Phishing-Scan jetzt sofort für frisch geholte Mails, statt auf den nachfolgenden 5-min-Scan-Worker zu warten. Neue Mails erscheinen in der Inbox direkt mit Verdict-Badge, es gibt keinen "noch nicht geprüft"-Zwischenzustand mehr.
+
+= 0.23.0 — Kaltakquise-Erkennung + Verdict-Escalation-Fix =
+* NEU: Heuristik-Regeln erkennen typische Kaltakquise-Muster (Sales-Templates, generische Anreden ohne bestehende Beziehung) und heben den Score entsprechend an.
+* FIX: Verdict-Escalation greift jetzt zuverlässig, wenn mehrere Signalquellen dieselbe Mail auf "suspicious" heben — vorher blieb es beim ersten Verdict, statt auf "dangerous" hochzustufen.
+
+= 0.22.0 — DNS-Check auf Absender- und Link-Domains =
+* NEU: Zusätzliche Signalquelle: DNS-Auflösung der From-Domain und aller Link-Domains in der Mail. Nicht-existente oder frisch registrierte Domains fließen in den Score ein — typischer Phishing-Marker.
+
+= 0.21.0 — Whitelist-Button direkt in Inbox-Zeile =
+* NEU: Neben "⛔ Blockieren" gibt es jetzt "✔ Whitelisten" direkt in jeder Inbox-Zeile — legt die Regel ohne Zwischenschritt an.
+
+= 0.20.0 — Free-Plan-Limits + Portal-Parity mit Mobile-App v0.16.0 =
+* NEU: Free-Plan enforced: max. 10 Rules, 5 Unsubs/Monat, 30 Tage Historie. Portal zeigt Limit-Hints direkt in Rules, Newsletters und Actions an.
+* NEU: SenderList und Newsletters bekommen Domain-Block- und Whitelist-Buttons (Feature-Parität mit Mobile-App v0.16.0).
+* NEU: "Blockierte Absender verbergen"-Filter in der Inbox.
+* NEU: `mailguard://`-Deep-Link neben Browser-URL in Verification-Mails.
+* NEU: `verify-email` gibt zusätzlich einen App-Auto-Login-Token aus, damit sich die Mobile-App direkt nach der Bestätigung anmeldet.
+
+= 0.10.0 — Auto-Vernichten pro Absender-Domain =
+* NEU: Neue Tabelle `mg_eradicate_domains` — Domain-weite Sperren, die im PullService vor `mg_messages`-Insert greifen. Sub-Adress-Rotation (news@, angebote@, service@ derselben Domain) wird damit ohne separate Blacklist-Regeln pro Adresse abgefangen.
+* NEU: Portal-View `/portal/eradicate-domains` mit Add-/Delete-Flow und Trefferzähler.
+* NEU: Zweiter Confirm im Vernichten-Flow bietet direkt "auch alle künftigen Mails dieser Domain vernichten" an.
+* NEU: `PurgeService::hard_purge_domain` als Domain-Variante von `hard_purge_sender`. REST unter `/me/eradicate-domains`.
+* SCHEMA: DB v16 → v17 (dbDelta idempotent).
+
+= 0.9.0 — Desktop-Client-Companion + In-App-Notifications =
+* NEU: Neue Tabelle `mg_notifications` + Endpoint-Cluster `/me/notifications` — Poll-basierter Feed für Windows-Desktop-Client und Portal-Header-Bell. FCM-Push für Mobile bleibt parallel aktiv.
+* NEU: Notifications-Bell im Portal-Header mit Unread-Badge (60-s-Poll bei aktivem Tab, 5-min im Hintergrund).
+* NEU: Erste Vorbereitungen für den Tauri-Windows-Companion (Dashboard-Toggle für Autostart, gehärtete CORS/Cookie-Settings für Non-Browser-Clients).
+
+= 0.8.9 — "Sender vernichten" + Robuste Newsletter-Abmeldung =
+* NEU: "Sender vernichten"-Ein-Klick-Flow — versucht Abmeldung beim Anbieter (best-effort), legt Blacklist-Regel für den Absender an und löscht alle bestehenden Mails per IMAP EXPUNGE endgültig. Type-in-Bestätigung ("VERNICHTEN" eintippen) sowohl im Frontend als auch im REST-Endpoint.
+* NEU: Auto-DSN-Poll für mailto-Abmeldungen. Neuer WP-Cron `itdatex_mailguard_unsub_poll` (alle 10 min) aktualisiert den Bounce-Status offener mailto-Abmeldungen der letzten 48 h.
+* CHANGE: Retry mit 400 ms Backoff bei transient fehlgeschlagenen Anti-Phishing-API-Aufrufen (HTTP 429/5xx/Netz/Timeout).
+* CHANGE: Idempotenz-Guard — schon erfolgreich abgemeldete Mails hitten die API nicht mehr erneut. Doppelklick-Race per Transient-Lock (60 s) abgesichert.
+* CHANGE: Bulk-Abmeldung fällt bei toten Endpoints auf ältere Absender-Mails zurück (bis zu 5).
+* CHANGE: REST-Statuscodes klarer getrennt (already/ok/needs_manual/endpoints_dead → 200, in_progress-Lock → 409, no_options → 422).
+
+= 0.8.8 — Manuelle Plan-Freischaltung im Admin =
+* NEU: Row-Action "Plan" in der WP-Admin-Endkundenliste — Site-Owner weist einem Kunden Plan (free/solo/plus/pro/test) und optionales Ablaufdatum ohne Stripe zu. Für Comp-Konten, Rechnungskunden oder Fixes nach verpassten Webhooks.
+* NEU: 1-Klick "E-Mail verifizieren" in der Endkundenliste, sichtbar nur bei noch nicht verifizierten Konten.
+* NEU: Plan-Spalte in der Endkundenliste zeigt Slug + Grace-Datum.
+* WARNHINWEIS: Wenn ein Kunde bereits ein Stripe-Abo hat, warnt der Plan-Editor, dass die manuelle Zuweisung beim nächsten Webhook wieder überschrieben wird.
+
+= 0.8.7 — Portal-Router-Fixes + 0.8.6-Announcement =
+* FIX: Portal-Router — "Geräte"-Header-Button routet jetzt tatsächlich zur Devices-Page (fehlender `case 'devices'` in router.js).
+* FIX: Portal-Self-Revoke — Redirect nach Widerruf der eigenen Session nutzt jetzt absolute `portalUrl('login')` statt relative Auflösung, die auf `/portal/devices/login/` landete.
+
+= 0.8.6 — Mobile-App-Track + Web-Session-Revocation =
+* NEU: Bearer-Auth-Layer für die Mobile-App (`wp_mg_api_tokens`), damit dieselbe REST-API von Portal-Cookie- und App-Token-Clients genutzt werden kann.
+* NEU: Web-Session-Revocation mit JTI-Blacklist (`wp_mg_web_sessions`) — Session-Widerruf wirkt sofort (kein Cookie-Ablauf abwarten). Portal-Route "Geräte" listet aktive Sessions und erlaubt Einzel-Revoke.
+* NEU: Capacitor-Skelett für die Mobile-App unter `/opt/itdatex-mailguard-app/`.
+
+= 0.8.4 — Bulk-Delete-Purge-Fix =
+* FIX: Bulk-Delete auf der gruppierten Inbox ("Alle N löschen") läuft nicht mehr in FPM-Timeout. War: eine IMAP-Connection pro Mail — langsame Provider (IONOS) summierten sich zu 502s. Jetzt: eine Connection pro `(account, folder)`-Gruppe, MOVE in Quarantäne-Folder, ein folder-safes EXPUNGE pro Account.
+* FIX: Folder-weites EXPUNGE geht jetzt nur noch im MailGuard-Quarantäne-Folder — vorher konnte es `\Deleted`-Marker anderer Clients (Thunderbird, Alpine) mitreißen.
+* FIX: Legacy-Quarantäne-Aktionen mit `target_uid=0` und ohne Message-ID-Header werden jetzt als soft-purge behandelt (DB-Row + Audit weg, Server-Kopie bleibt als silent orphan). Vorher hard-fail mit `target_uid_unknown` → HTTP 502.
+
 = 0.8.3 — Direkter Blockieren-Button bei fehlgeschlagenen Newsletter-Abmeldungen =
 * NEU: In der Newsletter-Abos-Ansicht steht neben dem "Nochmal abmelden"-Button jetzt ein direkter "⛔ Sender blockieren"-Button, sobald der letzte Abmelde-Versuch fehlgeschlagen ist. Der User muss nicht mehr erst einen zweiten Retry starten, um zum Blockieren-Dialog zu kommen.
 
