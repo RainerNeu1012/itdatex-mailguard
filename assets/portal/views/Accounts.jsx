@@ -2,6 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiPost } from '../api.js';
 import { navigate } from '../router.js';
 
+const SYSFOLDER_TIP = 'Systemordner (Gesendet, Entwuerfe, Papierkorb, Archiv, Notizen ...) werden nicht gescannt, damit MailGuard keine eigenen oder geloeschten Mails quarantaenisiert. Klick "Aktivieren", wenn du das trotzdem willst.';
+
 export default function Accounts() {
   const [items, setItems]     = useState(null);
   const [error, setError]     = useState(null);
@@ -267,6 +269,20 @@ function Folders({ accountId }) {
     }
   };
 
+  const setStatus = async (fid, status) => {
+    setBusy((b) => ({ ...b, [fid]: 'stat' }));
+    try {
+      await fetch(((window.itdatexMailguard || {}).restUrl || '') + `folders/${fid}`, {
+        method: 'PATCH', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      load();
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[fid]; return n; });
+    }
+  };
+
   if (items === null) return null;
 
   return (
@@ -278,9 +294,18 @@ function Folders({ accountId }) {
         </button>
       </div>
       {items.length === 0 && <div className="mg-muted mg-tiny">Noch keine Folder — klick „+ Folder hinzufügen", wir listen alle verfügbaren auf.</div>}
-      {items.map((f) => (
-        <div key={f.id} className="mg-folder-row">
-          <span className="mg-folder-name">{f.folder_name}</span>
+      {items.map((f) => {
+        const disabled = f.status === 'disabled';
+        return (
+        <div key={f.id} className={'mg-folder-row' + (disabled ? ' mg-folder-row--disabled' : '')}>
+          <span className="mg-folder-name">
+            {f.folder_name}
+            {disabled && (
+              <span className="mg-pill mg-pill--muted mg-folder-syschip" title={SYSFOLDER_TIP}>
+                Systemordner – kein Scan
+              </span>
+            )}
+          </span>
           <span className="mg-muted mg-tiny">
             uid={f.last_uid}
             {f.last_test_at && ' · '}
@@ -289,11 +314,16 @@ function Folders({ accountId }) {
           </span>
           <span className="mg-folder-actions">
             <button className="mg-btn mg-tiny" disabled={!!busy[f.id]} onClick={() => test(f.id)}>{busy[f.id] === 'test' ? '…' : 'Test'}</button>
-            <button className="mg-btn mg-tiny" disabled={!!busy[f.id]} onClick={() => pull(f.id)}>{busy[f.id] === 'pull' ? '…' : 'Pull'}</button>
+            {disabled ? (
+              <button className="mg-btn mg-tiny" disabled={!!busy[f.id]} onClick={() => setStatus(f.id, 'active')}>{busy[f.id] === 'stat' ? '…' : 'Aktivieren'}</button>
+            ) : (
+              <button className="mg-btn mg-tiny" disabled={!!busy[f.id]} onClick={() => pull(f.id)}>{busy[f.id] === 'pull' ? '…' : 'Pull'}</button>
+            )}
             <button className="mg-btn mg-tiny" disabled={!!busy[f.id]} onClick={() => remove(f.id, f.folder_name)}>{busy[f.id] === 'del' ? '…' : '×'}</button>
           </span>
         </div>
-      ))}
+        );
+      })}
 
       {picker && (
         <div className="mg-modal-overlay" onClick={() => setPicker(null)}>

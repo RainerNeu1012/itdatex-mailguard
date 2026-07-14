@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 17;
+	public const CURRENT_DB_VERSION = 18;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -452,6 +452,20 @@ final class Installer {
 				(account_id, customer_id, folder_name, display_name, status, last_uid, created_at)
 				SELECT id, customer_id, IFNULL(NULLIF(folder, ''), 'INBOX'), '', 'active', last_uid, COALESCE(created_at, UTC_TIMESTAMP())
 				FROM {$t_imap}" );
+		}
+
+		// DB v18: Systemordner (Sent/Drafts/Trash/Deleted/Outbox/Notes/Archive)
+		// wurden bis v0.25.0 als 'active' importiert und vom Pull gescannt. Das
+		// fuehrte zur Auto-Quarantaenisierung eigener und geloeschter Mails.
+		// Bestehende Rows werden hier auf 'disabled' zurueckgesetzt; der neue
+		// Filter in Folder::sync_from_imap verhindert das Wiederkommen.
+		if ( $installed < 18 ) {
+			$rows = $wpdb->get_results( "SELECT id, folder_name FROM {$t_fol} WHERE status = 'active'", ARRAY_A ) ?: [];
+			foreach ( $rows as $row ) {
+				if ( \Itdatex\Mailguard\Imap\Folder::is_system_folder( (string) $row['folder_name'] ) ) {
+					$wpdb->update( $t_fol, [ 'status' => 'disabled' ], [ 'id' => (int) $row['id'] ] );
+				}
+			}
 		}
 
 		update_option( self::OPTION_DB_VERSION, self::CURRENT_DB_VERSION, false );

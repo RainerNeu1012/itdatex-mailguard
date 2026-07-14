@@ -68,10 +68,11 @@ final class Folder {
 	 * Idempotenter Insert: existiert account_id+folder_name schon, gibt der
 	 * existierenden Eintrag-ID zurueck.
 	 */
-	public static function create( int $account_id, int $customer_id, string $folder_name, string $display_name = '' ) : int {
+	public static function create( int $account_id, int $customer_id, string $folder_name, string $display_name = '', string $status = 'active' ) : int {
 		global $wpdb;
 		$folder_name = sanitize_text_field( $folder_name );
 		if ( $folder_name === '' ) { return 0; }
+		if ( ! in_array( $status, [ 'active', 'disabled' ], true ) ) { $status = 'active'; }
 		$existing = $wpdb->get_var( $wpdb->prepare(
 			'SELECT id FROM ' . self::table() . ' WHERE account_id = %d AND folder_name = %s LIMIT 1',
 			$account_id, $folder_name
@@ -83,11 +84,66 @@ final class Folder {
 			'customer_id'  => $customer_id,
 			'folder_name'  => $folder_name,
 			'display_name' => sanitize_text_field( $display_name ),
-			'status'       => 'active',
+			'status'       => $status,
 			'last_uid'     => 0,
 			'created_at'   => current_time( 'mysql', true ),
 		] );
 		return $ok ? (int) $wpdb->insert_id : 0;
+	}
+
+	/**
+	 * Erkennt Systemordner (Sent/Drafts/Trash/Deleted/Outbox/Notes/Archive/All-Mail/
+	 * Sync-Issues), die vom Pull ausgeschlossen bleiben sollen — sonst quarantaeniert
+	 * MailGuard Mails, die der User selbst geschrieben oder laengst geloescht hat.
+	 *
+	 * Zwei Signalquellen:
+	 *  1. RFC-6154 SPECIAL-USE-Flags (\Sent, \Drafts, \Trash, \Archive, \All).
+	 *     Nur der raw-IMAP-Client (XOauth2ImapClient) liefert die aus — die
+	 *     c-client-Extension in ImapClient kennt keine SPECIAL-USE-Konstanten.
+	 *  2. Namens-Heuristik (DE+EN) als Fallback fuer c-client- und aeltere Server.
+	 *
+	 * `\Junk` wird bewusst NICHT gefiltert: Spam-Ordner ist der Kernanwendungsfall.
+	 */
+	public static function is_system_folder( string $name, array $attrs = [] ) : bool {
+		$attrs_lower = array_map( 'strtolower', $attrs );
+		foreach ( [ '\\sent', '\\drafts', '\\trash', '\\archive', '\\all', '\\important', '\\flagged' ] as $flag ) {
+			if ( in_array( $flag, $attrs_lower, true ) ) { return true; }
+		}
+		// Basename am haeufigsten benutzten Delimitern extrahieren — Gmail liefert
+		// z.B. "[Gmail]/Sent Mail", IONOS "INBOX.Sent".
+		$basename = $name;
+		foreach ( [ '/', '.' ] as $sep ) {
+			$pos = strrpos( $basename, $sep );
+			if ( $pos !== false ) { $basename = substr( $basename, $pos + 1 ); }
+		}
+		$basename = trim( $basename );
+		if ( $basename === '' ) { return false; }
+		$patterns = [
+			'/^sent(\b|$| mail| items| messages)/i',
+			'/^gesend/i',
+			'/^drafts?$/i',
+			'/^entw(u|\x{00fc})rf/iu',
+			'/^trash$/i',
+			'/^papierkorb/i',
+			'/^deleted/i',
+			'/^gel(o|\x{00f6})scht/iu',
+			'/^outbox$/i',
+			'/^postausg/i',
+			'/^notes?$/i',
+			'/^notiz/i',
+			'/^archive?$/i',
+			'/^archiv$/i',
+			'/^all mail$/i',
+			'/^alle nachrichten$/i',
+			'/^synchronisierungsprobleme/i',
+			'/^sync(hronization)? issues?/i',
+			'/^conversation history$/i',
+			'/^rss[- ]?feeds?$/i',
+		];
+		foreach ( $patterns as $rx ) {
+			if ( preg_match( $rx, $basename ) ) { return true; }
+		}
+		return false;
 	}
 
 	public static function update_status( int $id, int $customer_id, string $status ) : bool {
@@ -123,14 +179,20 @@ final class Folder {
 
 	/**
 	 * Synchronisiert die Folder-Tabelle mit dem tatsaechlichen IMAP-Baum:
-	 * connectet, LISTet alle Folder, legt neu-entdeckte Folder als 'active'
-	 * an. Bereits konfigurierte Folder werden nicht angefasst (auch nicht
-	 * reaktiviert, wenn der User sie manuell auf 'disabled' gesetzt hat).
+	 * connectet, LISTet alle Folder, legt neu-entdeckte Folder an. Bereits
+	 * konfigurierte Folder werden nicht angefasst (auch nicht reaktiviert,
+	 * wenn der User sie manuell auf 'disabled' gesetzt hat).
 	 *
 	 * Ausgeschlossen: der Quarantaene-Folder des Accounts — sonst wuerden
 	 * quarantaenisierte Mails beim naechsten Pull wieder als neue Mails
 	 * eingesammelt (Loop). Non-selectable Folder ('\Noselect'-Attribut,
 	 * wie Gmail-Label-Container) werden ebenfalls uebersprungen.
+	 *
+	 * Systemordner (Sent/Drafts/Trash/Deleted/Outbox/Notes/Archive/All-Mail)
+	 * werden mit status='disabled' angelegt — sie sind fuer den User sichtbar,
+	 * werden aber nicht gepullt, bis er sie bewusst aktiviert. Ohne diese
+	 * Schranke landen selbst-geschriebene und laengst geloeschte Mails in der
+	 * Auto-Quarantaene (Bug 2026-07-14).
 	 *
 	 * @return array{ok:bool,discovered?:int,added?:int,skipped?:int,error?:string,detail?:string}
 	 */
@@ -153,12 +215,14 @@ final class Folder {
 			$name = (string) ( $f['name'] ?? '' );
 			if ( $name === '' ) { $skipped++; continue; }
 			if ( $name === $quar_name ) { $skipped++; continue; }
+			$attrs = (array) ( $f['attributes'] ?? [] );
+			$attrs_lower = array_map( 'strtolower', $attrs );
 			// Server-Container ohne selektierbare Mails (Gmail-Label-Root, IMAP-Root).
-			$attrs = array_map( 'strtolower', (array) ( $f['attributes'] ?? [] ) );
-			if ( in_array( '\\noselect', $attrs, true ) ) { $skipped++; continue; }
+			if ( in_array( '\\noselect', $attrs_lower, true ) ) { $skipped++; continue; }
 			if ( isset( $existing[ $name ] ) ) { $skipped++; continue; }
 
-			$new_id = self::create( $account_id, $customer_id, $name, (string) ( $f['display'] ?? '' ) );
+			$status = self::is_system_folder( $name, $attrs ) ? 'disabled' : 'active';
+			$new_id = self::create( $account_id, $customer_id, $name, (string) ( $f['display'] ?? '' ), $status );
 			if ( $new_id > 0 ) { $added++; } else { $skipped++; }
 		}
 

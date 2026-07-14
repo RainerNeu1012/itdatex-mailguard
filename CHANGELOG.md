@@ -7,6 +7,30 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.26.0] – 2026-07-14
+
+Bugfix: Systemordner (Sent/Drafts/Trash/Deleted/Outbox/Notes/Archive)
+wurden von der IMAP-Ordner-Auto-Discovery als `active` importiert und
+vom Pull gescannt. Ergebnis: Auto-Quarantaene verschob eigene und
+laengst geloeschte Mails in den Quarantaene-Folder.
+
+### Fixed
+- `Folder::sync_from_imap` erkennt Systemordner ueber RFC-6154
+  SPECIAL-USE-Flags (fuer den raw-IMAP-Client) und ueber eine DE/EN-
+  Namensheuristik (Fallback fuer die c-client-Extension, die keine
+  SPECIAL-USE-Konstanten kennt). Systemordner werden mit
+  `status='disabled'` angelegt — sichtbar in der UI, aber vom Pull
+  ausgeschlossen. `\Junk` bleibt aktiv, das ist der Kernanwendungsfall.
+- Migration (DB-Version 18): alle bereits importierten Systemordner-
+  Rows werden einmalig auf `disabled` gesetzt. Manuell umbenannte
+  Ordner bleiben davon unberuehrt.
+
+### Portal
+- Ordner-Liste im Postfaecher-View zeigt fuer disabled Systemordner
+  einen Info-Chip „Systemordner – kein Scan" mit Tooltip und ersetzt
+  den Pull-Button durch „Aktivieren", falls der User bewusst doch
+  scannen moechte.
+
 ## [0.10.0] – 2026-07-10
 
 Neues Feature: **Auto-Vernichten pro Absender-Domain**. Ergänzt den
