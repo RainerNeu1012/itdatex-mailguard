@@ -83,6 +83,10 @@ final class Rule {
 			'created_at'  => current_time( 'mysql', true ),
 		] );
 		if ( ! $ok ) { return [ 'ok' => false, 'error' => 'insert_failed' ]; }
+		// Vor der SenderTrust-Upsert einfrieren — die INSERT ... ON DUPLICATE KEY
+		// UPDATE dort ueberschreibt sonst $wpdb->insert_id (0 bei Update-Zweig),
+		// dann liefert find_for_customer() null und der Controller crasht.
+		$new_id = (int) $wpdb->insert_id;
 
 		// Sender-Trust-Score updaten. Nur exakte From-Addr-Regeln fliessen ein —
 		// Domain- oder Subject-Regeln sind zu unscharf, um sie einer einzelnen
@@ -95,7 +99,7 @@ final class Rule {
 			}
 		}
 
-		return [ 'ok' => true, 'id' => (int) $wpdb->insert_id ];
+		return [ 'ok' => true, 'id' => $new_id ];
 	}
 
 	public static function delete( int $id, int $customer_id ) : bool {

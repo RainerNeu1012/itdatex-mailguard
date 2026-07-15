@@ -7,6 +7,17 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.31.1] – 2026-07-15
+
+### Fixed
+- **Regel-Anlage per REST warf HTTP 500.** Seit v0.27.0 rief
+  `Rules\Rule::create()` erst `SenderTrust::record_whitelist/blacklist()`
+  auf und las danach `$wpdb->insert_id`. Der Trust-Upsert nutzt intern
+  `INSERT ... ON DUPLICATE KEY UPDATE` und setzt `insert_id` auf 0 wenn
+  der UPDATE-Zweig greift. `Rule::find_for_customer(0, cid)` liefert dann
+  null, und `Rule::public_view(null)` kippt mit TypeError. Fix: die ID
+  direkt nach dem Rule-Insert einfrieren, bevor der Trust-Upsert laeuft.
+
 ## [0.31.0] – 2026-07-14
 
 Neu: **TLD-Sperre** (Geo-/Endungs-Block). Analog zu Auto-Vernichten,
