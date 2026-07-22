@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiPost, apiDelete } from '../api.js';
+import PurgeConfirmDialog from '../components/PurgeConfirmDialog.jsx';
 
 /**
  * Verwaltet die Auto-Vernichten-Liste. Jede eingetragene Domain sorgt dafür,
@@ -45,6 +46,8 @@ function DomainsList() {
   const [busy, setBusy]     = useState({});
   const [form, setForm]     = useState({ domain: '', purge_history: false });
   const [saving, setSaving] = useState(false);
+  const [pending, setPending] = useState(null); // { domain, purge_history }
+  const [pendingAck, setPendingAck] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -55,33 +58,28 @@ function DomainsList() {
 
   useEffect(() => { load(); }, [load]);
 
-  const add = async (e) => {
+  const add = (e) => {
     e.preventDefault();
     const domain = (form.domain || '').trim().toLowerCase();
     if (!domain) return;
+    setPendingAck(false);
+    setPending({ domain, purge_history: !!form.purge_history });
+  };
 
-    // Confirm-Zwang analog zum Backend-Guard. Der User tippt "VERNICHTEN"
-    // ins Prompt — sowohl UX-Bremsklotz gegen Muscle-Memory als auch API-
-    // Vorgabe (Server 422't ohne).
-    const answer = window.prompt(
-      `Alle zukünftigen Mails von *@${domain} automatisch vernichten?\n\n` +
-      (form.purge_history
-        ? `Zusätzlich werden alle bereits eingegangenen Mails der Domain ENDGÜLTIG gelöscht (kein Papierkorb, kein Undo).\n\n`
-        : `Bereits in der Inbox liegende Mails bleiben unangetastet — nur neue Zustellungen ab jetzt.\n\n`
-      ) +
-      `Zur Bestätigung "VERNICHTEN" eintippen:`
-    );
-    if (answer === null) return;
-    if (answer.trim().toUpperCase() !== 'VERNICHTEN') {
-      alert('Abgebrochen — Bestätigung stimmt nicht.');
-      return;
-    }
+  const closePending = () => {
+    setPending(null);
+    setPendingAck(false);
+  };
 
+  const confirmAdd = async () => {
+    const p = pending;
+    if (!p || !pendingAck) return;
+    closePending();
     setSaving(true); setError(null);
     try {
       const { status, body } = await apiPost('me/eradicate-domains', {
-        domain,
-        purge_history: !!form.purge_history,
+        domain: p.domain,
+        purge_history: !!p.purge_history,
         confirm: 'VERNICHTEN',
       });
       if (status >= 400 || !body?.ok) {
@@ -89,12 +87,12 @@ function DomainsList() {
         return;
       }
       if (body.purge) {
-        const p = body.purge;
+        const pr = body.purge;
         alert(
           (body.existed ? 'Domain war bereits aktiv.' : `Domain ${body.domain} aktiviert.`) +
-          `\n\nHistorien-Löschung: ${p.purged} gelöscht` +
-          (p.skipped ? ` · ${p.skipped} übersprungen` : '') +
-          (p.failed  ? ` · ${p.failed} fehlgeschlagen`  : '')
+          `\n\nHistorien-Löschung: ${pr.purged} gelöscht` +
+          (pr.skipped ? ` · ${pr.skipped} übersprungen` : '') +
+          (pr.failed  ? ` · ${pr.failed} fehlgeschlagen`  : '')
         );
       }
       setForm({ domain: '', purge_history: false });
@@ -193,6 +191,29 @@ function DomainsList() {
           </table>
         </div>
       )}
+      <PurgeConfirmDialog
+        open={!!pending}
+        title={pending ? `Domain *@${pending.domain} auf Auto-Vernichten setzen?` : ''}
+        description={pending && (
+          <>
+            <p style={{ margin: '0 0 8px' }}>Ab jetzt filtert MailGuard alle neuen Mails dieser Domain direkt am IMAP-Server, bevor sie in die Inbox laufen.</p>
+            {pending.purge_history ? (
+              <p style={{ margin: '0 0 8px', color: 'var(--mg-err, #c33)' }}>
+                <strong>Zusätzlich</strong> werden alle bereits eingegangenen Mails der Domain per IMAP EXPUNGE endgültig gelöscht — kein Papierkorb, kein Undo.
+              </p>
+            ) : (
+              <p style={{ margin: '0 0 8px' }} className="mg-muted">
+                Bereits in der Inbox liegende Mails bleiben unangetastet — nur neue Zustellungen ab jetzt.
+              </p>
+            )}
+          </>
+        )}
+        checked={pendingAck}
+        onToggle={setPendingAck}
+        onCancel={closePending}
+        onConfirm={confirmAdd}
+        confirmLabel={pending && pending.purge_history ? 'Aktivieren + Verlauf vernichten' : 'Aktivieren'}
+      />
     </>
   );
 }

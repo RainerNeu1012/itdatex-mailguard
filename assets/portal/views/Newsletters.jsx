@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiPost } from '../api.js';
 import AccountTabs, { useCurrentAccount } from '../components/AccountTabs.jsx';
+import PurgeConfirmDialog from '../components/PurgeConfirmDialog.jsx';
 
 const STATUS_TONE = {
   unsubscribed: { label: 'abgemeldet', cls: 'mg-pill--ok' },
@@ -53,6 +54,9 @@ function Subscriptions({ accountId }) {
   const [items, setItems] = useState(null);
   const [busy, setBusy]   = useState({});
   const [error, setError] = useState(null);
+  const [purgeTarget, setPurgeTarget] = useState(null); // { from_addr, msg_count, domain }
+  const [purgeAck, setPurgeAck] = useState(false);
+  const [purgeAlsoDomain, setPurgeAlsoDomain] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -168,36 +172,23 @@ function Subscriptions({ accountId }) {
     }
   };
 
-  const eradicate = async (from_addr, msg_count) => {
-    // Type-in-Confirmation. Muscle-Memory-Klicks werden hier bewusst blockiert,
-    // weil hard_purge_sender ohne Undo läuft (IMAP-EXPUNGE, kein Papierkorb).
-    const answer = window.prompt(
-      `Absender ${from_addr} KOMPLETT VERNICHTEN?\n\n` +
-      `Es passiert Folgendes:\n` +
-      `• Best-effort Abmelde-Versuch beim Anbieter\n` +
-      `• Blacklist-Regel angelegt (künftige Mails werden aussortiert)\n` +
-      `• ${msg_count} Mail${msg_count === 1 ? '' : 's'} werden ENDGÜLTIG gelöscht (kein Papierkorb, kein Undo)\n\n` +
-      `Zur Bestätigung "VERNICHTEN" eintippen:`
-    );
-    if (answer === null) return;
-    if (answer.trim().toUpperCase() !== 'VERNICHTEN') {
-      alert('Abgebrochen — Bestätigung stimmt nicht.');
-      return;
-    }
+  const openEradicateDialog = (from_addr, msg_count) => {
+    setPurgeAck(false);
+    setPurgeAlsoDomain(false);
+    setPurgeTarget({ from_addr, msg_count, domain: extractDomain(from_addr) });
+  };
+  const closeEradicateDialog = () => {
+    setPurgeTarget(null);
+    setPurgeAck(false);
+    setPurgeAlsoDomain(false);
+  };
 
-    // Zweiter Schritt: Domain-Auto-Vernichten anbieten. Der Blacklist-Rule
-    // von eradicate_sender greift nur pro from_addr — Absender wechseln oft
-    // die Sub-Adresse (news@, angebote@, service@…). Ein Häkchen auf die
-    // Domain fängt die alle mit ab, ohne dass der User jedesmal wieder klicken
-    // muss. Wenn abgelehnt: normaler Sender-only-Eradicate-Flow.
-    const domain = extractDomain(from_addr);
-    const alsoDomain = !!domain && window.confirm(
-      `Auch alle zukünftigen Mails von *@${domain} automatisch vernichten?\n\n` +
-      `Sobald aktiv, filtert MailGuard jede neue Mail dieser Domain beim` +
-      ` Abrufen direkt vom Server — sie landet nie in deiner Inbox.\n\n` +
-      `Kann jederzeit unter "Auto-Vernichten-Domains" wieder aufgehoben werden.`
-    );
-
+  const confirmEradicate = async () => {
+    const t = purgeTarget;
+    if (!t || !purgeAck) return;
+    const { from_addr, domain } = t;
+    const alsoDomain = !!domain && purgeAlsoDomain;
+    closeEradicateDialog();
     setBusy((b) => ({ ...b, [from_addr]: 'eradicate' }));
     try {
       const { body, status } = await apiPost('subscriptions/eradicate', {
@@ -242,6 +233,7 @@ function Subscriptions({ accountId }) {
   }
 
   return (
+    <>
     <div className="mg-stack">
       {items.map((s) => {
         const lu = s.last_unsub;
@@ -319,7 +311,7 @@ function Subscriptions({ accountId }) {
                 <button
                   className="mg-btn mg-btn--danger"
                   disabled={!!busy[s.from_addr]}
-                  onClick={() => eradicate(s.from_addr, s.msg_count)}
+                  onClick={() => openEradicateDialog(s.from_addr, s.msg_count)}
                   title="Best-effort abmelden + Sender blockieren + ALLE bestehenden Mails ENDGÜLTIG löschen (kein Undo)"
                 >
                   {busy[s.from_addr] === 'eradicate'
@@ -332,6 +324,41 @@ function Subscriptions({ accountId }) {
         );
       })}
     </div>
+    <PurgeConfirmDialog
+      open={!!purgeTarget}
+      title={purgeTarget ? `Absender ${purgeTarget.from_addr} vernichten?` : ''}
+      description={purgeTarget && (
+        <>
+          <p style={{ margin: '0 0 8px' }}>Es passiert Folgendes:</p>
+          <ul style={{ margin: '0 0 8px 18px', padding: 0 }}>
+            <li>Best-effort Abmelde-Versuch beim Anbieter</li>
+            <li>Blacklist-Regel angelegt (künftige Mails werden aussortiert)</li>
+            <li>
+              {purgeTarget.msg_count} Mail{purgeTarget.msg_count === 1 ? '' : 's'} werden per IMAP EXPUNGE endgültig gelöscht — <strong>kein Papierkorb, kein Undo</strong>.
+            </li>
+          </ul>
+        </>
+      )}
+      extras={purgeTarget && purgeTarget.domain && (
+        <label className="mg-row" style={{ gap: 8, alignItems: 'flex-start', fontSize: 14, margin: '12px 0 0', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={purgeAlsoDomain}
+            onChange={(e) => setPurgeAlsoDomain(e.target.checked)}
+            style={{ marginTop: 2 }}
+          />
+          <span>
+            Auch alle zukünftigen Mails von <strong className="mg-mono">*@{purgeTarget.domain}</strong> automatisch vernichten.
+            {' '}Fängt Sub-Adress-Wechsel (news@, angebote@, …) ab, die die Sender-Regel nicht abdeckt.
+          </span>
+        </label>
+      )}
+      checked={purgeAck}
+      onToggle={setPurgeAck}
+      onCancel={closeEradicateDialog}
+      onConfirm={confirmEradicate}
+    />
+    </>
   );
 }
 

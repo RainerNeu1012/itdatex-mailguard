@@ -7,6 +7,40 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.32.1] – 2026-07-22
+
+Portal-UX-Parity zur Desktop-App v0.30.3+: die Type-in-Bestaetigung
+("VERNICHTEN eintippen") beim Sender- und Domain-Vernichten wird
+durch ein Modal mit Bestaetigungs-Checkbox ersetzt. Damit ist die
+Portal-UX deckungsgleich mit der Modal-Version aus
+`src/views/Senders.jsx` in der App.
+
+### Added
+- Neue geteilte Komponente `assets/portal/components/PurgeConfirmDialog.jsx`.
+  Fixed-Overlay-Modal mit Bestaetigungs-Checkbox, optionalem `extras`-Slot
+  (z.B. zweite Checkbox), Abbrechen/Vernichten-Buttons. Vernichten bleibt
+  disabled bis die Ack-Checkbox aktiv ist. Deckungsgleich zur
+  `PurgeDialog`-Komponente in der Desktop-App.
+
+### Changed
+- **`views/Inbox.jsx` (SenderList)**: `eradicateSender` splittet sich in
+  `openEradicateDialog` + `confirmEradicate`. Die alte
+  `window.prompt("VERNICHTEN eintippen")`-Sequenz plus zweitem
+  `window.confirm("auch Domain?")` fliegt raus — beide Entscheidungen
+  liegen jetzt im selben Modal (Ack-Checkbox + optionale Domain-Checkbox).
+- **`views/Newsletters.jsx` (Subscriptions)**: Analog — `eradicate` wird
+  zu `openEradicateDialog` + `confirmEradicate`, gleiche Modal-UX.
+- **`views/EradicateDomains.jsx` (DomainsList)**: `add` oeffnet Modal
+  statt `window.prompt`; `confirmAdd` fuehrt den POST aus. Modal zeigt
+  je nach `purge_history`-Flag entweder "nur zukuenftige Mails" oder
+  den zusaetzlichen "Verlauf endgueltig loeschen"-Hinweis in Rot.
+
+### Notes
+- Kein Backend-Change, kein DB-Migrationsschritt. Nur JSX + Rebuild.
+- Type-in-Confirm bleibt am Backend als Guard erhalten (Server 422't
+  weiterhin ohne `confirm: "VERNICHTEN"` im Body). Der String wird jetzt
+  automatisch vom Modal-Confirm gesendet.
+
 ## [0.32.0] – 2026-07-22
 
 Neu: **Content-Filter mit Sofort-Vernichten**. Regeln matchen jetzt auch
