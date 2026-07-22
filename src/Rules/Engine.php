@@ -11,8 +11,8 @@ namespace Itdatex\Mailguard\Rules;
  *  2. Whitelist (uebersteuert API-Verdict, falls API "dangerous" sagt)
  *
  * Liefert ein Override-Array oder null wenn keine Regel greift.
- *  - { verdict: 'dangerous', score: 100, reason: { rule, description, score } }
- *  - { verdict: 'clean',     score: 0,   reason: { ... } }
+ *  - { verdict: 'dangerous', score: 100, action: 'quarantine'|'purge', reason: {...} }
+ *  - { verdict: 'clean',     score: 0,   action: 'quarantine',         reason: {...} }
  */
 final class Engine {
 
@@ -21,26 +21,33 @@ final class Engine {
 		if ( ! $rules ) { return null; }
 
 		$from = strtolower( (string) ( $row['from_addr'] ?? '' ) );
-		$subj = (string) ( $row['subject'] ?? '' );
+		$name = (string) ( $row['from_name']    ?? '' );
+		$subj = (string) ( $row['subject']      ?? '' );
+		$body = (string) ( $row['body_preview'] ?? '' );
 
-		$hit_black = self::match_any( array_filter( $rules, static fn( $r ) => $r['kind'] === 'blacklist' ), $from, $subj );
+		$hit_black = self::match_any( array_filter( $rules, static fn( $r ) => $r['kind'] === 'blacklist' ), $from, $name, $subj, $body );
 		if ( $hit_black ) {
+			$action = ( $hit_black['action'] ?? 'quarantine' ) === 'purge' ? 'purge' : 'quarantine';
 			return [
 				'verdict' => 'dangerous',
 				'score'   => 100,
+				'action'  => $action,
 				'reason'  => [
 					'rule'        => 'customer_blacklist',
 					'description' => sprintf( 'Blacklist-Regel #%d (%s: %s)', $hit_black['id'], $hit_black['match_type'], $hit_black['pattern'] ),
 					'score'       => 100,
+					'action'      => $action,
+					'rule_id'     => (int) $hit_black['id'],
 				],
 			];
 		}
 
-		$hit_white = self::match_any( array_filter( $rules, static fn( $r ) => $r['kind'] === 'whitelist' ), $from, $subj );
+		$hit_white = self::match_any( array_filter( $rules, static fn( $r ) => $r['kind'] === 'whitelist' ), $from, $name, $subj, $body );
 		if ( $hit_white ) {
 			return [
 				'verdict' => 'clean',
 				'score'   => 0,
+				'action'  => 'quarantine',
 				'reason'  => [
 					'rule'        => 'customer_whitelist',
 					'description' => sprintf( 'Whitelist-Regel #%d (%s: %s)', $hit_white['id'], $hit_white['match_type'], $hit_white['pattern'] ),
@@ -51,7 +58,7 @@ final class Engine {
 		return null;
 	}
 
-	private static function match_any( array $rules, string $from, string $subj ) : ?array {
+	private static function match_any( array $rules, string $from, string $name, string $subj, string $body ) : ?array {
 		foreach ( $rules as $r ) {
 			$pattern = (string) $r['pattern'];
 			switch ( $r['match_type'] ) {
@@ -70,8 +77,14 @@ final class Engine {
 						if ( $dom === $pattern ) { return $r; }
 					}
 					break;
+				case 'from_name_contains':
+					if ( $name !== '' && $pattern !== '' && stripos( $name, $pattern ) !== false ) { return $r; }
+					break;
 				case 'subject_contains':
-					if ( $subj !== '' && stripos( $subj, $pattern ) !== false ) { return $r; }
+					if ( $subj !== '' && $pattern !== '' && stripos( $subj, $pattern ) !== false ) { return $r; }
+					break;
+				case 'body_contains':
+					if ( $body !== '' && $pattern !== '' && stripos( $body, $pattern ) !== false ) { return $r; }
 					break;
 			}
 		}

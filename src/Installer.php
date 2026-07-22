@@ -253,6 +253,7 @@ final class Installer {
 			match_type VARCHAR(20) NOT NULL DEFAULT 'from_addr',
 			pattern VARCHAR(500) NOT NULL DEFAULT '',
 			note VARCHAR(255) NOT NULL DEFAULT '',
+			action VARCHAR(20) NOT NULL DEFAULT 'quarantine',
 			created_at DATETIME NOT NULL,
 			PRIMARY KEY (id),
 			KEY idx_customer_kind (customer_id, kind)

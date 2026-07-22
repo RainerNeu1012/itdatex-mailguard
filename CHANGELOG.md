@@ -7,6 +7,37 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.32.0] – 2026-07-22
+
+Neu: **Content-Filter mit Sofort-Vernichten**. Regeln matchen jetzt auch
+auf Absender-Namen und Mail-Text; Blacklist-Regeln koennen optional
+Treffer direkt per IMAP EXPUNGE loeschen statt in Quarantaene zu
+verschieben.
+
+### Added
+- **Zwei neue Match-Typen** in `Rules\Rule::TYPES`:
+  `from_name_contains` (Substring im Anzeigenamen) und
+  `body_contains` (Substring im `body_preview`). Beide case-insensitive
+  via `stripos`.
+- **`action`-Spalte** auf `mg_rules` (`quarantine` | `purge`, Default
+  `quarantine`). Nur fuer `kind = 'blacklist'` wirksam. dbDelta migriert
+  bestehende Rules-Tables beim Plugin-Update automatisch.
+- **ScanService-Interception**: Bei Blacklist-Hit mit `action = 'purge'`
+  ruft `ScanService::scan_message` direkt `QuarantineService::purge_message`
+  auf statt `maybe_auto_quarantine`. Mail ist per IMAP EXPUNGE weg, Audit
+  in `mg_actions` bleibt intakt (Purge-Action wie bei Nutzer-Vernichten).
+- **Portal-Regeln-View**: Match-Type-Select um die neuen Optionen
+  erweitert. Bei `kind = blacklist` neuer Action-Dropdown mit Warn-
+  Hinweis wenn `purge` gewaehlt ist. Regeln-Tabelle zeigt Aktion in
+  der Blacklist-Sektion (rot fuer `purge`).
+
+### Changed
+- **`Engine::apply` Signatur unveraendert** — Row-Zugriffe erweitert um
+  `from_name` und `body_preview`. Whitelist-Rules ignorieren `action`
+  (server-side gezwungen auf `quarantine`).
+- **`Rule::public_view`** exposed neues `action`-Feld. Legacy-Rows ohne
+  Spalte werden defensive auf `quarantine` gemappt.
+
 ## [0.31.1] – 2026-07-15
 
 ### Fixed

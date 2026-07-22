@@ -10,14 +10,23 @@ use Itdatex\Mailguard\Saas\Plans;
  * Persistenz fuer mg_rules. Whitelist + Blacklist pro Customer.
  *
  * Match-Typen:
- *  - from_addr       : exakter Match auf From-E-Mail-Adresse (case-insensitive)
- *  - from_domain     : Match auf Domain-Teil der From-Adresse (oder Subdomains, falls beginnt mit ".")
- *  - subject_contains: Substring-Match im Subject (case-insensitive)
+ *  - from_addr         : exakter Match auf From-E-Mail-Adresse (case-insensitive)
+ *  - from_domain       : Match auf Domain-Teil der From-Adresse (oder Subdomains, falls beginnt mit ".")
+ *  - from_name_contains: Substring-Match im Anzeigenamen (case-insensitive)
+ *  - subject_contains  : Substring-Match im Subject (case-insensitive)
+ *  - body_contains     : Substring-Match im body_preview (case-insensitive)
+ *
+ * Actions (nur fuer blacklist relevant):
+ *  - quarantine (Default): Verdict wird auf dangerous gesetzt, Auto-Quarantaene
+ *                          greift wenn im Postfach aktiviert.
+ *  - purge                : Mail wird beim Scan direkt per IMAP EXPUNGE geloescht.
+ *                           Kein Papierkorb, kein Undo.
  */
 final class Rule {
 
-	public const KINDS  = [ 'whitelist', 'blacklist' ];
-	public const TYPES  = [ 'from_addr', 'from_domain', 'subject_contains' ];
+	public const KINDS   = [ 'whitelist', 'blacklist' ];
+	public const TYPES   = [ 'from_addr', 'from_domain', 'from_name_contains', 'subject_contains', 'body_contains' ];
+	public const ACTIONS = [ 'quarantine', 'purge' ];
 
 	public static function table() : string {
 		global $wpdb;
@@ -45,6 +54,10 @@ final class Rule {
 	public static function create( int $customer_id, array $data ) : array {
 		$kind    = in_array( $data['kind'] ?? '', self::KINDS, true ) ? $data['kind'] : 'whitelist';
 		$type    = in_array( $data['match_type'] ?? '', self::TYPES, true ) ? $data['match_type'] : 'from_addr';
+		$action  = in_array( $data['action'] ?? '', self::ACTIONS, true ) ? $data['action'] : 'quarantine';
+		if ( $kind !== 'blacklist' ) {
+			$action = 'quarantine'; // action is meaningless for whitelist
+		}
 		$pattern = trim( (string) ( $data['pattern'] ?? '' ) );
 		if ( $pattern === '' ) {
 			return [ 'ok' => false, 'error' => 'empty_pattern' ];
@@ -80,6 +93,7 @@ final class Rule {
 			'match_type'  => $type,
 			'pattern'     => mb_substr( $pattern, 0, 500 ),
 			'note'        => sanitize_text_field( (string) ( $data['note'] ?? '' ) ),
+			'action'      => $action,
 			'created_at'  => current_time( 'mysql', true ),
 		] );
 		if ( ! $ok ) { return [ 'ok' => false, 'error' => 'insert_failed' ]; }
@@ -108,12 +122,15 @@ final class Rule {
 	}
 
 	public static function public_view( array $row ) : array {
+		$action = (string) ( $row['action'] ?? 'quarantine' );
+		if ( ! in_array( $action, self::ACTIONS, true ) ) { $action = 'quarantine'; }
 		return [
 			'id'         => (int) $row['id'],
 			'kind'       => (string) $row['kind'],
 			'match_type' => (string) $row['match_type'],
 			'pattern'    => (string) $row['pattern'],
 			'note'       => (string) $row['note'],
+			'action'     => $action,
 			'created_at' => (string) $row['created_at'],
 		];
 	}

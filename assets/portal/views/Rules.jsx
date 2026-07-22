@@ -2,16 +2,23 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiPost } from '../api.js';
 
 const TYPE_LABEL = {
-  from_addr:        'Absender (exakt)',
-  from_domain:      'Domain',
-  subject_contains: 'Subject enthält',
+  from_addr:          'Absender (exakt)',
+  from_domain:        'Domain',
+  from_name_contains: 'Absender-Name enthält',
+  subject_contains:   'Subject enthält',
+  body_contains:      'Text enthält',
+};
+
+const ACTION_LABEL = {
+  quarantine: 'Auto-Quarantäne',
+  purge:      'Sofort vernichten',
 };
 
 export default function Rules() {
   const [items, setItems]   = useState(null);
   const [error, setError]   = useState(null);
   const [busy, setBusy]     = useState({});
-  const [form, setForm]     = useState({ kind: 'whitelist', match_type: 'from_addr', pattern: '', note: '' });
+  const [form, setForm]     = useState({ kind: 'whitelist', match_type: 'from_addr', pattern: '', note: '', action: 'quarantine' });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -32,7 +39,7 @@ export default function Rules() {
       } else if (status >= 400) {
         setError((body && (body.message || body.error)) || ('HTTP ' + status));
       } else {
-        setForm({ kind: form.kind, match_type: form.match_type, pattern: '', note: '' });
+        setForm({ kind: form.kind, match_type: form.match_type, pattern: '', note: '', action: form.action });
         load();
       }
     } finally {
@@ -79,10 +86,25 @@ export default function Rules() {
             <select value={form.match_type} onChange={(e) => setForm({ ...form, match_type: e.target.value })}>
               <option value="from_addr">Absender (exakt)</option>
               <option value="from_domain">Domain</option>
+              <option value="from_name_contains">Absender-Name enthält</option>
               <option value="subject_contains">Subject enthält</option>
+              <option value="body_contains">Text enthält</option>
             </select>
           </label>
         </div>
+        {form.kind === 'blacklist' && (
+          <label>Aktion bei Treffer
+            <select value={form.action} onChange={(e) => setForm({ ...form, action: e.target.value })}>
+              <option value="quarantine">Auto-Quarantäne (Standard, umkehrbar)</option>
+              <option value="purge">Sofort vernichten (IMAP EXPUNGE — kein Undo)</option>
+            </select>
+            {form.action === 'purge' && (
+              <div className="mg-error" style={{ marginTop: '0.4rem' }}>
+                ⚠ Diese Aktion vernichtet passende Mails unwiderruflich beim Scan. Nur mit sehr eindeutigen Mustern nutzen.
+              </div>
+            )}
+          </label>
+        )}
         <label>Muster
           <input type="text" required value={form.pattern} onChange={(e) => setForm({ ...form, pattern: e.target.value })}
             placeholder={form.match_type === 'from_addr' ? 'name@example.com' : form.match_type === 'from_domain' ? 'example.com  oder  .example.com (mit Sub)' : 'Stichwort'} />
@@ -99,15 +121,15 @@ export default function Rules() {
       {items === null && <div className="mg-card">Lade …</div>}
       {items !== null && (
         <>
-          <RuleList title="Whitelist" items={wl} busy={busy} onDelete={remove} emptyLabel="Keine Whitelist-Regeln." />
-          <RuleList title="Blacklist" items={bl} busy={busy} onDelete={remove} emptyLabel="Keine Blacklist-Regeln." />
+          <RuleList title="Whitelist" items={wl} busy={busy} onDelete={remove} emptyLabel="Keine Whitelist-Regeln." showAction={false} />
+          <RuleList title="Blacklist" items={bl} busy={busy} onDelete={remove} emptyLabel="Keine Blacklist-Regeln." showAction={true} />
         </>
       )}
     </div>
   );
 }
 
-function RuleList({ title, items, busy, onDelete, emptyLabel }) {
+function RuleList({ title, items, busy, onDelete, emptyLabel, showAction }) {
   return (
     <div className="mg-card">
       <h3 style={{ margin: '0 0 0.5rem' }}>{title}</h3>
@@ -115,12 +137,17 @@ function RuleList({ title, items, busy, onDelete, emptyLabel }) {
         <p className="mg-muted">{emptyLabel}</p>
       ) : (
         <table className="mg-rules">
-          <thead><tr><th>Match</th><th>Muster</th><th>Notiz</th><th></th></tr></thead>
+          <thead><tr><th>Match</th><th>Muster</th>{showAction && <th>Aktion</th>}<th>Notiz</th><th></th></tr></thead>
           <tbody>
             {items.map((r) => (
               <tr key={r.id}>
                 <td className="mg-tiny">{TYPE_LABEL[r.match_type] || r.match_type}</td>
                 <td><code>{r.pattern}</code></td>
+                {showAction && (
+                  <td className="mg-tiny" style={r.action === 'purge' ? { color: 'var(--mg-err, #c33)' } : undefined}>
+                    {ACTION_LABEL[r.action] || 'Auto-Quarantäne'}
+                  </td>
+                )}
                 <td className="mg-muted mg-tiny">{r.note}</td>
                 <td><button className="mg-btn" disabled={!!busy[r.id]} onClick={() => onDelete(r.id)}>{busy[r.id] === 'del' ? '…' : '×'}</button></td>
               </tr>

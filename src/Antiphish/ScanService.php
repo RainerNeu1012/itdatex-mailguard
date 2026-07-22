@@ -288,6 +288,25 @@ final class ScanService {
 			'scanned_at'   => current_time( 'mysql', true ),
 		], [ 'id' => $id ] );
 
+		// Blacklist-Regel mit action='purge': Mail direkt per IMAP EXPUNGE
+		// entsorgen — kein Umweg ueber Auto-Quarantaene. Der Verdict-Snapshot
+		// ist bereits in mg_actions ueber purge_message dokumentiert (Audit).
+		// Fehler beim Purge werden geswallowed (Mail bleibt liegen, User sieht
+		// sie in der Inbox als dangerous markiert) — kein Datenverlust, kein
+		// Scan-Abbruch.
+		if ( $override && ! empty( $override['reason']['rule'] ) && $override['reason']['rule'] === 'customer_blacklist' && ( $override['action'] ?? 'quarantine' ) === 'purge' ) {
+			$purge_res = QuarantineService::purge_message( $id, $customer_id );
+			do_action( 'mailguard_scan_complete', $id, $customer_id, $verdict, $score_capped );
+			return [
+				'ok'              => true,
+				'verdict'         => $verdict,
+				'score'           => $score_capped,
+				'override'        => true,
+				'auto_purge'      => ! empty( $purge_res['ok'] ),
+				'auto_quarantine' => [ 'ran' => false ],
+			];
+		}
+
 		$force_quarantine = ! empty( $av_infections );
 		$auto = self::maybe_auto_quarantine( (int) $row['account_id'], $customer_id, $id, $verdict, $score_capped, $blacklist_hit || $force_quarantine );
 
