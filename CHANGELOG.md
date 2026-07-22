@@ -7,6 +7,30 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.32.2] – 2026-07-22
+
+Bugfix. In v0.32.0 wurde die `action`-Spalte zwar ins CREATE-TABLE-SQL
+von `mg_rules` aufgenommen, aber `Installer::CURRENT_DB_VERSION` blieb
+auf 23 stehen. Der Migrations-Guard `if ($installed >= CURRENT_DB_VERSION)`
+uebersprang dbDelta bei allen Bestand-Installs komplett — der neue
+Column landet nur bei Neuinstallationen. Auf Bestand-Installs schlug
+`Rule::create` mit `insert_failed` fehl, sobald eine Content-Filter-
+Regel (oder eine ganz normale neue Regel) angelegt werden sollte.
+
+### Fixed
+- **`Installer::CURRENT_DB_VERSION` von 23 auf 24 gebumpt**, damit dbDelta
+  bei Bestand-Installs die `action`-Spalte in `mg_rules` nachzieht.
+  Kein separates Data-Migration-Skript noetig — dbDelta ist idempotent
+  und erkennt fehlende Spalten via CREATE-TABLE-Diff.
+
+### Notes
+- Live-Server `wp.itdatex.support` wurde vor dem Repo-Bump manuell per
+  `ALTER TABLE wp_mg_rules ADD COLUMN action VARCHAR(20) NOT NULL DEFAULT 'quarantine' AFTER note`
+  gefixt; der spaetere dbDelta-Run ist dann ein No-Op.
+- Regressionsvermeidung fuer die Zukunft: bei jedem Schema-Change im
+  CREATE-TABLE-Block MUSS `CURRENT_DB_VERSION` mitgebumpt werden, sonst
+  greift die Migration nur bei Neuinstallationen.
+
 ## [0.32.1] – 2026-07-22
 
 Portal-UX-Parity zur Desktop-App v0.30.3+: die Type-in-Bestaetigung
