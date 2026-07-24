@@ -115,6 +115,9 @@ final class SenderIndex {
 				'worst_verdict'      => $worst,
 				'sender_unsubscribed'=> false,
 				'sender_blocked'     => false,
+				'sender_whitelisted' => false,
+				'block_rule_id'      => null,
+				'whitelist_rule_id'  => null,
 			];
 		}
 
@@ -130,17 +133,33 @@ final class SenderIndex {
 			$unsub_rows = $wpdb->get_col( $wpdb->prepare( $sql, $prepared_params ) );
 			$unsub_set  = array_flip( $unsub_rows ?: [] );
 
-			// "Sender blockiert"-Marker: Blacklist-Rule mit match_type=from_addr.
+			// Block-/Whitelist-Regeln pro from_addr auflisten. Rule-IDs
+			// werden mitgeschickt, damit der Client fuer "Rueckgaengig"
+			// direkt DELETE /rules/{id} aufrufen kann — ohne zweiten
+			// Roundtrip auf listRules().
 			$r  = $wpdb->prefix . Installer::TABLE_RULES;
-			$rsql = "SELECT LOWER(pattern) AS fa FROM {$r}
-				WHERE customer_id = %d AND kind = 'blacklist' AND match_type = 'from_addr'
+			$rsql = "SELECT id, kind, LOWER(pattern) AS fa FROM {$r}
+				WHERE customer_id = %d
+				  AND kind IN ('blacklist','whitelist')
+				  AND match_type = 'from_addr'
 				  AND LOWER(pattern) IN ({$ph})";
-			$block_rows = $wpdb->get_col( $wpdb->prepare( $rsql, $prepared_params ) );
-			$block_set  = array_flip( $block_rows ?: [] );
+			$rule_rows = $wpdb->get_results( $wpdb->prepare( $rsql, $prepared_params ), ARRAY_A );
+			$block_map = [];
+			$wl_map    = [];
+			foreach ( $rule_rows ?: [] as $rr ) {
+				if ( $rr['kind'] === 'blacklist' ) {
+					$block_map[ (string) $rr['fa'] ] = (int) $rr['id'];
+				} elseif ( $rr['kind'] === 'whitelist' ) {
+					$wl_map[ (string) $rr['fa'] ] = (int) $rr['id'];
+				}
+			}
 
 			foreach ( $items as &$it ) {
 				$it['sender_unsubscribed'] = isset( $unsub_set[ $it['from_addr'] ] );
-				$it['sender_blocked']      = isset( $block_set[ $it['from_addr'] ] );
+				$it['sender_blocked']      = isset( $block_map[ $it['from_addr'] ] );
+				$it['sender_whitelisted']  = isset( $wl_map[ $it['from_addr'] ] );
+				$it['block_rule_id']       = $block_map[ $it['from_addr'] ] ?? null;
+				$it['whitelist_rule_id']   = $wl_map[ $it['from_addr'] ] ?? null;
 			}
 			unset( $it );
 		}

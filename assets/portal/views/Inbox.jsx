@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { apiGet, apiPost } from '../api.js';
+import { apiGet, apiPost, apiDelete } from '../api.js';
 import { VerdictBadge, ReasonsList } from '../components/Verdict.jsx';
 import AccountTabs, { loadStoredAccountId, saveStoredAccountId } from '../components/AccountTabs.jsx';
 import PurgeConfirmDialog from '../components/PurgeConfirmDialog.jsx';
@@ -535,6 +535,33 @@ function SenderList({ filter, setFilter, onReload }) {
   const whitelistAddr   = (from_addr) => addSenderRule(from_addr, 'whitelist', 'from_addr',  'wl_addr');
   const whitelistDomain = (from_addr) => addSenderRule(from_addr, 'whitelist', 'from_domain', 'wl_domain');
 
+  // Rueckgaengig — loescht die vorhandene Block-/Whitelist-Regel via
+  // Rule-ID aus der SenderIndex-Response. Kein zweiter Roundtrip auf /rules.
+  const undoSenderRule = async (sender, kind) => {
+    const from_addr = sender.from_addr;
+    const ruleId = kind === 'blacklist' ? sender.block_rule_id : sender.whitelist_rule_id;
+    if (!ruleId) { alert('Keine Regel gefunden — bereits entfernt?'); reloadAll(); return; }
+    const label = kind === 'blacklist' ? 'Blockierung' : 'Freigabe';
+    if (!window.confirm(
+      `${label} fuer ${from_addr} aufheben?\n\n` +
+      `Die entsprechende Regel wird geloescht. Bereits verarbeitete Mails bleiben unveraendert.`
+    )) return;
+    setSenderBusy((b) => ({ ...b, [from_addr]: 'undo' }));
+    try {
+      const { body, status } = await apiDelete(`rules/${ruleId}`);
+      if (status === 200 && body && body.ok) {
+        alert(`✔ ${label} fuer ${from_addr} aufgehoben.`);
+      } else if (status === 404) {
+        alert(`ℹ Regel war bereits entfernt.`);
+      } else {
+        alert('Aufheben fehlgeschlagen: ' + ((body && body.error) || status));
+      }
+      reloadAll();
+    } finally {
+      setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
+    }
+  };
+
   const openEradicateDialog = (from_addr, msg_count) => {
     const at = String(from_addr || '').lastIndexOf('@');
     const domain = at >= 0 ? String(from_addr).slice(at + 1).toLowerCase().trim() : '';
@@ -614,6 +641,8 @@ function SenderList({ filter, setFilter, onReload }) {
                 onBlockDomain={() => blockDomain(s.from_addr)}
                 onWhitelistAddr={() => whitelistAddr(s.from_addr)}
                 onWhitelistDomain={() => whitelistDomain(s.from_addr)}
+                onUndoBlock={() => undoSenderRule(s, 'blacklist')}
+                onUndoWhitelist={() => undoSenderRule(s, 'whitelist')}
                 renderRow={(m) => (
                   <Row
                     key={m.id} m={m}
@@ -673,12 +702,13 @@ function SenderList({ filter, setFilter, onReload }) {
   );
 }
 
-function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBlock, onBlockDomain, onWhitelistAddr, onWhitelistDomain, renderRow }) {
+function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBlock, onBlockDomain, onWhitelistAddr, onWhitelistDomain, onUndoBlock, onUndoWhitelist, renderRow }) {
   const s = sender;
   const worst = s.worst_verdict;
   const worstClass = worst === 'dangerous' ? ' mg-sender--danger' : '';
   const canUnsub = s.has_unsub === 1 && !s.sender_unsubscribed;
-  const isBlocked = !!s.sender_blocked;
+  const isBlocked     = !!s.sender_blocked;
+  const isWhitelisted = !!s.sender_whitelisted;
   return (
     <div className={'mg-card mg-sender' + worstClass}>
       <div className="mg-sender__head" role="button" tabIndex={0} onClick={onToggle}
@@ -699,6 +729,7 @@ function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBloc
             ? <span className="mg-pill mg-pill--muted" title="Sender bereits abgemeldet">✓ abgemeldet</span>
             : <span className="mg-pill mg-pill--ok">Newsletter</span>)}
           {isBlocked && <span className="mg-pill mg-pill--err" title="Blacklist-Regel aktiv">⛔ blockiert</span>}
+          {isWhitelisted && <span className="mg-pill mg-pill--ok" title="Whitelist-Regel aktiv">✓ erlaubt</span>}
           <span className="mg-muted mg-tiny">{fmtDate(s.latest_at)}</span>
           <span className={'mg-sender__chevron' + (group.expanded ? ' mg-sender__chevron--open' : '')} aria-hidden="true">▾</span>
         </div>
@@ -715,14 +746,27 @@ function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBloc
             {busy === 'unsub' ? '…' : '✉ Newsletter abmelden'}
           </button>
         )}
-        <button
-          className="mg-btn"
-          disabled={!!busy}
-          onClick={(e) => { e.stopPropagation(); onWhitelistAddr && onWhitelistAddr(); }}
-          title={`Whitelist-Regel für ${s.from_addr} — kuenftige Mails immer als sauber durchlassen`}
-        >
-          {busy === 'wl_addr' ? '…' : '✓ Absender als sicher'}
-        </button>
+        {isWhitelisted ? (
+          <button
+            className="mg-btn"
+            disabled={!!busy}
+            onClick={(e) => { e.stopPropagation(); onUndoWhitelist && onUndoWhitelist(); }}
+            title={`Whitelist-Regel fuer ${s.from_addr} aufheben`}
+          >
+            {busy === 'undo' ? '…' : '↺ Freigabe rueckgaengig'}
+          </button>
+        ) : (
+          <button
+            className="mg-btn"
+            disabled={!!busy || isBlocked}
+            onClick={(e) => { e.stopPropagation(); onWhitelistAddr && onWhitelistAddr(); }}
+            title={isBlocked
+              ? 'Erst Blockierung aufheben, dann als sicher einstufen'
+              : `Whitelist-Regel für ${s.from_addr} — kuenftige Mails immer als sauber durchlassen`}
+          >
+            {busy === 'wl_addr' ? '…' : '✓ Absender als sicher'}
+          </button>
+        )}
         <button
           className="mg-btn"
           disabled={!!busy}
@@ -731,12 +775,23 @@ function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBloc
         >
           {busy === 'wl_domain' ? '…' : '✓ Domain als sicher'}
         </button>
-        {!isBlocked && (
+        {isBlocked ? (
           <button
             className="mg-btn mg-btn--warn"
             disabled={!!busy}
+            onClick={(e) => { e.stopPropagation(); onUndoBlock && onUndoBlock(); }}
+            title={`Blacklist-Regel fuer ${s.from_addr} aufheben`}
+          >
+            {busy === 'undo' ? '…' : '↺ Blockierung rueckgaengig'}
+          </button>
+        ) : (
+          <button
+            className="mg-btn mg-btn--warn"
+            disabled={!!busy || isWhitelisted}
             onClick={(e) => { e.stopPropagation(); onBlock(); }}
-            title={`Blacklist-Regel für ${s.from_addr} anlegen`}
+            title={isWhitelisted
+              ? 'Erst Freigabe aufheben, dann blockieren'
+              : `Blacklist-Regel für ${s.from_addr} anlegen`}
           >
             {busy === 'block' ? '…' : '⛔ Absender blockieren'}
           </button>

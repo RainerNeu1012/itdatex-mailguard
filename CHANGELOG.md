@@ -7,6 +7,28 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.33.0] – 2026-07-24
+
+Neu: **Absender-Erlauben + Rueckgaengig**. Die aggregierte Sender-Ansicht
+(App + Portal) kann Absender jetzt whitelisten (Whitelist-Regel via
+`createRule`) und gesetzte Block-/Whitelist-Regeln mit einem Klick
+wieder zurueckziehen.
+
+### Added
+- **`SenderIndex::list_for_customer`** liefert pro Sender jetzt
+  `sender_whitelisted` (bool) sowie `block_rule_id` und
+  `whitelist_rule_id`. Der Client kann so ohne zweiten Roundtrip auf
+  `/rules` per `DELETE /rules/{id}` die Regel aufheben.
+- **Portal-Sender-Card**: neue Pill `✓ erlaubt`; die Buttons
+  "Absender als sicher" / "Absender blockieren" wechseln zu
+  "↺ Rueckgaengig", wenn die entsprechende Regel bereits aktiv ist.
+- **App-Sender-Row**: Buttons `Erlauben` und `Rueckgaengig` analog zur
+  Portal-UX. Badge `erlaubt` neben `blockiert`. Purge (Vernichten)
+  bleibt unangetastet — kein Undo, per Design.
+
+### Changed
+- Kein Schema-Change, `CURRENT_DB_VERSION` bleibt bei 24 (aus v0.32.2).
+
 ## [0.32.2] – 2026-07-22
 
 Bugfix. In v0.32.0 wurde die `action`-Spalte zwar ins CREATE-TABLE-SQL
