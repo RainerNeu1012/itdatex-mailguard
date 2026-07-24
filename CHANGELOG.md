@@ -29,6 +29,12 @@ wieder zurueckziehen.
 ### Changed
 - Kein Schema-Change, `CURRENT_DB_VERSION` bleibt bei 24 (aus v0.32.2).
 
+### Companion
+- Desktop-App **v0.32.0** rollt die gleiche UX aus:
+  <https://github.com/RainerNeu1012/itdatex-mailguard-app/releases/tag/v0.32.0>.
+  App-User bekommen das Update automatisch beim naechsten Update-Check
+  (stuendlicher Sync auf `wp.itdatex.support/mailguard/latest.json`).
+
 ## [0.32.2] – 2026-07-22
 
 Bugfix. In v0.32.0 wurde die `action`-Spalte zwar ins CREATE-TABLE-SQL
