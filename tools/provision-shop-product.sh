@@ -26,7 +26,7 @@ BILLING_MODE="subscription"
 BILLING_INTERVAL="month"
 ACTIVATIONS_MAX="1"
 REQUIRES_WP="6.4"
-TESTED_WP="6.7"
+TESTED_WP="6.8"
 REQUIRES_PHP="8.1"
 DOWNLOAD_FILE="file:itdatex-mailguard-${VERSION}.zip"
 
