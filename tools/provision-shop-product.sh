@@ -11,9 +11,15 @@
 set -euo pipefail
 
 WP_DIR="/var/www/wp.itdatex.support/html"
-ASSET_DIR="/opt/itdatex-plugins/itdatex-mailguard/branding"
+PLUGIN_DIR="/opt/itdatex-plugins/itdatex-mailguard"
+ASSET_DIR="${PLUGIN_DIR}/branding"
 PLUGIN_SLUG="itdatex-mailguard"
-VERSION="0.25.0"
+
+VERSION="$(awk -F"'" '/define\( .ITDATEX_MAILGUARD_VERSION./ { print $4 }' "${PLUGIN_DIR}/itdatex-mailguard.php")"
+if [[ -z "${VERSION}" ]]; then
+    echo "Konnte Version aus itdatex-mailguard.php nicht lesen." >&2
+    exit 1
+fi
 
 PRICE_CENTS="4900"             # 49 EUR / Monat
 BILLING_MODE="subscription"
@@ -62,6 +68,56 @@ HTML
 )
 
 CHANGELOG=$(cat <<'CL'
+= 0.33.0 — Absender-Erlauben + Rueckgaengig =
+* NEU: Aggregierte Sender-Ansicht (App + Portal) kann Absender jetzt whitelisten (Ein-Klick "Als sicher") und gesetzte Block-/Whitelist-Regeln mit einem Klick zurueckziehen. Portal-Card zeigt "✓ erlaubt"-Pill; die Buttons wechseln zu "↺ Rueckgaengig", wenn die entsprechende Regel bereits aktiv ist. Purge (Vernichten) bleibt bewusst ohne Undo.
+* CHANGE: `SenderIndex::list_for_customer` liefert pro Sender jetzt `sender_whitelisted`, `block_rule_id` und `whitelist_rule_id` — Client-seitiges Aufheben ohne zweiten Roundtrip auf /rules.
+* COMPANION: Desktop-App v0.32.0 rollt die gleiche UX aus (stuendlicher Auto-Update-Sync).
+
+= 0.32.2 — DB-Version-Bump-Fix =
+* FIX: `Installer::CURRENT_DB_VERSION` von 23 auf 24 gebumpt. Ohne diesen Bump uebersprang der Migrations-Guard dbDelta bei allen Bestand-Installs — die `action`-Spalte in `mg_rules` (aus v0.32.0) fehlte auf bestehenden Sites, `Rule::create` schlug mit `insert_failed` fehl.
+
+= 0.32.1 — Portal-Vernichten-Modal statt Type-in-Prompt =
+* CHANGE: Portal-UX-Parity zur Desktop-App: statt window.prompt("VERNICHTEN eintippen") gibt es jetzt ein Modal mit Ack-Checkbox. Neue geteilte Komponente PurgeConfirmDialog.jsx deckt Sender-Vernichten (Inbox + Newsletters) und Domain-Auto-Vernichten (EradicateDomains) ab.
+* NOTE: Kein Backend-Change. Type-in-Confirm bleibt am Backend als Guard erhalten — der String wird vom Modal automatisch mitgesendet.
+
+= 0.32.0 — Content-Filter mit Sofort-Vernichten =
+* NEU: Zwei neue Rule-Match-Typen: `from_name_contains` (Substring im Anzeigenamen) und `body_contains` (Substring im body_preview). Beide case-insensitive.
+* NEU: `action`-Spalte auf `mg_rules` (quarantine | purge). Blacklist-Regeln mit `purge` loeschen Treffer direkt per IMAP EXPUNGE, statt in Quarantaene zu verschieben. Whitelist-Rules ignorieren die Aktion.
+* NEU: Portal-Regeln-View mit Action-Dropdown und Warn-Hinweis bei purge. Rote Farbe in der Blacklist-Tabelle fuer Purge-Regeln.
+
+= 0.31.1 — Regel-Anlage-HTTP-500-Fix =
+* FIX: Rule-Anlage per REST warf HTTP 500. Seit v0.27.0 rief `Rules\Rule::create()` erst `SenderTrust::record_whitelist/blacklist()` auf und las danach `$wpdb->insert_id` — der Trust-Upsert nutzt INSERT ... ON DUPLICATE KEY UPDATE und setzt insert_id auf 0 im UPDATE-Zweig. `Rule::find_for_customer(0)` liefert null, dann kippt `Rule::public_view(null)` mit TypeError. Fix: Rule-ID direkt nach Insert einfrieren.
+
+= 0.31.0 — TLD-Sperre (Geo-/Endungs-Block) =
+* NEU: TLD-Blockliste analog zu Auto-Vernichten, aber matched auf Absender-Domain-Endung. `.tm` blockt jede Mail deren Absender auf `.tm` endet (foo.tm, bar.gmx.tm, etc). Neue Tabelle `mg_blocked_tlds`, REST unter `/me/blocked-tlds`, Portal-View mit Schnellauswahl-Chips fuer typische Spam-TLDs (.tm, .tk, .ml, .ga, .cf, .icu, .top, .xyz, .rest, .zip).
+* PERF: TLD-Liste wird pro Pull-Cycle einmal geladen, dann in-memory gematcht (kein LIKE-Query pro Mail). Treffer werden per `expunge_uids` gebatcht — kein Ingest in mg_messages.
+
+= 0.30.0 — Content-Fingerprint fuer Kampagnen =
+* NEU: MailGuard erkennt Newsletter-Vorlagen und Massenmail-Kampagnen — auch wenn Vorname, Kundennummer oder Betrag im Subject variieren. Neue Spalte `body_fingerprint CHAR(16)` in mg_messages, deterministischer Fingerprint aus Subject (normalisiert) + Sender + Set aus Link-Domains.
+* NEU: Portal-Tab "Kampagnen" in Newsletters mit Bulk-Actions ("Alle in Quarantaene", "Alle endgueltig weg", "Absender whitelisten/blocken"). REST `/inbox/campaigns?min_count=N` + `POST /inbox/campaigns/{fp}/action`. Klick auf "Alle Mails zeigen" oeffnet die Inbox mit Fingerprint-Filter.
+* NEU: App-MessageDetail zeigt Chip "Kampagne · N Mails" in der Meta-Reihe. Klick oeffnet die Kampagne im Portal.
+* MIGRATION: DB v22, Backfill fuer bestehende Rows in Batches von 500 — typische Cluster wie 590 Wordfence-Alerts, 274 Apple-Rechnungen, 90 PayPal-Abbuchungen werden direkt sichtbar.
+
+= 0.29.0 — KI-Bewertungen sichtbar + bewertbar =
+* NEU: Statt Reasoning nur als Chip-Tooltip zu verstecken zeigt MailGuard jetzt eine eigene Card in MessageDetail (App) und im aufgeklappten Row (Portal). Semikolon-Split als Bullet-Punkte, score-abhaengige Farbgebung.
+* NEU: 👍/👎-Feedback pro Mail via neuer Tabelle `mg_llm_feedback` mit Reasoning-Snapshot. REST `POST /inbox/messages/{id}/llm-feedback` + `GET /llm-feedback/recent`.
+* NEU: Portal-View "KI-Bewertungen" listet die letzten 100 Mails fuer Batch-Feedback mit Filter-Tabs unrated|up|down. Optimistic-Updates auf 👍/👎-Klick.
+
+= 0.28.0 — Auto-Whitelist-Vorschlaege =
+* NEU: MailGuard erkennt, wenn du dich wiederholt ueber denselben Absender aergerst — und schlaegt eine passende Regel vor. Whitelist-Vorschlag ab 2 Quarantaene-Undos beim gleichen Absender, Blacklist-Vorschlag ab 3 nicht-widerrufenen Auto-Quarantaenen. Sobald eine from_addr-Regel existiert, verschwindet der Vorschlag dauerhaft — der User hat entschieden.
+* NEU: Banner in App-MessageDetail und Portal-Inbox-Row mit "Als sicher merken"/"Blockieren"-Button und X-Dismiss. REST `GET /senders/suggestions` liefert alle offenen Vorschlaege in einem Rutsch.
+
+= 0.27.0 — Sender-Trust-Score =
+* NEU: MailGuard lernt aus deiner Historie welche Absender du kennst und vertraust — bekannte Absender wandern nicht mehr versehentlich in die Auto-Quarantaene. Dein Undo-Klick von vorhin ist nicht mehr verloren, sondern trainiert das System dauerhaft.
+* NEU: Neue Tabelle `mg_sender_trust` mit `received_count`, `whitelist_count`, `blacklist_count`, `quarantine_undo_count`, `quarantine_kept_count`. Score-Formel: received >=10 -10, whitelist -30, quarantine_undo -20 pro Undo (max -40), quarantine_kept >=2 +30 (Absender ist toxisch). Untergrenze -60.
+* SICHERHEIT: Blacklist-Hit, `unresolvable_sender_domain` oder `unresolvable_link_domain` deaktivieren den Trust-Bonus. AV-Hit ueberstimmt Trust ohnehin via score_capped=100.
+* MIGRATION: DB v20 mit One-shot-Backfill aus vorhandenen mg_messages / mg_rules / mg_actions — Trust-Score startet direkt mit voller Postfach-Historie.
+
+= 0.26.0 — Systemordner-Filter (Sent/Drafts/Trash/…) =
+* FIX: Systemordner (Sent/Drafts/Trash/Deleted/Outbox/Notes/Archive) werden von der IMAP-Auto-Discovery jetzt als `disabled` importiert. Vorher wurden sie vom Pull gescannt und Auto-Quarantaene verschob eigene und laengst geloeschte Mails in den Quarantaene-Folder. Erkennung ueber RFC-6154 SPECIAL-USE-Flags (raw-IMAP-Client) plus DE/EN-Namensheuristik als Fallback fuer die c-client-Extension. `\Junk` bleibt aktiv — Kernanwendungsfall.
+* MIGRATION: DB v18 — bereits importierte Systemordner-Rows werden einmalig auf `disabled` gesetzt. Manuell umbenannte Ordner bleiben davon unberuehrt.
+* PORTAL: Ordner-Liste zeigt "Systemordner – kein Scan"-Info-Chip mit Tooltip und "Aktivieren"-Button, falls User bewusst doch scannen moechte.
+
 = 0.25.0 — Synchron-Scan im Pull =
 * CHANGE: Der 15-min-IMAP-Pull startet den Phishing-Scan jetzt sofort für frisch geholte Mails, statt auf den nachfolgenden 5-min-Scan-Worker zu warten. Neue Mails erscheinen in der Inbox direkt mit Verdict-Badge, es gibt keinen "noch nicht geprüft"-Zwischenzustand mehr.
 
