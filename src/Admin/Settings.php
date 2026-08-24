@@ -94,7 +94,7 @@ final class Settings {
 		$redirect = rest_url( 'itdatex-mailguard/v1/oauth/microsoft/callback' );
 		echo '<p>' . esc_html__( 'Damit Endkunden ihre Office-365- oder Outlook.com-Postfächer per OAuth verbinden können, brauchst du eine Azure-App-Registrierung.', 'itdatex-mailguard' ) . '</p>';
 		echo '<p><strong>' . esc_html__( 'Redirect-URI für die Azure-App:', 'itdatex-mailguard' ) . '</strong><br/>';
-		echo '<code style="user-select:all;background:#f0f0f1;padding:4px 8px;display:inline-block;margin-top:4px">' . esc_html( $redirect ) . '</code></p>';
+		echo '<code style="user-select:all;background:var(--it-bg-elevated,#f0f0f1);color:var(--it-text,#1d2327);padding:4px 8px;display:inline-block;margin-top:4px">' . esc_html( $redirect ) . '</code></p>';
 		echo '<p class="description">' . wp_kses(
 			__( 'Anleitung: <a href="https://portal.azure.com" target="_blank" rel="noopener">portal.azure.com</a> → <em>Microsoft Entra ID</em> → <em>App registrations</em> → <em>New registration</em>. Account-Types: „Accounts in any organizational directory and personal Microsoft accounts". Redirect URI (Web): die URL oben. Dann <em>API permissions</em> → <em>Office 365 Exchange Online</em> → Delegated → <code>IMAP.AccessAsUser.All</code> und Microsoft Graph → <code>offline_access</code>, <code>User.Read</code>. Schließlich <em>Certificates &amp; Secrets</em> → <em>New client secret</em>. Tenant <code>common</code> lassen für gemischten Privat-/Business-Betrieb.', 'itdatex-mailguard' ),
 			[ 'a' => [ 'href' => [], 'target' => [], 'rel' => [] ], 'em' => [], 'code' => [] ]
@@ -105,7 +105,7 @@ final class Settings {
 		$redirect = rest_url( 'itdatex-mailguard/v1/oauth/google/callback' );
 		echo '<p>' . esc_html__( 'Damit Endkunden ihre Gmail/Google-Workspace-Postfächer per OAuth verbinden können, brauchst du ein Google-Cloud-Projekt mit OAuth-Client.', 'itdatex-mailguard' ) . '</p>';
 		echo '<p><strong>' . esc_html__( 'Autorisierte Weiterleitungs-URI:', 'itdatex-mailguard' ) . '</strong><br/>';
-		echo '<code style="user-select:all;background:#f0f0f1;padding:4px 8px;display:inline-block;margin-top:4px">' . esc_html( $redirect ) . '</code></p>';
+		echo '<code style="user-select:all;background:var(--it-bg-elevated,#f0f0f1);color:var(--it-text,#1d2327);padding:4px 8px;display:inline-block;margin-top:4px">' . esc_html( $redirect ) . '</code></p>';
 		echo '<p class="description">' . wp_kses(
 			__( 'Anleitung: <a href="https://console.cloud.google.com" target="_blank" rel="noopener">console.cloud.google.com</a> → neues Projekt → <em>APIs &amp; Services</em> → <em>Library</em> → <em>Gmail API</em> aktivieren. Dann <em>OAuth consent screen</em>: User type „External", App-Name, Developer-Email; eigene Email als <em>Test user</em> hinzufügen; Scope <code>https://mail.google.com/</code>. Schließlich <em>Credentials</em> → <em>+ Create credentials</em> → <em>OAuth client ID</em> → <em>Web application</em>, Redirect-URI = die URL oben. Hinweis: <code>mail.google.com</code> ist „restricted scope" — bis 100 Test-User reicht der Test-Modus, für Production später Google-Verifikation einreichen.', 'itdatex-mailguard' ),
 			[ 'a' => [ 'href' => [], 'target' => [], 'rel' => [] ], 'em' => [], 'code' => [] ]

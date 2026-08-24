@@ -145,7 +145,7 @@ final class Onboard {
       <?php if ( ! empty( $plan['llm_enabled'] ) ): ?>
       <label class="consent">
         <input type="checkbox" name="cloud_consent" required value="1">
-        <span>Ich willige ein, dass für die KI-gestützte Phishing-Erkennung Subject und Body verdächtiger E-Mails (Heuristik-Score 30–69, typisch &lt; 10 % der Mails) an <strong>Ollama Inc., 410 Townsend St., San Francisco, CA 94107, USA</strong> übermittelt und dort durch ein KI-Modell bewertet werden. Die Übermittlung in das Drittland USA erfolgt auf Grundlage der EU-Standardvertragsklauseln (SCC, Modul 2) gemäß Art.&nbsp;46 Abs.&nbsp;2 lit.&nbsp;c DSGVO. Details siehe <a href="https://wp.itdatex.support/datenschutz/#sec-10-2" target="_blank" rel="noopener">Datenschutzerklärung Abschnitt 10.2</a>. Widerruflich jederzeit im Portal unter „Plan".</span>
+        <span>Ich willige ein, dass für die !tdatex KI-gestützte Phishing-Erkennung Subject und Body verdächtiger E-Mails (Heuristik-Score 30–69, typisch &lt; 10 % der Mails) an unseren KI-Cloud-Auftragsverarbeiter mit Sitz in den USA übermittelt und dort durch ein KI-Modell bewertet werden. Der Auftragsverarbeiter ist in der <a href="https://wp.itdatex.support/datenschutz/#sec-10-2" target="_blank" rel="noopener">Datenschutzerklärung Abschnitt 10.2</a> namentlich mit Anschrift benannt. Die Übermittlung in das Drittland USA erfolgt auf Grundlage der EU-Standardvertragsklauseln (SCC, Modul 2) gemäß Art.&nbsp;46 Abs.&nbsp;2 lit.&nbsp;c DSGVO. Widerruflich jederzeit im Portal unter „Plan".</span>
       </label>
       <?php endif; ?>
 
@@ -187,7 +187,7 @@ final class Onboard {
 			wp_die( 'Für bezahlte Pläne ist die Zustimmung zur sofortigen Ausführung Pflicht (§ 356 Abs. 5 BGB).', 'Onboard', [ 'response' => 400 ] );
 		}
 		if ( ! empty( $plan['llm_enabled'] ) && empty( $_POST['cloud_consent'] ) ) {
-			wp_die( 'Für Pläne mit KI-Tiefenanalyse ist die Einwilligung in die Übermittlung an Ollama Cloud Pflicht (Art. 6 Abs. 1 lit. a DSGVO). Alternativ einen Plan ohne KI wählen.', 'Onboard', [ 'response' => 400 ] );
+			wp_die( 'Für Pläne mit !tdatex KI-Tiefenanalyse ist die Einwilligung in die Übermittlung an unseren KI-Cloud-Auftragsverarbeiter (USA) Pflicht (Art. 6 Abs. 1 lit. a DSGVO). Alternativ einen Plan ohne KI wählen.', 'Onboard', [ 'response' => 400 ] );
 		}
 
 		$existing = Account::find_by_email( $email );

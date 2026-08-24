@@ -12,7 +12,7 @@ namespace Itdatex\Mailguard\Imap\Autoconfig;
  *   3. AppleIcloudDetector     (DNS-MX, high)     — iCloud+ Custom-Domains
  *   4. MicrosoftAutodiscover   (HTTP+XML, medium) — Custom-Domains auf MS 365
  *   5. SrvDiscovery            (DNS, medium)      — RFC 6186 SRV-Records
- *   6. LlmDiscovery            (HTTPS, low)       — GLM-5.2 in der Cloud
+ *   6. LlmDiscovery            (HTTPS, low)       — KI in der Cloud
  *
  * Erstes nicht-leeres Match gewinnt. Wenn alles fehlschlägt → null.
  *

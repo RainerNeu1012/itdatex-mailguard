@@ -6,8 +6,8 @@ namespace Itdatex\Mailguard\Imap\Autoconfig;
 use Itdatex\Mailguard\Antiphish\Client as AntiphishClient;
 
 /**
- * 5. Discovery-Stufe: fragt das antiphish-API-Backend, ob das LLM
- * (GLM-5.2 in der Cloud) die IMAP-Settings einer Domain kennt.
+ * 5. Discovery-Stufe: fragt das antiphish-API-Backend, ob die KI
+ * in der Cloud die IMAP-Settings einer Domain kennt.
  *
  * Privacy: NUR die Domain wird an die Cloud-LLM uebermittelt — keine
  * Mailadresse, keine Mail-Inhalte. Cache 7 Tage (positiv) / 1h (negativ)
