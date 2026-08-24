@@ -21,8 +21,8 @@ export default function EradicateDomains() {
         <h2 style={{ margin: '0 0 0.25rem' }}>Auto-Vernichten</h2>
         <p className="mg-muted" style={{ margin: 0 }}>
           Filter die vor dem Ingest greifen — die Mail landet nie in deiner Inbox,
-          wird direkt am IMAP-Server verworfen. Zwei Achsen: einzelne Absender-Domains
-          oder ganze Top-Level-Endungen (Geo-/TLD-Block).
+          wird direkt am IMAP-Server verworfen. Drei Achsen: einzelne Absender-Domains,
+          ganze Top-Level-Endungen (Geo-/TLD-Block), oder Inhalts-Muster im Betreff/Body.
         </p>
         <div className="mg-form__row" style={{ marginTop: '0.75rem', gap: '0.4rem' }}>
           <button
@@ -33,9 +33,15 @@ export default function EradicateDomains() {
             className={'mg-btn ' + (tab === 'tlds' ? 'mg-btn--primary' : '')}
             onClick={() => setTab('tlds')}
           >TLD-Sperre</button>
+          <button
+            className={'mg-btn ' + (tab === 'content' ? 'mg-btn--primary' : '')}
+            onClick={() => setTab('content')}
+          >Inhalts-Muster</button>
         </div>
       </div>
-      {tab === 'domains' ? <DomainsList /> : <TldsList />}
+      {tab === 'domains' && <DomainsList />}
+      {tab === 'tlds'    && <TldsList />}
+      {tab === 'content' && <ContentBlocksList />}
     </div>
   );
 }
@@ -355,4 +361,202 @@ function fmtDate(s) {
   const d = new Date(s.replace(' ', 'T') + 'Z');
   if (isNaN(d.getTime())) return s;
   return d.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+// Inhalts-Muster: Substring auf Subject/Body. Matched Mails werden vor dem
+// Ingest per EXPUNGE geloescht — analog zu TLD-Sperre und Absender-Domain.
+// Whitelist-Rules greifen hier NICHT. Whole-word verhindert False-Positives
+// bei kurzen Wortstaemmen ("date" -> auch "update", "sex" -> auch "sexy").
+function ContentBlocksList() {
+  const [items, setItems] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy]   = useState({});
+  const [form, setForm]   = useState({ pattern: '', scope: 'both', case_sensitive: false, whole_word: true });
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setError(null);
+    const { status, body } = await apiGet('me/content-blocks');
+    if (status >= 400) setError('HTTP ' + status);
+    else setItems(body.items || []);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const add = async (e) => {
+    e.preventDefault();
+    const pattern = (form.pattern || '').trim();
+    if (!pattern) return;
+    const scopeLabel = form.scope === 'subject' ? 'Betreff'
+                     : form.scope === 'body'    ? 'Body'
+                     : 'Betreff + Body';
+    if (!window.confirm(
+      `Alle Mails deren ${scopeLabel} "${pattern}" enthaelt automatisch vernichten?\n\n` +
+      `${form.whole_word ? 'Ganzes Wort' : 'Substring'} · ${form.case_sensitive ? 'case-sensitive' : 'case-insensitive'}.\n\n` +
+      `Schon in der Inbox liegende Mails bleiben. Nur neue Zustellungen ab jetzt.`
+    )) return;
+    setSaving(true); setError(null);
+    try {
+      const { status, body } = await apiPost('me/content-blocks', {
+        pattern, scope: form.scope,
+        case_sensitive: form.case_sensitive,
+        whole_word: form.whole_word,
+      });
+      if (status >= 400 || !body?.ok) {
+        setError(body?.error || ('HTTP ' + status));
+        return;
+      }
+      setForm({ pattern: '', scope: 'both', case_sensitive: false, whole_word: true });
+      load();
+    } finally { setSaving(false); }
+  };
+
+  const remove = async (id, pattern) => {
+    if (!window.confirm(`Inhalts-Muster "${pattern}" wieder entfernen? Mails mit diesem Muster landen dann wieder in deiner Inbox.`)) return;
+    setBusy((b) => ({ ...b, [id]: 'del' }));
+    try {
+      const { status } = await apiDelete(`me/content-blocks/${id}`);
+      if (status >= 400) { alert('Löschen fehlgeschlagen: HTTP ' + status); return; }
+      load();
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[id]; return n; });
+    }
+  };
+
+  const SUGGESTIONS = ['viagra', 'bitcoin gewinn', 'crypto', 'casino', 'dating', 'sex', 'porno', 'kredit', 'lotto', 'erbschaft'];
+
+  return (
+    <>
+      <form className="mg-card mg-form" onSubmit={add}>
+        <h3 style={{ margin: '0 0 0.5rem' }}>Neues Muster hinzufügen</h3>
+        <label>Text-Muster
+          <input
+            type="text"
+            required
+            value={form.pattern}
+            onChange={(e) => setForm({ ...form, pattern: e.target.value })}
+            placeholder="viagra  oder  bitcoin gewinn"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+          />
+        </label>
+        <div className="mg-form__row" style={{ gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input
+              type="radio"
+              name="scope"
+              value="subject"
+              checked={form.scope === 'subject'}
+              onChange={() => setForm({ ...form, scope: 'subject' })}
+            /> nur Betreff
+          </label>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input
+              type="radio"
+              name="scope"
+              value="body"
+              checked={form.scope === 'body'}
+              onChange={() => setForm({ ...form, scope: 'body' })}
+            /> nur Body
+          </label>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input
+              type="radio"
+              name="scope"
+              value="both"
+              checked={form.scope === 'both'}
+              onChange={() => setForm({ ...form, scope: 'both' })}
+            /> Betreff + Body
+          </label>
+        </div>
+        <div className="mg-form__row" style={{ gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              checked={form.whole_word}
+              onChange={(e) => setForm({ ...form, whole_word: e.target.checked })}
+            /> ganzes Wort (empfohlen — verhindert Treffer wie "date" in "update")
+          </label>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              checked={form.case_sensitive}
+              onChange={(e) => setForm({ ...form, case_sensitive: e.target.checked })}
+            /> Gross-/Kleinschreibung beachten
+          </label>
+        </div>
+        <div className="mg-muted mg-tiny">
+          Schnellauswahl:{' '}
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className="mg-btn mg-tiny"
+              style={{ padding: '2px 8px', fontSize: 11, marginRight: 4 }}
+              onClick={() => setForm({ ...form, pattern: s })}
+            >{s}</button>
+          ))}
+        </div>
+        {error && <div className="mg-error">{error}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button type="submit" className="mg-btn mg-btn--danger" disabled={saving}>
+            {saving ? '…' : '+ Hinzufügen'}
+          </button>
+        </div>
+      </form>
+
+      {items === null && <div className="mg-card">Lade …</div>}
+      {items !== null && items.length === 0 && (
+        <div className="mg-card mg-muted">
+          Noch keine Inhalts-Muster. Beispiele: „viagra", „bitcoin gewinn", „casino"
+          werden fast ausschliesslich in Spam verwendet — mit „ganzes Wort" aktiv,
+          um Fehl-Treffer wie „Casinoplatz" zu vermeiden.
+        </div>
+      )}
+      {items !== null && items.length > 0 && (
+        <div className="mg-card">
+          <table className="mg-rules">
+            <thead>
+              <tr>
+                <th>Muster</th>
+                <th>Wo</th>
+                <th>Modus</th>
+                <th>Aktiv seit</th>
+                <th>Zuletzt gefangen</th>
+                <th>Treffer</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((r) => (
+                <tr key={r.id}>
+                  <td><code>{r.pattern}</code></td>
+                  <td className="mg-muted mg-tiny">
+                    {r.scope === 'subject' ? 'Betreff' : r.scope === 'body' ? 'Body' : 'Beides'}
+                  </td>
+                  <td className="mg-muted mg-tiny">
+                    {r.whole_word ? '⚑ Wort' : '~ Substring'}
+                    {r.case_sensitive ? ' · Aa' : ''}
+                  </td>
+                  <td className="mg-muted mg-tiny">{fmtDate(r.created_at)}</td>
+                  <td className="mg-muted mg-tiny">{r.last_hit_at ? fmtDate(r.last_hit_at) : '—'}</td>
+                  <td>{r.hit_count}</td>
+                  <td>
+                    <button
+                      className="mg-btn"
+                      disabled={!!busy[r.id]}
+                      onClick={() => remove(r.id, r.pattern)}
+                    >
+                      {busy[r.id] === 'del' ? '…' : '×'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
 }

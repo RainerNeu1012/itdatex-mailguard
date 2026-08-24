@@ -117,6 +117,7 @@ final class SenderIndex {
 				'sender_blocked'     => false,
 				'sender_whitelisted' => false,
 				'block_rule_id'      => null,
+				'block_rule_action'  => null,
 				'whitelist_rule_id'  => null,
 			];
 		}
@@ -138,17 +139,19 @@ final class SenderIndex {
 			// direkt DELETE /rules/{id} aufrufen kann — ohne zweiten
 			// Roundtrip auf listRules().
 			$r  = $wpdb->prefix . Installer::TABLE_RULES;
-			$rsql = "SELECT id, kind, LOWER(pattern) AS fa FROM {$r}
+			$rsql = "SELECT id, kind, action, LOWER(pattern) AS fa FROM {$r}
 				WHERE customer_id = %d
 				  AND kind IN ('blacklist','whitelist')
 				  AND match_type = 'from_addr'
 				  AND LOWER(pattern) IN ({$ph})";
 			$rule_rows = $wpdb->get_results( $wpdb->prepare( $rsql, $prepared_params ), ARRAY_A );
-			$block_map = [];
-			$wl_map    = [];
+			$block_map        = [];
+			$block_action_map = [];
+			$wl_map           = [];
 			foreach ( $rule_rows ?: [] as $rr ) {
 				if ( $rr['kind'] === 'blacklist' ) {
-					$block_map[ (string) $rr['fa'] ] = (int) $rr['id'];
+					$block_map[ (string) $rr['fa'] ]        = (int) $rr['id'];
+					$block_action_map[ (string) $rr['fa'] ] = (string) ( $rr['action'] ?? 'quarantine' );
 				} elseif ( $rr['kind'] === 'whitelist' ) {
 					$wl_map[ (string) $rr['fa'] ] = (int) $rr['id'];
 				}
@@ -159,6 +162,7 @@ final class SenderIndex {
 				$it['sender_blocked']      = isset( $block_map[ $it['from_addr'] ] );
 				$it['sender_whitelisted']  = isset( $wl_map[ $it['from_addr'] ] );
 				$it['block_rule_id']       = $block_map[ $it['from_addr'] ] ?? null;
+				$it['block_rule_action']   = $block_action_map[ $it['from_addr'] ] ?? null;
 				$it['whitelist_rule_id']   = $wl_map[ $it['from_addr'] ] ?? null;
 			}
 			unset( $it );

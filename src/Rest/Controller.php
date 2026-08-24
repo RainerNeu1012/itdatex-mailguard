@@ -611,6 +611,27 @@ final class Controller {
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'blocked_tlds_delete' ],
 		] );
+
+		// Content-Blocklist: Substring-Matches auf Subject/Body loeschen
+		// Mails direkt beim Ingest per EXPUNGE. Scope subject|body|both,
+		// case-sensitive und whole-word optional.
+		register_rest_route( self::NAMESPACE, '/me/content-blocks', [
+			[
+				'methods'             => 'GET',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'content_blocks_list' ],
+			],
+			[
+				'methods'             => 'POST',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'content_blocks_create' ],
+			],
+		] );
+		register_rest_route( self::NAMESPACE, '/me/content-blocks/(?P<id>\d+)', [
+			'methods'             => 'DELETE',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'content_blocks_delete' ],
+		] );
 	}
 
 	/**
@@ -890,8 +911,13 @@ final class Controller {
 		if ( $from_addr === '' ) {
 			return new WP_Error( 'missing_from_addr', __( 'from_addr fehlt.', 'itdatex-mailguard' ), [ 'status' => 400 ] );
 		}
-		$note = sanitize_text_field( (string) ( $json['note'] ?? 'Blockiert aus Portal' ) );
-		$res  = PurgeService::block_sender( $cid, $from_addr, $note );
+		$action = strtolower( trim( (string) ( $json['action'] ?? 'quarantine' ) ) );
+		if ( ! in_array( $action, [ 'quarantine', 'purge' ], true ) ) {
+			$action = 'quarantine';
+		}
+		$default_note = $action === 'purge' ? 'Auto-Vernichten aus Portal' : 'Blockiert aus Portal';
+		$note = sanitize_text_field( (string) ( $json['note'] ?? $default_note ) );
+		$res  = PurgeService::block_sender( $cid, $from_addr, $note, $action );
 		$res['from_addr'] = strtolower( $from_addr );
 		$status = ! empty( $res['ok'] ) ? 200 : ( ( $res['error'] ?? '' ) === 'bad_from_addr' ? 400 : 502 );
 		return new WP_REST_Response( $res, $status );
@@ -1687,6 +1713,45 @@ final class Controller {
 			return new WP_Error( 'bad_input', 'id fehlt', [ 'status' => 400 ] );
 		}
 		$removed = \Itdatex\Mailguard\Antiphish\BlockedTlds::remove( $cid, $id );
+		if ( ! $removed ) {
+			return new WP_Error( 'not_found', 'Eintrag nicht gefunden', [ 'status' => 404 ] );
+		}
+		return new WP_REST_Response( [ 'ok' => true, 'id' => $id ], 200 );
+	}
+
+	public static function content_blocks_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		return new WP_REST_Response( [
+			'ok'    => true,
+			'items' => \Itdatex\Mailguard\Antiphish\ContentBlocks::list_for_customer( $cid ),
+		], 200 );
+	}
+
+	public static function content_blocks_create( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json           = (array) $req->get_json_params();
+		$pattern        = (string) ( $json['pattern'] ?? '' );
+		$scope          = (string) ( $json['scope'] ?? 'both' );
+		$case_sensitive = ! empty( $json['case_sensitive'] );
+		$whole_word     = ! empty( $json['whole_word'] );
+		if ( trim( $pattern ) === '' ) {
+			return new WP_Error( 'missing_pattern', 'pattern fehlt', [ 'status' => 400 ] );
+		}
+		$res = \Itdatex\Mailguard\Antiphish\ContentBlocks::add( $cid, $pattern, $scope, $case_sensitive, $whole_word );
+		$status = ! empty( $res['ok'] ) ? 200 : ( ( $res['error'] ?? '' ) === 'bad_pattern' ? 400 : 500 );
+		return new WP_REST_Response( $res, $status );
+	}
+
+	public static function content_blocks_delete( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req['id'];
+		if ( $id <= 0 ) {
+			return new WP_Error( 'bad_input', 'id fehlt', [ 'status' => 400 ] );
+		}
+		$removed = \Itdatex\Mailguard\Antiphish\ContentBlocks::remove( $cid, $id );
 		if ( ! $removed ) {
 			return new WP_Error( 'not_found', 'Eintrag nicht gefunden', [ 'status' => 404 ] );
 		}

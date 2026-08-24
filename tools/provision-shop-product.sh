@@ -68,6 +68,12 @@ HTML
 )
 
 CHANGELOG=$(cat <<'CL'
+= 0.35.0 — Auto-Vernichten-Button + Content-Blocklist =
+* NEU: Ein-Klick "🚫 Auto-Vernichten"-Button in SenderCard und Inbox-Row. Legt Blacklist-Regel from_addr mit Aktion `purge` an bzw. hebt bestehende Quarantaene-Regel hoch. Undo ueber den bestehenden "↺ Auto-Vernichten aus"-Button.
+* NEU: Content-Blocklist. Substring-Match auf Subject/Body loescht Mails vor dem Ingest per IMAP EXPUNGE — analog TLD-Sperre v0.31.0. Neue Tabelle `mg_content_blocks`, DB-Version 25. Portal-Tab "Inhalts-Muster" in der Auto-Vernichten-View mit Scope-Radio (Betreff/Body/beides), case-sensitive und ganzes-Wort-Match, Schnellauswahl-Chips fuer typische Spam-Woerter.
+* CHANGE: `PurgeService::block_sender($cid, $addr, $note, $action)` mit neuem action-Param. REST `POST /inbox/senders/block` akzeptiert `action: quarantine|purge`.
+* CHANGE: `SenderIndex::list_for_customer` liefert neu `block_rule_action` (`quarantine|purge|null`).
+
 = 0.34.0 — Absender kuenftig auto-vernichten =
 * NEU: Vernichten-Dialog (Portal Inbox-Row, Sender-Vernichten in Inbox/Newsletters, Quarantaene-Purge) hat einen zweiten Toggle "Absender kuenftig automatisch vernichten". Anhaken legt eine Blacklist-Regel `from_addr` mit Aktion `purge` an bzw. hebt eine bestehende `quarantine`-Regel an — naechste Mail dieses Absenders wird beim Scan direkt per EXPUNGE entfernt (kein Papierkorb, kein Undo). Default ist der Toggle aus.
 * CHANGE: `PurgeService::ensure_blacklist_rule($cid, $from_addr, $note, $action='quarantine'|'purge')` — mit Auto-Upgrade fuer bestehende schwaechere Regeln.

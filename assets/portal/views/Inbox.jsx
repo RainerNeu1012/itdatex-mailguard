@@ -503,6 +503,37 @@ function SenderList({ filter, setFilter, onReload }) {
     }
   };
 
+  // Ein-Klick-Auto-Vernichten. Legt blacklist from_addr mit action=purge an
+  // (bzw. hebt eine bestehende quarantine-Regel per UPDATE hoch). Zukuenftige
+  // Mails werden dann beim Scan direkt per IMAP EXPUNGE geloescht — kein
+  // Papierkorb, keine Quarantaene. Undo geht ueber "Blockierung rueckgaengig"
+  // (loescht die Regel ganz). Bestehende Mails bleiben unangetastet — dafuer
+  // ist der "💥 Sender vernichten"-Button rechts daneben.
+  const autoPurgeSender = async (from_addr) => {
+    const isUpgrade = false; // fuer Wortlaut der Confirm-Message; existed==true entdecken wir erst nach dem Call
+    if (!window.confirm(
+      `Absender ${from_addr} auf Auto-Vernichten stellen?\n\n` +
+      `Kuenftige Mails werden direkt beim Scan endgueltig geloescht — nicht in Quarantaene, nicht im Papierkorb.\n\n` +
+      `Aufheben spaeter per "↺ Blockierung rueckgaengig". Bestehende Mails bleiben — dafuer den "💥 Sender vernichten"-Button rechts.`
+    )) return;
+    setSenderBusy((b) => ({ ...b, [from_addr]: 'auto_purge' }));
+    try {
+      const { body, status } = await apiPost('inbox/senders/block', { from_addr, action: 'purge' });
+      if (status !== 200 || !body.ok) {
+        alert('Auto-Vernichten fehlgeschlagen: ' + (body.error || status));
+      } else if (body.upgraded) {
+        alert('✔ Bestehende Blockier-Regel auf Auto-Vernichten hochgestuft.');
+      } else if (body.existed) {
+        alert('ℹ Regel war bereits auf Auto-Vernichten gesetzt.');
+      } else {
+        alert('✔ Auto-Vernichten aktiviert (Regel angelegt).');
+      }
+      reloadAll();
+    } finally {
+      setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
+    }
+  };
+
   // Domain-Block bzw. Whitelist per POST /rules. Nutzt die Rules-Engine
   // direkt, weil /inbox/senders/block nur from_addr kennt.
   const addSenderRule = async (from_addr, kind, matchType, busyKey) => {
@@ -649,6 +680,7 @@ function SenderList({ filter, setFilter, onReload }) {
                 onUnsub={() => unsubSender(s.from_addr)}
                 onPurgeAll={() => openEradicateDialog(s.from_addr, s.msg_count)}
                 onBlock={() => blockSender(s.from_addr)}
+                onAutoPurge={() => autoPurgeSender(s.from_addr)}
                 onBlockDomain={() => blockDomain(s.from_addr)}
                 onWhitelistAddr={() => whitelistAddr(s.from_addr)}
                 onWhitelistDomain={() => whitelistDomain(s.from_addr)}
@@ -722,12 +754,13 @@ function SenderList({ filter, setFilter, onReload }) {
   );
 }
 
-function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBlock, onBlockDomain, onWhitelistAddr, onWhitelistDomain, onUndoBlock, onUndoWhitelist, renderRow }) {
+function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBlock, onAutoPurge, onBlockDomain, onWhitelistAddr, onWhitelistDomain, onUndoBlock, onUndoWhitelist, renderRow }) {
   const s = sender;
   const worst = s.worst_verdict;
   const worstClass = worst === 'dangerous' ? ' mg-sender--danger' : '';
   const canUnsub = s.has_unsub === 1 && !s.sender_unsubscribed;
   const isBlocked     = !!s.sender_blocked;
+  const isPurgeBlocked = isBlocked && s.block_rule_action === 'purge';
   const isWhitelisted = !!s.sender_whitelisted;
   return (
     <div className={'mg-card mg-sender' + worstClass}>
@@ -748,7 +781,9 @@ function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBloc
           {s.has_unsub === 1 && (s.sender_unsubscribed
             ? <span className="mg-pill mg-pill--muted" title="Sender bereits abgemeldet">✓ abgemeldet</span>
             : <span className="mg-pill mg-pill--ok">Newsletter</span>)}
-          {isBlocked && <span className="mg-pill mg-pill--err" title="Blacklist-Regel aktiv">⛔ blockiert</span>}
+          {isBlocked && (isPurgeBlocked
+            ? <span className="mg-pill mg-pill--err" title="Auto-Vernichten aktiv — kuenftige Mails werden direkt geloescht">🚫 auto-vernichten</span>
+            : <span className="mg-pill mg-pill--err" title="Blacklist-Regel aktiv (Quarantaene)">⛔ blockiert</span>)}
           {isWhitelisted && <span className="mg-pill mg-pill--ok" title="Whitelist-Regel aktiv">✓ erlaubt</span>}
           <span className="mg-muted mg-tiny">{fmtDate(s.latest_at)}</span>
           <span className={'mg-sender__chevron' + (group.expanded ? ' mg-sender__chevron--open' : '')} aria-hidden="true">▾</span>
@@ -800,9 +835,11 @@ function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBloc
             className="mg-btn mg-btn--warn"
             disabled={!!busy}
             onClick={(e) => { e.stopPropagation(); onUndoBlock && onUndoBlock(); }}
-            title={`Blacklist-Regel fuer ${s.from_addr} aufheben`}
+            title={isPurgeBlocked
+              ? `Auto-Vernichten-Regel fuer ${s.from_addr} aufheben`
+              : `Blacklist-Regel fuer ${s.from_addr} aufheben`}
           >
-            {busy === 'undo' ? '…' : '↺ Blockierung rueckgaengig'}
+            {busy === 'undo' ? '…' : (isPurgeBlocked ? '↺ Auto-Vernichten aus' : '↺ Blockierung rueckgaengig')}
           </button>
         ) : (
           <button
@@ -814,6 +851,18 @@ function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBloc
               : `Blacklist-Regel für ${s.from_addr} anlegen`}
           >
             {busy === 'block' ? '…' : '⛔ Absender blockieren'}
+          </button>
+        )}
+        {!isPurgeBlocked && !isWhitelisted && (
+          <button
+            className="mg-btn mg-btn--danger"
+            disabled={!!busy}
+            onClick={(e) => { e.stopPropagation(); onAutoPurge && onAutoPurge(); }}
+            title={isBlocked
+              ? `Blockier-Regel fuer ${s.from_addr} auf Auto-Vernichten hochstufen — kuenftige Mails werden direkt geloescht`
+              : `Kuenftige Mails von ${s.from_addr} direkt beim Scan endgueltig loeschen (kein Papierkorb)`}
+          >
+            {busy === 'auto_purge' ? '…' : (isBlocked ? '⚡ Hochstufen: Auto-Vernichten' : '🚫 Auto-Vernichten')}
           </button>
         )}
         <button
@@ -892,6 +941,29 @@ function useRowHandlers(busy, setBusy, reload, requestPurge) {
         onWhitelistDomain: () => addRule('whitelist', 'from_domain'),
         onBlacklistAddr:   () => addRule('blacklist', 'from_addr'),
         onBlacklistDomain: () => addRule('blacklist', 'from_domain'),
+        onAutoPurgeAddr: async () => {
+          const addr = (m.from_addr || '').toLowerCase().trim();
+          if (!addr) return alert('Kein Absender bekannt.');
+          if (!window.confirm(
+            `Absender ${addr} auf Auto-Vernichten stellen?\n\n` +
+            `Kuenftige Mails werden direkt beim Scan endgueltig geloescht — nicht in Quarantaene, nicht im Papierkorb.\n\n` +
+            `Aufheben spaeter in der Absender-Ansicht per "↺ Auto-Vernichten aus".`
+          )) return;
+          setBusy((b) => ({ ...b, [m.id]: 'auto_purge' }));
+          try {
+            const { body, status } = await apiPost('inbox/senders/block', { from_addr: addr, action: 'purge' });
+            if (status !== 200 || !body.ok) {
+              alert('Auto-Vernichten fehlgeschlagen: ' + (body.error || status));
+            } else if (body.upgraded) {
+              alert('✔ Bestehende Blockier-Regel auf Auto-Vernichten hochgestuft.');
+            } else if (body.existed) {
+              alert('ℹ Regel war bereits auf Auto-Vernichten gesetzt.');
+            } else {
+              alert('✔ Auto-Vernichten aktiviert.');
+            }
+            finish();
+          } finally { setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; }); }
+        },
         onRescan: async () => {
           setBusy((b) => ({ ...b, [m.id]: 'rescan' }));
           try { await apiPost(`inbox/messages/${m.id}/rescan`); finish(); }
@@ -1070,7 +1142,7 @@ function Stat({ label, value, tone }) {
   );
 }
 
-function Row({ m, expanded, busy, whitelisted, suggestion, onDismissSuggestion, onApplySuggestion, onToggle, onRescan, onUnsub, onQuarantine, onUndoQuarantine, onPurge, onWhitelistAddr, onWhitelistDomain, onBlacklistAddr, onBlacklistDomain }) {
+function Row({ m, expanded, busy, whitelisted, suggestion, onDismissSuggestion, onApplySuggestion, onToggle, onRescan, onUnsub, onQuarantine, onUndoQuarantine, onPurge, onWhitelistAddr, onWhitelistDomain, onBlacklistAddr, onBlacklistDomain, onAutoPurgeAddr }) {
   const dangerous   = m.scan_verdict === 'dangerous';
   const suspicious  = m.scan_verdict === 'suspicious';
   const flagged     = dangerous || suspicious;
@@ -1110,6 +1182,19 @@ function Row({ m, expanded, busy, whitelisted, suggestion, onDismissSuggestion, 
               style={{ padding: '2px 8px', height: 22, fontSize: 11 }}
             >
               {busy === 'wl_addr' ? '…' : '✓ Als sicher'}
+            </button>
+          )}
+          {flagged && !!m.from_addr && !whitelisted && (
+            <button
+              type="button"
+              className="mg-btn"
+              disabled={!!busy}
+              onClick={(e) => { e.stopPropagation(); onAutoPurgeAddr && onAutoPurgeAddr(); }}
+              onKeyDown={(e) => e.stopPropagation()}
+              title="Absender auf Auto-Vernichten stellen — kuenftige Mails werden direkt beim Scan endgueltig geloescht"
+              style={{ padding: '2px 8px', height: 22, fontSize: 11 }}
+            >
+              {busy === 'auto_purge' ? '…' : '🚫 Auto-Vernichten'}
             </button>
           )}
           {suggestion && (
@@ -1186,6 +1271,13 @@ function Row({ m, expanded, busy, whitelisted, suggestion, onDismissSuggestion, 
               title="Blacklist-Regel fuer diesen Absender"
             >
               {busy === 'bl_addr' ? '…' : '⛔ Absender blocken'}
+            </button>
+            <button
+              className="mg-btn mg-btn--danger" disabled={!!busy || !m.from_addr}
+              onClick={(e) => { e.stopPropagation(); onAutoPurgeAddr && onAutoPurgeAddr(); }}
+              title="Kuenftige Mails dieses Absenders direkt beim Scan endgueltig loeschen (kein Papierkorb)"
+            >
+              {busy === 'auto_purge' ? '…' : '🚫 Absender auto-vernichten'}
             </button>
             <button
               className="mg-btn" disabled={!!busy || !m.from_addr}

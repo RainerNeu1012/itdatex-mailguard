@@ -80,12 +80,12 @@ final class PurgeService {
 	 *
 	 * @return array{ok:bool,id?:int,existed?:bool,error?:string}
 	 */
-	public static function block_sender( int $customer_id, string $from_addr, string $note = '' ) : array {
+	public static function block_sender( int $customer_id, string $from_addr, string $note = '', string $action = 'quarantine' ) : array {
 		$from_addr = strtolower( trim( $from_addr ) );
 		if ( $from_addr === '' || ! str_contains( $from_addr, '@' ) ) {
 			return [ 'ok' => false, 'error' => 'bad_from_addr' ];
 		}
-		return self::ensure_blacklist_rule( $customer_id, $from_addr, $note );
+		return self::ensure_blacklist_rule( $customer_id, $from_addr, $note, $action );
 	}
 
 	/**

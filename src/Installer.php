@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 24;
+	public const CURRENT_DB_VERSION = 25;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -35,6 +35,7 @@ final class Installer {
 	public const TABLE_SENDER_TRUST      = 'mg_sender_trust';
 	public const TABLE_LLM_FEEDBACK      = 'mg_llm_feedback';
 	public const TABLE_BLOCKED_TLDS      = 'mg_blocked_tlds';
+	public const TABLE_CONTENT_BLOCKS    = 'mg_content_blocks';
 
 	public const CRON_UNDO_EXPIRY_HOOK = 'itdatex_mailguard_undo_expiry_check';
 
@@ -496,6 +497,28 @@ final class Installer {
 			KEY idx_customer_domain (customer_id, from_domain)
 		) {$charset};";
 
+		// Content-Blocklist pro Customer: Substring-Matches auf Subject/Body,
+		// die eine Mail direkt beim Ingest per EXPUNGE loeschen (keine
+		// Quarantaene, kein Undo). Wird pro Pull-Cycle einmal geladen und
+		// in-memory gematcht. `scope`: subject|body|both. `case_sensitive`
+		// und `whole_word` erlauben praezisere Muster fuer haeufige False-
+		// Positive-Wortstaemme.
+		$t_cblocks = $wpdb->prefix . self::TABLE_CONTENT_BLOCKS;
+		$sql_cblocks = "CREATE TABLE {$t_cblocks} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			pattern VARCHAR(200) NOT NULL,
+			scope VARCHAR(20) NOT NULL DEFAULT 'both',
+			case_sensitive TINYINT(1) NOT NULL DEFAULT 0,
+			whole_word TINYINT(1) NOT NULL DEFAULT 0,
+			hit_count INT UNSIGNED NOT NULL DEFAULT 0,
+			last_hit_at DATETIME NULL,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			UNIQUE KEY uniq_customer_pattern_scope (customer_id, pattern, scope),
+			KEY idx_customer (customer_id)
+		) {$charset};";
+
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		dbDelta( $sql_customers );
 		dbDelta( $sql_imap );
@@ -513,6 +536,7 @@ final class Installer {
 		dbDelta( $sql_not );
 		dbDelta( $sql_trust );
 		dbDelta( $sql_llmfb );
+		dbDelta( $sql_cblocks );
 
 		// One-shot Migration: aus jedem bestehenden Account einen Folder-Eintrag
 		// erzeugen. Nur wenn die Folder-Tabelle leer ist UND mind. ein Account

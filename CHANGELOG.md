@@ -7,6 +7,52 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.35.0] – 2026-08-24
+
+Zwei neue Features fuer den taeglichen Umgang mit wiederkehrendem Spam:
+
+**1. Ein-Klick "Auto-Vernichten" fuer Absender.** Neuer Button in der
+SenderCard (Absender-Ansicht) und in der Inbox-Row (chronologisch)
+neben "Absender blockieren". Klick legt eine `blacklist from_addr`-Regel
+mit Aktion `purge` an — oder hebt eine bestehende Quarantaene-Regel
+per UPDATE hoch. Naechste Mail dieses Absenders wird direkt beim Scan
+per IMAP EXPUNGE geloescht. Rueckgaengig ueber den bekannten
+"↺ Auto-Vernichten aus"-Button.
+
+**2. Content-Blocklist (Inhalts-Muster-Filter).** Neue Tabelle
+`mg_content_blocks` mit Substring-Matches auf Subject/Body. Ein Match
+loescht die Mail vor dem Ingest per EXPUNGE — analog zur TLD-Sperre
+(v0.31.0). Optional case-sensitive und ganzes-Wort-Match (default an,
+verhindert Fehl-Treffer wie "date" -> "update"). Portal-Tab
+"Inhalts-Muster" in der Auto-Vernichten-View mit Schnellauswahl
+fuer typische Spam-Woerter.
+
+### Added
+- **`ContentBlocks`** — neue Persistenz-Klasse mit
+  `list_patterns($cid)` (Hot-Path) und `matches($subject, $body, $patterns)`.
+  In-Memory-Match pro Pull-Cycle; kein Query pro Mail.
+- **PullService**: Content-Block-Check nach TLD-Sperre, vor Ingest.
+  Batch-EXPUNGE gemeinsam mit Eradicate/TLD-Blocks.
+- **REST**: `GET/POST /me/content-blocks`, `DELETE /me/content-blocks/{id}`.
+- **SenderIndex**: neues Feld `block_rule_action` (`quarantine|purge|null`),
+  damit der Client den Auto-Vernichten-Button korrekt darstellen kann.
+- **`PurgeService::block_sender($cid, $addr, $note, $action)`** mit
+  neuem Action-Param — nutzt intern `ensure_blacklist_rule` mit dem
+  Auto-Upgrade-Verhalten aus v0.34.0.
+- **REST `POST /inbox/senders/block`** akzeptiert neu `action` im Body
+  (`quarantine`|`purge`).
+- **Portal `SenderCard` + Inbox `Row`**: "🚫 Auto-Vernichten"-Button.
+  Wird zu "⚡ Hochstufen" wenn eine Quarantaene-Regel schon aktiv ist;
+  zu "↺ Auto-Vernichten aus" (via Undo-Block-Handler) wenn Purge-Regel
+  aktiv.
+- **Portal `EradicateDomains`**: dritter Tab "Inhalts-Muster" mit
+  Textfield + Scope-Radio + case-sensitive/whole-word Checkboxen +
+  Schnellauswahl-Chips + Trefferliste mit Hit-Counter.
+
+### Changed
+- **DB-Version 24 -> 25**: dbDelta legt `mg_content_blocks` an.
+  Kein Data-Migrations-Skript noetig.
+
 ## [0.34.0] – 2026-08-24
 
 Neu: **Absender kuenftig auto-vernichten** — der Vernichten-Dialog bietet
