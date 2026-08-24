@@ -68,6 +68,12 @@ HTML
 )
 
 CHANGELOG=$(cat <<'CL'
+= 0.34.0 — Absender kuenftig auto-vernichten =
+* NEU: Vernichten-Dialog (Portal Inbox-Row, Sender-Vernichten in Inbox/Newsletters, Quarantaene-Purge) hat einen zweiten Toggle "Absender kuenftig automatisch vernichten". Anhaken legt eine Blacklist-Regel `from_addr` mit Aktion `purge` an bzw. hebt eine bestehende `quarantine`-Regel an — naechste Mail dieses Absenders wird beim Scan direkt per EXPUNGE entfernt (kein Papierkorb, kein Undo). Default ist der Toggle aus.
+* CHANGE: `PurgeService::ensure_blacklist_rule($cid, $from_addr, $note, $action='quarantine'|'purge')` — mit Auto-Upgrade fuer bestehende schwaechere Regeln.
+* CHANGE: REST akzeptiert `create_purge_rule: bool` auf `/inbox/messages/{id}/purge`, `/actions/{id}/purge`, `/inbox/senders/purge`, `/subscriptions/eradicate`. Response enthaelt `rule` mit `id`, `existed`, `upgraded`, `action`.
+* CHANGE: Portal-Row-Purge nutzt jetzt PurgeConfirmDialog (statt window.confirm), neuer geteilter Hook `useMsgPurgeDialog`. Keine Schema-Aenderung.
+
 = 0.33.0 — Absender-Erlauben + Rueckgaengig =
 * NEU: Aggregierte Sender-Ansicht (App + Portal) kann Absender jetzt whitelisten (Ein-Klick "Als sicher") und gesetzte Block-/Whitelist-Regeln mit einem Klick zurueckziehen. Portal-Card zeigt "✓ erlaubt"-Pill; die Buttons wechseln zu "↺ Rueckgaengig", wenn die entsprechende Regel bereits aktiv ist. Purge (Vernichten) bleibt bewusst ohne Undo.
 * CHANGE: `SenderIndex::list_for_customer` liefert pro Sender jetzt `sender_whitelisted`, `block_rule_id` und `whitelist_rule_id` — Client-seitiges Aufheben ohne zweiten Roundtrip auf /rules.

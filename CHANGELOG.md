@@ -7,6 +7,49 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.34.0] – 2026-08-24
+
+Neu: **Absender kuenftig auto-vernichten** — der Vernichten-Dialog bietet
+jetzt einen zweiten Toggle. Ist er angehakt, wird die Blacklist-Regel
+fuer den Absender direkt mit Aktion `purge` angelegt (oder eine
+bestehende `quarantine`-Regel entsprechend hochgestuft). Die naechste
+Mail dieses Absenders wird dann beim Scan direkt per IMAP EXPUNGE
+entfernt — keine Quarantaene, kein Papierkorb, kein Undo. Der Toggle ist
+default aus.
+
+### Added
+- **PurgeService::ensure_blacklist_rule** um Parameter `$action`
+  (`quarantine|purge`) erweitert. Findet sie eine bestehende
+  `quarantine`-Regel und wird `purge` angefordert, wird die Regel
+  per `UPDATE` hochgestuft — Duplikate werden vermieden, und der Toggle
+  hat auch beim zweiten Vernichten Wirkung.
+- **REST**: `POST /inbox/messages/{id}/purge`, `POST /actions/{id}/purge`
+  und `POST /inbox/senders/purge` akzeptieren neu den Body-Parameter
+  `create_purge_rule: bool`. Response enthaelt in dem Fall `rule` mit
+  `id`, `existed`, `upgraded`, `action`.
+- **REST**: `POST /subscriptions/eradicate` akzeptiert ebenfalls
+  `create_purge_rule` — die von `block_sender` intern angelegte
+  Quarantaene-Regel wird nach erfolgreichem Eradicate auf `purge`
+  hochgestuft.
+- **Portal**: neue geteilte Sender-Toggle-UI in `PurgeConfirmDialog`
+  (`senderToggleLabel` / `senderToggleChecked` / `onSenderToggle`).
+  Genutzt vom Inbox-Row-Purge (neu ueber Dialog statt window.confirm),
+  vom Sender-Vernichten (Newsletters/Inbox) und vom Quarantaene-Purge.
+- **Portal**: neuer Hook `useMsgPurgeDialog` in `Inbox.jsx` — bringt
+  die Message-Level-Loeschen-UX auf die gleiche modal-basierte
+  Bestaetigungs-UX wie das Sender-Vernichten.
+
+### Changed
+- Kein Schema-Change, `CURRENT_DB_VERSION` bleibt bei 24 (aus v0.32.2).
+- `useRowHandlers` nimmt jetzt einen optionalen `requestPurge`-Callback.
+  Ohne Callback fallen die Handler defensiv auf das alte
+  `window.confirm`-Verhalten zurueck (kein Regel-Toggle).
+
+### Not covered by this release
+- Companion-Angleichung der Desktop-App: `vendor/mailguard`-Submodule
+  im Desktop-Repo steht auf v0.8.8+6 und ist damit 25 Versionen hinter
+  dem Plugin. Ein Submodule-Bump ist eigene Session.
+
 ## [0.33.0] – 2026-07-24
 
 Neu: **Absender-Erlauben + Rueckgaengig**. Die aggregierte Sender-Ansicht

@@ -873,6 +873,11 @@ final class Controller {
 			return new WP_Error( 'missing_from_addr', __( 'from_addr fehlt.', 'itdatex-mailguard' ), [ 'status' => 400 ] );
 		}
 		$res = PurgeService::hard_purge_sender( $cid, $from_addr );
+		if ( ! empty( $res['ok'] ) && ! empty( $json['create_purge_rule'] ) ) {
+			$res['rule'] = PurgeService::ensure_blacklist_rule(
+				$cid, strtolower( $from_addr ), 'Auto: nach Vernichten angelegt', 'purge'
+			);
+		}
 		$status = ! empty( $res['ok'] ) ? 200 : ( ( $res['error'] ?? '' ) === 'bad_from_addr' ? 400 : 502 );
 		return new WP_REST_Response( $res, $status );
 	}
@@ -1271,7 +1276,21 @@ final class Controller {
 	public static function inbox_purge( WP_REST_Request $req ) {
 		$cid = self::require_customer();
 		if ( is_wp_error( $cid ) ) { return $cid; }
-		$res = QuarantineService::purge_message( (int) $req['id'], $cid );
+		$mid  = (int) $req['id'];
+		$json = (array) $req->get_json_params();
+		// From-Adresse VOR dem Purge einfrieren — nach purge_message ist die
+		// mg_messages-Row weg und wir koennen den Absender nicht mehr auslesen.
+		$from_addr = '';
+		if ( ! empty( $json['create_purge_rule'] ) ) {
+			$msg = ImapMessage::find_for_customer( $mid, $cid );
+			if ( $msg ) { $from_addr = strtolower( (string) ( $msg['from_addr'] ?? '' ) ); }
+		}
+		$res = QuarantineService::purge_message( $mid, $cid );
+		if ( ! empty( $res['ok'] ) && $from_addr !== '' && str_contains( $from_addr, '@' ) ) {
+			$res['rule'] = PurgeService::ensure_blacklist_rule(
+				$cid, $from_addr, 'Auto: nach Vernichten angelegt', 'purge'
+			);
+		}
 		$status = ! empty( $res['ok'] )
 			? 200
 			: match ( $res['error'] ?? '' ) {
@@ -1313,7 +1332,23 @@ final class Controller {
 	public static function actions_purge( WP_REST_Request $req ) {
 		$cid = self::require_customer();
 		if ( is_wp_error( $cid ) ) { return $cid; }
-		$res = QuarantineService::purge( (int) $req['id'], $cid );
+		$aid  = (int) $req['id'];
+		$json = (array) $req->get_json_params();
+		// Absender-Snapshot aus mg_actions ziehen bevor die Purge laeuft — der
+		// Quarantine-Action-Row selbst bleibt zwar erhalten, aber wir wollen
+		// den from_addr auch dann, wenn purge intern noch scheitert (dann
+		// keine Regel; siehe Check auf $res['ok']).
+		$from_addr = '';
+		if ( ! empty( $json['create_purge_rule'] ) ) {
+			$row = ImapAction::find_for_customer( $aid, $cid );
+			if ( $row ) { $from_addr = strtolower( (string) ( $row['from_addr_snap'] ?? '' ) ); }
+		}
+		$res = QuarantineService::purge( $aid, $cid );
+		if ( ! empty( $res['ok'] ) && $from_addr !== '' && str_contains( $from_addr, '@' ) ) {
+			$res['rule'] = PurgeService::ensure_blacklist_rule(
+				$cid, $from_addr, 'Auto: nach Vernichten angelegt', 'purge'
+			);
+		}
 		$status = ! empty( $res['ok'] )
 			? 200
 			: match ( $res['error'] ?? '' ) {
@@ -1526,6 +1561,14 @@ final class Controller {
 			);
 		}
 		$res = UnsubService::eradicate_sender( $cid, $from_addr );
+		if ( ! empty( $res['ok'] ) && ! empty( $json['create_purge_rule'] ) ) {
+			// eradicate_sender legt via block_sender bereits eine Blacklist-Regel
+			// mit action=quarantine an. Wir heben sie auf purge an, damit kuenftige
+			// Mails direkt beim Scan expunget werden.
+			$res['rule'] = PurgeService::ensure_blacklist_rule(
+				$cid, $from_addr, 'Auto: nach Vernichten angelegt', 'purge'
+			);
+		}
 		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
 	}
 

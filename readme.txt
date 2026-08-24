@@ -4,7 +4,7 @@ Tags: anti-phishing, spam, mail, oauth, saas
 Requires at least: 6.4
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.33.0
+Stable tag: 0.34.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -39,6 +39,9 @@ Mail-Inhalte werden nur temporaer fuer den Scan-Job an die API uebergeben und ni
 4. Portal-Seite via Shortcode `[itdatex_mailguard_portal]` in eine Seite einbetten; Endkunden loggen sich dort ein und verbinden ihr Postfach.
 
 == Changelog ==
+
+= 0.34.0 =
+* Vernichten-Dialog bekommt Toggle "Absender kuenftig automatisch vernichten". Anhaken legt eine Blacklist-Regel `from_addr` mit Aktion `purge` an bzw. hebt eine bestehende `quarantine`-Regel an — naechste Mail dieses Absenders wird direkt beim Scan expunget. Wirkt in Inbox-Row, Sender-Vernichten (Newsletters/Inbox) und Quarantaene-Purge. Kein Schema-Change.
 
 = 0.33.0 =
 * Absender-Erlauben und Rueckgaengig in Portal und App-Sender-Row. `SenderIndex::list_for_customer` liefert `sender_whitelisted`, `block_rule_id`, `whitelist_rule_id`. Kein Schema-Change.

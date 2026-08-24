@@ -24,6 +24,12 @@ export default function PurgeConfirmDialog({
   onCancel,
   onConfirm,
   busy = false,
+  // Optionale Zusatz-Checkbox ueber der Ack-Checkbox — z.B. "Absender kuenftig
+  // automatisch vernichten". Wird nur gerendert, wenn senderToggleLabel gesetzt
+  // ist; die Aktion ist beim Bestaetigen fuer die Call-Site sichtbar (Payload).
+  senderToggleLabel,
+  senderToggleChecked = false,
+  onSenderToggle,
 }) {
   if (!open) return null;
   return (
@@ -56,7 +62,18 @@ export default function PurgeConfirmDialog({
           {description}
         </div>
         {extras}
-        <label className="mg-row" style={{ gap: 8, alignItems: 'flex-start', fontSize: 14, margin: '16px 0', cursor: 'pointer' }}>
+        {senderToggleLabel ? (
+          <label className="mg-row" style={{ gap: 8, alignItems: 'flex-start', fontSize: 14, margin: '16px 0 0', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={!!senderToggleChecked}
+              onChange={(e) => onSenderToggle && onSenderToggle(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span>{senderToggleLabel}</span>
+          </label>
+        ) : null}
+        <label className="mg-row" style={{ gap: 8, alignItems: 'flex-start', fontSize: 14, margin: senderToggleLabel ? '8px 0 16px' : '16px 0', cursor: 'pointer' }}>
           <input
             type="checkbox"
             checked={!!checked}

@@ -57,6 +57,7 @@ function Subscriptions({ accountId }) {
   const [purgeTarget, setPurgeTarget] = useState(null); // { from_addr, msg_count, domain }
   const [purgeAck, setPurgeAck] = useState(false);
   const [purgeAlsoDomain, setPurgeAlsoDomain] = useState(false);
+  const [purgeCreateRule, setPurgeCreateRule] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -175,12 +176,14 @@ function Subscriptions({ accountId }) {
   const openEradicateDialog = (from_addr, msg_count) => {
     setPurgeAck(false);
     setPurgeAlsoDomain(false);
+    setPurgeCreateRule(false);
     setPurgeTarget({ from_addr, msg_count, domain: extractDomain(from_addr) });
   };
   const closeEradicateDialog = () => {
     setPurgeTarget(null);
     setPurgeAck(false);
     setPurgeAlsoDomain(false);
+    setPurgeCreateRule(false);
   };
 
   const confirmEradicate = async () => {
@@ -188,12 +191,14 @@ function Subscriptions({ accountId }) {
     if (!t || !purgeAck) return;
     const { from_addr, domain } = t;
     const alsoDomain = !!domain && purgeAlsoDomain;
+    const createRule = purgeCreateRule;
     closeEradicateDialog();
     setBusy((b) => ({ ...b, [from_addr]: 'eradicate' }));
     try {
       const { body, status } = await apiPost('subscriptions/eradicate', {
         from_addr,
         confirm: 'VERNICHTEN',
+        create_purge_rule: createRule,
       });
       if (status === 422) {
         alert('Abgebrochen: ' + (body.message || 'Bestätigung fehlgeschlagen.'));
@@ -353,6 +358,14 @@ function Subscriptions({ accountId }) {
           </span>
         </label>
       )}
+      senderToggleLabel={purgeTarget ? (
+        <>
+          Absender <strong className="mg-mono">{purgeTarget.from_addr}</strong> künftig automatisch vernichten
+          {' '}(statt in Quarantäne). Die Blacklist-Regel wird direkt mit Aktion <em>Vernichten</em> angelegt bzw. hochgestuft.
+        </>
+      ) : null}
+      senderToggleChecked={purgeCreateRule}
+      onSenderToggle={setPurgeCreateRule}
       checked={purgeAck}
       onToggle={setPurgeAck}
       onCancel={closeEradicateDialog}

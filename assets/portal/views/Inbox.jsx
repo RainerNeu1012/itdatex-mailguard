@@ -288,7 +288,8 @@ function ChronoList({ filter, setFilter, onReload }) {
   useEffect(() => { load(); }, [load]);
 
   const reloadAll = () => { load(); onReload(); };
-  const handlers = useRowHandlers(busy, setBusy, reloadAll);
+  const { dialogElement: msgPurgeDialog, requestPurge } = useMsgPurgeDialog(() => reloadAll());
+  const handlers = useRowHandlers(busy, setBusy, reloadAll, requestPurge);
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / (data.per_page || 25)));
 
   return (
@@ -381,6 +382,7 @@ function ChronoList({ filter, setFilter, onReload }) {
           <button className="mg-btn" disabled={filter.page >= totalPages} onClick={() => setFilter({ ...filter, page: filter.page + 1 })}>Weiter ›</button>
         </div>
       )}
+      {msgPurgeDialog}
     </>
   );
 }
@@ -401,6 +403,7 @@ function SenderList({ filter, setFilter, onReload }) {
   const [purgeTarget, setPurgeTarget] = useState(null); // { from_addr, msg_count, domain }
   const [purgeAck, setPurgeAck] = useState(false);
   const [purgeAlsoDomain, setPurgeAlsoDomain] = useState(false);
+  const [purgeCreateRule, setPurgeCreateRule] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -567,12 +570,14 @@ function SenderList({ filter, setFilter, onReload }) {
     const domain = at >= 0 ? String(from_addr).slice(at + 1).toLowerCase().trim() : '';
     setPurgeAck(false);
     setPurgeAlsoDomain(false);
+    setPurgeCreateRule(false);
     setPurgeTarget({ from_addr, msg_count, domain });
   };
   const closeEradicateDialog = () => {
     setPurgeTarget(null);
     setPurgeAck(false);
     setPurgeAlsoDomain(false);
+    setPurgeCreateRule(false);
   };
 
   const confirmEradicate = async () => {
@@ -580,12 +585,14 @@ function SenderList({ filter, setFilter, onReload }) {
     if (!t || !purgeAck) return;
     const { from_addr, domain } = t;
     const alsoDomain = !!domain && purgeAlsoDomain;
+    const createRule = purgeCreateRule;
     closeEradicateDialog();
     setSenderBusy((b) => ({ ...b, [from_addr]: 'eradicate' }));
     try {
       const { body, status } = await apiPost('subscriptions/eradicate', {
         from_addr,
         confirm: 'VERNICHTEN',
+        create_purge_rule: createRule,
       });
       if (status === 422) {
         alert('Abgebrochen: ' + (body.message || 'Bestätigung fehlgeschlagen.'));
@@ -608,10 +615,14 @@ function SenderList({ filter, setFilter, onReload }) {
     }
   };
 
-  const handlers = useRowHandlers(busy, setBusy, (from_addr) => {
+  const { dialogElement: msgPurgeDialog, requestPurge } = useMsgPurgeDialog((from_addr) => {
     reloadAll();
     if (from_addr) reloadGroup(from_addr);
   });
+  const handlers = useRowHandlers(busy, setBusy, (from_addr) => {
+    reloadAll();
+    if (from_addr) reloadGroup(from_addr);
+  }, requestPurge);
 
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / (data.per_page || 50)));
 
@@ -693,11 +704,20 @@ function SenderList({ filter, setFilter, onReload }) {
             </span>
           </label>
         )}
+        senderToggleLabel={purgeTarget ? (
+          <>
+            Absender <strong className="mg-mono">{purgeTarget.from_addr}</strong> künftig automatisch vernichten
+            {' '}(statt in Quarantäne). Die Blacklist-Regel wird direkt mit Aktion <em>Vernichten</em> angelegt bzw. hochgestuft.
+          </>
+        ) : null}
+        senderToggleChecked={purgeCreateRule}
+        onSenderToggle={setPurgeCreateRule}
         checked={purgeAck}
         onToggle={setPurgeAck}
         onCancel={closeEradicateDialog}
         onConfirm={confirmEradicate}
       />
+      {msgPurgeDialog}
     </>
   );
 }
@@ -832,10 +852,12 @@ function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBloc
 /* Shared: Row + Handlers                                                     */
 /* -------------------------------------------------------------------------- */
 
-function useRowHandlers(busy, setBusy, reload) {
+function useRowHandlers(busy, setBusy, reload, requestPurge) {
   // Reload akzeptiert optional from_addr, damit SenderList die Gruppe re-fetchen kann.
   const reloadRef = useRef(reload);
   reloadRef.current = reload;
+  const purgeRef = useRef(requestPurge);
+  purgeRef.current = requestPurge;
   return useMemo(() => ({
     for(m, from_addr = null) {
       const finish = () => reloadRef.current && reloadRef.current(from_addr || null);
@@ -932,27 +954,111 @@ function useRowHandlers(busy, setBusy, reload) {
             finish();
           } finally { setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; }); }
         },
-        onPurge: async () => {
-          if (!window.confirm(
-            'Mail ENDGÜLTIG vom Mailserver löschen?\n\n' +
-            'Nach dem Klick ist sie nicht mehr wiederherstellbar — auch nicht über den Papierkorb.'
-          )) return;
-          setBusy((b) => ({ ...b, [m.id]: 'purge' }));
-          try {
-            // Quarantänisierte Mails über den bestehenden action-basierten Purge,
-            // alle anderen über den generischen Message-Purge (identisches Ergebnis:
-            // IMAP-Expunge + Audit-Eintrag + mg_messages-Delete).
-            const endpoint = m.quarantine_action_id
-              ? `actions/${m.quarantine_action_id}/purge`
-              : `inbox/messages/${m.id}/purge`;
-            const { body, status } = await apiPost(endpoint);
-            if (status !== 200 || !body.ok) alert('Löschen fehlgeschlagen: ' + (body.error || status) + (body.detail ? '\n' + body.detail : ''));
-            finish();
-          } finally { setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; }); }
+        onPurge: () => {
+          // Fall-back auf window.confirm nur, falls das Parent-View keinen
+          // Dialog bereitstellt (defensiv — sollte in Prod nicht passieren).
+          if (!purgeRef.current) {
+            if (!window.confirm('Mail ENDGÜLTIG vom Mailserver löschen?')) return;
+            (async () => {
+              setBusy((b) => ({ ...b, [m.id]: 'purge' }));
+              try {
+                const endpoint = m.quarantine_action_id
+                  ? `actions/${m.quarantine_action_id}/purge`
+                  : `inbox/messages/${m.id}/purge`;
+                const { body, status } = await apiPost(endpoint);
+                if (status !== 200 || !body.ok) alert('Löschen fehlgeschlagen: ' + (body.error || status));
+                finish();
+              } finally { setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; }); }
+            })();
+            return;
+          }
+          purgeRef.current(m, from_addr);
         },
       };
     }
   }), [busy, setBusy]);
+}
+
+/**
+ * Modal-Flow fuer das endgueltige Loeschen einer einzelnen Mail. Vorher hing
+ * das an einem window.confirm() im Row-Handler; das Modal traegt jetzt zwei
+ * Checkboxen (Ack + optionaler "Absender kuenftig auto-vernichten"-Toggle)
+ * und wird von ChronoList und SenderList gleichermassen genutzt.
+ */
+function useMsgPurgeDialog(afterPurge) {
+  const [target, setTarget] = useState(null);
+  const [ack, setAck] = useState(false);
+  const [createRule, setCreateRule] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const close = () => { setTarget(null); setAck(false); setCreateRule(false); setBusy(false); };
+
+  const requestPurge = (m, from_addr) => {
+    setAck(false); setCreateRule(false);
+    setTarget({ m, from_addr: from_addr || null });
+  };
+
+  const confirmPurge = async () => {
+    if (!target) return;
+    const m = target.m;
+    setBusy(true);
+    try {
+      const endpoint = m.quarantine_action_id
+        ? `actions/${m.quarantine_action_id}/purge`
+        : `inbox/messages/${m.id}/purge`;
+      const { body, status } = await apiPost(endpoint, { create_purge_rule: !!createRule });
+      if (status !== 200 || !body.ok) {
+        alert('Löschen fehlgeschlagen: ' + (body.error || status) + (body.detail ? '\n' + body.detail : ''));
+      }
+      const cbFromAddr = target.from_addr || (m.from_addr || null);
+      close();
+      afterPurge && afterPurge(cbFromAddr);
+    } catch (e) {
+      alert('Löschen fehlgeschlagen: ' + String(e));
+      setBusy(false);
+    }
+  };
+
+  const m = target && target.m;
+  const senderAddr = m ? (m.from_addr || '') : '';
+  const dialogElement = (
+    <PurgeConfirmDialog
+      open={!!target}
+      title="Mail endgültig löschen?"
+      description={m && (
+        <>
+          <p style={{ margin: '0 0 8px' }}>
+            Die Mail wird per IMAP EXPUNGE endgültig entfernt — <strong>kein Papierkorb, kein Undo</strong>.
+          </p>
+          {m.subject && (
+            <p style={{ margin: '0 0 8px', fontSize: 13 }}>
+              <span className="mg-muted">Betreff:</span> <strong className="mg-mono">{m.subject}</strong>
+            </p>
+          )}
+          {senderAddr && (
+            <p style={{ margin: '0 0 8px', fontSize: 13 }}>
+              <span className="mg-muted">Absender:</span> <strong className="mg-mono">{senderAddr}</strong>
+            </p>
+          )}
+        </>
+      )}
+      senderToggleLabel={senderAddr ? (
+        <>
+          Absender <strong className="mg-mono">{senderAddr}</strong> künftig automatisch vernichten.
+          {' '}Legt eine Blacklist-Regel mit Aktion <em>Vernichten</em> an — nächste Mail wird direkt beim Scan gelöscht.
+        </>
+      ) : null}
+      senderToggleChecked={createRule}
+      onSenderToggle={setCreateRule}
+      checked={ack}
+      onToggle={setAck}
+      onCancel={busy ? () => {} : close}
+      onConfirm={confirmPurge}
+      busy={busy}
+    />
+  );
+
+  return { dialogElement, requestPurge };
 }
 
 function Stat({ label, value, tone }) {

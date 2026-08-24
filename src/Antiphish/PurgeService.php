@@ -550,31 +550,54 @@ final class PurgeService {
 	 * Sender existiert. Duplikate wären harmlos (Engine matched auf die erste),
 	 * würden die Rules-Liste im Portal aber unnötig aufblähen.
 	 *
-	 * @return array{ok:bool,id?:int,existed?:bool,error?:string}
+	 * $action = 'quarantine' | 'purge'. Wenn eine bestehende Regel schwaecher
+	 * ist als das Angeforderte (quarantine bei purge-Request), wird sie
+	 * per UPDATE auf purge angehoben — sonst hat der Vernichten-Toggle beim
+	 * zweiten Vernichten keine Wirkung, weil die alte quarantine-Regel gewinnt.
+	 *
+	 * @return array{ok:bool,id?:int,existed?:bool,upgraded?:bool,action?:string,error?:string}
 	 */
-	private static function ensure_blacklist_rule( int $customer_id, string $from_addr, string $note = '' ) : array {
+	public static function ensure_blacklist_rule( int $customer_id, string $from_addr, string $note = '', string $action = 'quarantine' ) : array {
+		if ( ! in_array( $action, Rule::ACTIONS, true ) ) { $action = 'quarantine'; }
+
 		global $wpdb;
-		$t  = $wpdb->prefix . Installer::TABLE_RULES;
-		$id = (int) $wpdb->get_var( $wpdb->prepare(
-			"SELECT id FROM {$t}
+		$t   = $wpdb->prefix . Installer::TABLE_RULES;
+		$row = $wpdb->get_row( $wpdb->prepare(
+			"SELECT id, action FROM {$t}
 			 WHERE customer_id = %d
 			   AND kind = 'blacklist'
 			   AND match_type = 'from_addr'
 			   AND pattern = %s
 			 LIMIT 1",
 			$customer_id, $from_addr
-		) );
-		if ( $id > 0 ) { return [ 'ok' => true, 'id' => $id, 'existed' => true ]; }
+		), ARRAY_A );
+
+		if ( $row ) {
+			$id           = (int) $row['id'];
+			$current      = (string) ( $row['action'] ?? 'quarantine' );
+			$needs_upgrade = ( $action === 'purge' && $current !== 'purge' );
+			if ( $needs_upgrade ) {
+				$wpdb->update( $t, [ 'action' => 'purge' ], [ 'id' => $id, 'customer_id' => $customer_id ] );
+			}
+			return [
+				'ok'       => true,
+				'id'       => $id,
+				'existed'  => true,
+				'upgraded' => $needs_upgrade,
+				'action'   => $needs_upgrade ? 'purge' : $current,
+			];
+		}
 
 		$res = Rule::create( $customer_id, [
 			'kind'       => 'blacklist',
 			'match_type' => 'from_addr',
 			'pattern'    => $from_addr,
+			'action'     => $action,
 			'note'       => $note !== '' ? $note : 'Auto-Regel: nach Newsletter-Abmeldung angelegt',
 		] );
 		if ( empty( $res['ok'] ) ) {
 			return [ 'ok' => false, 'error' => (string) ( $res['error'] ?? 'insert_failed' ) ];
 		}
-		return [ 'ok' => true, 'id' => (int) $res['id'], 'existed' => false ];
+		return [ 'ok' => true, 'id' => (int) $res['id'], 'existed' => false, 'action' => $action ];
 	}
 }
