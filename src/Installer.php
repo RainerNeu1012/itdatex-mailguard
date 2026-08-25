@@ -699,6 +699,31 @@ final class Installer {
 			}
 		}
 
+		// dbDelta meldet Fehler nicht sauber zurueck. Bevor wir die
+		// DB_VERSION bumpen, verifizieren wir dass alle erwarteten Tabellen
+		// tatsaechlich existieren — sonst bleibt db_version stehen und die
+		// Migration laeuft beim naechsten Plugin-Load erneut. Sonst wuerde
+		// eine einmalig-verpatzte Migration (siehe v0.35.0 -> mg_content_blocks
+		// fehlte trotz db_version=25) den Bug dauerhaft einfrieren.
+		$expected_tables = [
+			self::TABLE_CUSTOMERS, self::TABLE_IMAP_ACCOUNTS, self::TABLE_IMAP_FOLDERS,
+			self::TABLE_MESSAGES, self::TABLE_UNSUBS, self::TABLE_RULES,
+			self::TABLE_ACTIONS, self::TABLE_API_TOKENS, self::TABLE_PUSH_DEVICES,
+			self::TABLE_WEB_SESSIONS, self::TABLE_ATTACHMENTS, self::TABLE_NOTIFICATIONS,
+			self::TABLE_ERADICATE_DOMAINS, self::TABLE_SENDER_TRUST,
+			self::TABLE_LLM_FEEDBACK, self::TABLE_BLOCKED_TLDS, self::TABLE_CONTENT_BLOCKS,
+		];
+		$missing = [];
+		foreach ( $expected_tables as $tbl ) {
+			$full = $wpdb->prefix . $tbl;
+			$exists = (string) $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $full ) );
+			if ( $exists === '' ) { $missing[] = $full; }
+		}
+		if ( $missing ) {
+			error_log( 'itdatex-mailguard: migrate_db unvollstaendig, fehlende Tabellen: ' . implode( ', ', $missing ) . '. DB_VERSION bleibt bei ' . (int) get_option( self::OPTION_DB_VERSION, 0 ) . ', naechster Plugin-Load versucht erneut.' );
+			return;
+		}
+
 		update_option( self::OPTION_DB_VERSION, self::CURRENT_DB_VERSION, false );
 	}
 }

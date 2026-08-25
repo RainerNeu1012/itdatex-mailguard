@@ -7,6 +7,26 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.35.1] – 2026-08-25
+
+### Fixed
+- **`Installer::migrate_db`**: verifiziert nach dem `dbDelta`-Block, dass
+  alle 17 erwarteten Tabellen tatsaechlich existieren. Nur dann wird
+  `db_version` gebumpt. Vorher hat `dbDelta` einzelne CREATE-TABLE-Statements
+  im Fehlerfall stumm uebersprungen, `update_option` lief trotzdem — so
+  landete v0.35.0 auf `wp.itdatex.support` mit gesetztem `db_version=25`
+  **ohne** die neue `mg_content_blocks`-Tabelle. Folge: jeder Content-Muster-
+  Add in der App-View "Auto-Vernichten" antwortete `db_insert_failed`. Fix
+  greift auch fuer alle zukuenftigen Schema-Bumps: eine unvollstaendige
+  Migration friert nicht mehr ein, sondern laeuft beim naechsten Plugin-Load
+  automatisch nochmal — plus `error_log`-Notice mit den fehlenden Tabellen.
+
+### Ops
+- Auf `wp.itdatex.support` einmalig per WP-CLI nachgezogen:
+  `delete_option('itdatex_mailguard_db_version')` +
+  `Installer::migrate_db()`. `wp_mg_content_blocks` inkl. UNIQUE-Index
+  `uniq_customer_pattern_scope` und `idx_customer` ist wieder da.
+
 ## [0.35.0] – 2026-08-24
 
 Zwei neue Features fuer den taeglichen Umgang mit wiederkehrendem Spam:
