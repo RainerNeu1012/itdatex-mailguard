@@ -7,6 +7,33 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.39.0] – 2026-09-19
+
+### Added
+- **Portal-Parity fuer Postfach-Regeln**: neue View `PostboxRules.jsx`
+  im Portal (`assets/portal/views/`), nav-slot "Postfach". Selbe
+  Multi-Condition/Multi-Action-UX wie die Desktop-App.
+- **Postfach-Regeln** (`GET/POST/PUT/DELETE /postbox-rules`) — multi-condition
+  User-Regeln, die nach Scan aber vor Auto-Quarantaene ausgewertet werden.
+  Neue Klassen `Rules\PostboxRule` (CRUD) + `Rules\PostboxRuleEngine`
+  (Application). Datenmodell in `mg_postbox_rules` mit
+  `conditions_json` (Array `{field, op, value}`) und `actions_json`
+  (Array `{type: 'move'|'delete'|'flag', ...}`). Match-Ops `AND` / `OR`.
+  Priorisierung via `priority` ASC + `stop_processing`. Felder: `from_addr`,
+  `from_domain`, `from_name`, `subject`, `body`, `verdict`, `score`,
+  `has_unsub`, `has_attachments`. Operators: equals, not_equals, contains,
+  not_contains, starts_with, ends_with (Strings) + gt/ge/lt/le/eq/ne (Zahlen).
+  Actions: `move` (IMAP-Move in Ziel-Ordner, mit `ensure_folder`),
+  `delete` (Hard-Purge via bestehenden PurgeService),
+  `flag` (Platzhalter fuer spaetere IMAP-Flag-Unterstuetzung).
+- **DB v26**: neue Tabelle `mg_postbox_rules` (id, customer_id, name,
+  priority, enabled, match_op, conditions_json, actions_json,
+  stop_processing, hit_count, last_hit_at, created_at, updated_at).
+- **ScanService-Hook**: nach `maybe_auto_quarantine` — wenn die Mail nicht
+  quarantaenisiert wurde, laeuft `PostboxRuleEngine::apply` und kann Move
+  oder Delete ausloesen. Dangerous Mails in Auto-Quarantaene umgehen die
+  User-Regeln bewusst — Sicherheit vor Sortier-Komfort.
+
 ## [0.38.0] – 2026-09-19
 
 ### Added

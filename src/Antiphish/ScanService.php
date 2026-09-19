@@ -314,6 +314,21 @@ final class ScanService {
 			self::notify_admin_malware( $row, $av_infections );
 		}
 
+		// Postfach-Regeln (User-defined): laufen nach Scan + Auto-Quarantaene,
+		// aber nur wenn die Mail noch im Inbox liegt (Auto-Quarantaene hat sie
+		// nicht angefasst). Dangerous mails, die per Auto-Quarantaene woanders
+		// hin verschoben wurden, umgehen Postbox-Regeln bewusst — der User will
+		// gefaehrliche Mail in der Quarantaene, nicht in seinem Newsletter-Ordner.
+		$postbox_result = null;
+		if ( empty( $auto['ran'] ) ) {
+			// Aktuelle Row-Version holen, damit die Engine mit dem gerade
+			// aktualisierten scan_verdict/scan_score arbeitet.
+			$fresh = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$t} WHERE id = %d", $id ), ARRAY_A );
+			if ( $fresh ) {
+				$postbox_result = \Itdatex\Mailguard\Rules\PostboxRuleEngine::apply( $customer_id, $fresh );
+			}
+		}
+
 		// Notify-Hook: laesst Push-Listener oder andere Extensions den Verdict abgreifen.
 		do_action( 'mailguard_scan_complete', $id, $customer_id, $verdict, $score_capped );
 
@@ -323,6 +338,7 @@ final class ScanService {
 			'score'           => $score_capped,
 			'override'        => $override ? true : false,
 			'auto_quarantine' => $auto,
+			'postbox_rules'   => $postbox_result,
 		];
 	}
 

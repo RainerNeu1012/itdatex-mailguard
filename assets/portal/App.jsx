@@ -15,6 +15,7 @@ import Inbox          from './views/Inbox.jsx';
 import Newsletters    from './views/Newsletters.jsx';
 import Scanner        from './views/Scanner.jsx';
 import Rules          from './views/Rules.jsx';
+import PostboxRules   from './views/PostboxRules.jsx';
 import EradicateDomainsView from './views/EradicateDomains.jsx';
 import Plan           from './views/Plan.jsx';
 import Actions        from './views/Actions.jsx';
@@ -45,7 +46,7 @@ export default function App() {
     return <div className="mg-shell"><div className="mg-card">Lade …</div></div>;
   }
 
-  const requiresAuth   = [ 'dashboard', 'accounts', 'account-new', 'account-edit', 'inbox', 'newsletters', 'scanner', 'rules', 'eradicate-domains', 'plan', 'actions', 'devices' ];
+  const requiresAuth   = [ 'dashboard', 'accounts', 'account-new', 'account-edit', 'inbox', 'newsletters', 'scanner', 'rules', 'postbox-rules', 'eradicate-domains', 'plan', 'actions', 'devices' ];
   const requiresAnon   = [ 'login', 'register', 'forgot-password' ];
 
   if (requiresAuth.includes(route.name) && !me) {
@@ -103,6 +104,7 @@ export default function App() {
               <button className="mg-nav__btn" onClick={() => navigate('newsletters')}>Newsletter</button>
               <button className="mg-nav__btn" onClick={() => navigate('scanner')}>Scanner</button>
               <button className="mg-nav__btn" onClick={() => navigate('rules')}>Regeln</button>
+              <button className="mg-nav__btn" onClick={() => navigate('postbox-rules')}>Postfach</button>
               <button className="mg-nav__btn" onClick={() => navigate('eradicate-domains')}>Auto-Vernichten</button>
               <button className="mg-nav__btn" onClick={() => navigate('actions')}>Aktionen</button>
               <button className="mg-nav__btn" onClick={() => navigate('llm-feedback')}>KI-Bewertungen</button>
@@ -157,6 +159,7 @@ function pickView(name) {
     case 'newsletters':     return Newsletters;
     case 'scanner':         return Scanner;
     case 'rules':           return Rules;
+    case 'postbox-rules':   return PostboxRules;
     case 'eradicate-domains': return EradicateDomainsView;
     case 'plan':            return Plan;
     case 'actions':         return Actions;

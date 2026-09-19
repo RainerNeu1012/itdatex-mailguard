@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 25;
+	public const CURRENT_DB_VERSION = 26;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -36,6 +36,7 @@ final class Installer {
 	public const TABLE_LLM_FEEDBACK      = 'mg_llm_feedback';
 	public const TABLE_BLOCKED_TLDS      = 'mg_blocked_tlds';
 	public const TABLE_CONTENT_BLOCKS    = 'mg_content_blocks';
+	public const TABLE_POSTBOX_RULES     = 'mg_postbox_rules';
 
 	public const CRON_UNDO_EXPIRY_HOOK = 'itdatex_mailguard_undo_expiry_check';
 
@@ -519,6 +520,33 @@ final class Installer {
 			KEY idx_customer (customer_id)
 		) {$charset};";
 
+		// Postfach-Regeln (DB v26+): mehr-Bedingungs-Filter mit Actions
+		// (move/delete/flag), die nach dem Scan aber vor Auto-Quarantaene
+		// greifen. Conditions + Actions als JSON, damit wir spaeter neue
+		// Feld-/Action-Typen ohne Schema-Bump ergaenzen koennen.
+		// `priority` ASC = fruehe Auswertung; Regel mit `stop_processing=1`
+		// beendet die Kette. `enabled=0` haelt die Regel aus dem Match-Lauf
+		// raus, ohne sie zu loeschen (praktisch fuer Debugging).
+		$t_prules = $wpdb->prefix . self::TABLE_POSTBOX_RULES;
+		$sql_prules = "CREATE TABLE {$t_prules} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			name VARCHAR(190) NOT NULL DEFAULT '',
+			priority INT UNSIGNED NOT NULL DEFAULT 100,
+			enabled TINYINT(1) NOT NULL DEFAULT 1,
+			match_op VARCHAR(4) NOT NULL DEFAULT 'AND',
+			conditions_json LONGTEXT NOT NULL,
+			actions_json LONGTEXT NOT NULL,
+			stop_processing TINYINT(1) NOT NULL DEFAULT 0,
+			hit_count INT UNSIGNED NOT NULL DEFAULT 0,
+			last_hit_at DATETIME NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			KEY idx_customer_prio (customer_id, priority),
+			KEY idx_enabled (enabled)
+		) {$charset};";
+
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		dbDelta( $sql_customers );
 		dbDelta( $sql_imap );
@@ -537,6 +565,7 @@ final class Installer {
 		dbDelta( $sql_trust );
 		dbDelta( $sql_llmfb );
 		dbDelta( $sql_cblocks );
+		dbDelta( $sql_prules );
 
 		// One-shot Migration: aus jedem bestehenden Account einen Folder-Eintrag
 		// erzeugen. Nur wenn die Folder-Tabelle leer ist UND mind. ein Account
@@ -712,6 +741,7 @@ final class Installer {
 			self::TABLE_WEB_SESSIONS, self::TABLE_ATTACHMENTS, self::TABLE_NOTIFICATIONS,
 			self::TABLE_ERADICATE_DOMAINS, self::TABLE_SENDER_TRUST,
 			self::TABLE_LLM_FEEDBACK, self::TABLE_BLOCKED_TLDS, self::TABLE_CONTENT_BLOCKS,
+			self::TABLE_POSTBOX_RULES,
 		];
 		$missing = [];
 		foreach ( $expected_tables as $tbl ) {

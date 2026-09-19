@@ -32,6 +32,7 @@ use Itdatex\Mailguard\Antiphish\ScanService;
 use Itdatex\Mailguard\Antiphish\Unsub;
 use Itdatex\Mailguard\Antiphish\Subscriptions;
 use Itdatex\Mailguard\Antiphish\UnsubService;
+use Itdatex\Mailguard\Rules\PostboxRule;
 use Itdatex\Mailguard\Rules\Rule;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -596,6 +597,33 @@ final class Controller {
 			'methods'             => 'DELETE',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'rules_delete' ],
+		] );
+
+		// Postfach-Regeln: multi-condition Filter, die nach dem Scan aber
+		// vor Auto-Quarantaene greifen. Actions: move/delete/flag.
+		register_rest_route( self::NAMESPACE, '/postbox-rules', [
+			[
+				'methods'             => 'GET',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'postbox_rules_list' ],
+			],
+			[
+				'methods'             => 'POST',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'postbox_rules_create' ],
+			],
+		] );
+		register_rest_route( self::NAMESPACE, '/postbox-rules/(?P<id>\d+)', [
+			[
+				'methods'             => 'PUT',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'postbox_rules_update' ],
+			],
+			[
+				'methods'             => 'DELETE',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'postbox_rules_delete' ],
+			],
 		] );
 
 		// Auto-Vernichten-Domains: persistente Liste, gegen die PullService
@@ -1284,6 +1312,49 @@ final class Controller {
 			return new WP_Error( 'not_found', '', [ 'status' => 404 ] );
 		}
 		Rule::delete( $id, $cid );
+		return new WP_REST_Response( [ 'ok' => true ], 200 );
+	}
+
+	public static function postbox_rules_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		return new WP_REST_Response( [ 'ok' => true, 'items' => PostboxRule::list_for_customer( $cid ) ], 200 );
+	}
+
+	public static function postbox_rules_create( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json = (array) $req->get_json_params();
+		$res = PostboxRule::create( $cid, $json );
+		if ( empty( $res['ok'] ) ) {
+			return new WP_REST_Response( $res, 400 );
+		}
+		$row = PostboxRule::find_for_customer( (int) $res['id'], $cid );
+		return new WP_REST_Response( [ 'ok' => true, 'item' => PostboxRule::public_view( $row ) ], 201 );
+	}
+
+	public static function postbox_rules_update( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req['id'];
+		$json = (array) $req->get_json_params();
+		$res = PostboxRule::update( $id, $cid, $json );
+		if ( empty( $res['ok'] ) ) {
+			$status = ( $res['error'] ?? '' ) === 'not_found' ? 404 : 400;
+			return new WP_REST_Response( $res, $status );
+		}
+		$row = PostboxRule::find_for_customer( $id, $cid );
+		return new WP_REST_Response( [ 'ok' => true, 'item' => PostboxRule::public_view( $row ) ], 200 );
+	}
+
+	public static function postbox_rules_delete( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req['id'];
+		if ( ! PostboxRule::find_for_customer( $id, $cid ) ) {
+			return new WP_Error( 'not_found', '', [ 'status' => 404 ] );
+		}
+		PostboxRule::delete( $id, $cid );
 		return new WP_REST_Response( [ 'ok' => true ], 200 );
 	}
 
