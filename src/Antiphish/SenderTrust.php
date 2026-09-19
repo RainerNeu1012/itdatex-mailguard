@@ -213,6 +213,43 @@ final class SenderTrust {
 			}
 		}
 
+		// LLM-Feedback des Users zurueckfuehren. Semantik haengt vom damaligen
+		// Verdict ab, nicht vom Thumbs allein:
+		//   👍 auf "dangerous"/"suspicious"  = User bestaetigt: Absender ist bad
+		//   👎 auf "dangerous"/"suspicious"  = User widerspricht: Absender ist OK
+		//   👍 auf "clean"                   = User bestaetigt: Absender ist OK
+		//   👎 auf "clean"                   = User widerspricht: Absender ist bad
+		// Fenster: 90 Tage, damit ein alter Vote nicht ewig regiert. Gewichtung
+		// bewusst konservativ (unter whitelist_count), damit zwei Faehl-Klicks
+		// das Modell nicht komplett umdrehen koennen.
+		$t_fb = $wpdb->prefix . Installer::TABLE_LLM_FEEDBACK;
+		$fb   = $wpdb->get_row( $wpdb->prepare(
+			"SELECT
+				SUM(CASE WHEN (thumbs = 'up'   AND verdict_snap IN ('dangerous','suspicious'))
+					   OR (thumbs = 'down' AND verdict_snap = 'clean')
+					THEN 1 ELSE 0 END) AS confirms_bad,
+				SUM(CASE WHEN (thumbs = 'down' AND verdict_snap IN ('dangerous','suspicious'))
+					   OR (thumbs = 'up'   AND verdict_snap = 'clean')
+					THEN 1 ELSE 0 END) AS confirms_ok
+			 FROM {$t_fb}
+			 WHERE customer_id = %d
+			   AND LOWER(from_addr_snap) = %s
+			   AND created_at >= (UTC_TIMESTAMP() - INTERVAL 90 DAY)",
+			$customer_id, $addr
+		), ARRAY_A );
+		$confirms_bad = (int) ( $fb['confirms_bad'] ?? 0 );
+		$confirms_ok  = (int) ( $fb['confirms_ok']  ?? 0 );
+		if ( $confirms_ok > 0 ) {
+			$boost = min( 30, 15 * $confirms_ok );
+			$score -= $boost;
+			$signals[] = sprintf( 'User-Feedback: %dx als sicher bestaetigt', $confirms_ok );
+		}
+		if ( $confirms_bad > 0 ) {
+			$boost = min( 50, 25 * $confirms_bad );
+			$score += $boost;
+			$signals[] = sprintf( 'User-Feedback: %dx als gefaehrlich bestaetigt', $confirms_bad );
+		}
+
 		if ( $score < -60 ) { $score = -60; }
 
 		return [

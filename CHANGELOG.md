@@ -7,6 +7,19 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.37.0] – 2026-09-19
+
+### Changed
+- **LLM-Feedback fliesst jetzt ins Absender-Scoring ein.** `SenderTrust::get_score()`
+  aggregiert die letzten 90 Tage `mg_llm_feedback`-Votes fuer denselben Absender
+  und interpretiert Thumbs-Richtung + damaliges Verdict gemeinsam:
+  - 👍 auf "dangerous/suspicious" ODER 👎 auf "clean" = User bestaetigt: bad → +25 pro Vote (Cap +50)
+  - 👍 auf "clean" ODER 👎 auf "dangerous/suspicious" = User bestaetigt: OK → -15 pro Vote (Cap -30)
+  Vorher wurden Votes nur als Trainings-Snapshots gespeichert und flossen
+  nirgendwo zurueck. Konservative Gewichtung: schwaecher als eine explizite
+  Whitelist-Regel, damit zwei fehlgeklickte Thumbs das Modell nicht umdrehen.
+  Neue Signale erscheinen in `scan_reasons` als "User-Feedback: Nx als sicher/gefaehrlich bestaetigt".
+
 ## [0.36.0] – 2026-09-19
 
 ### Added
