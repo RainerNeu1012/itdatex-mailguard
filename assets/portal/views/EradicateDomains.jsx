@@ -125,6 +125,7 @@ function DomainsList() {
 
   return (
     <>
+      <EradicateSuggestionsCard onAdded={load} />
       <form className="mg-card mg-form" onSubmit={add}>
         <h3 style={{ margin: '0 0 0.5rem' }}>Neue Domain</h3>
         <label>Domain
@@ -219,6 +220,116 @@ function DomainsList() {
         onCancel={closePending}
         onConfirm={confirmAdd}
         confirmLabel={pending && pending.purge_history ? 'Aktivieren + Verlauf vernichten' : 'Aktivieren'}
+      />
+    </>
+  );
+}
+
+// Vorschlags-Karte: liest /inbox/auto-destroy-suggestions und schlaegt Domains
+// vor, die der User >= 3-mal gepurgt und 0-mal zurueckgeholt hat.
+function EradicateSuggestionsCard({ onAdded }) {
+  const [items, setItems] = useState([]);
+  const [dismissed, setDismissed] = useState({});
+  const [busy, setBusy] = useState(null);
+  const [flash, setFlash] = useState(null);
+  const [err, setErr] = useState(null);
+  const [pending, setPending] = useState(null); // { domain, reason_text }
+  const [pendingAck, setPendingAck] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const { body } = await apiGet('inbox/auto-destroy-suggestions?window_days=90');
+      setItems((body && body.ok) ? (body.items || []) : []);
+    } catch { /* still, kein Blocker */ }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const visible = items.filter((s) => !dismissed[s.id]);
+  if (visible.length === 0 && !flash && !err) return null;
+
+  const confirmAdd = async () => {
+    if (!pending) return;
+    setBusy(pending.id); setErr(null); setFlash(null);
+    try {
+      const { status, body } = await apiPost('me/eradicate-domains', {
+        domain: pending.domain,
+        purge_history: false,
+        confirm: 'VERNICHTEN',
+      });
+      if (status < 400 && body?.ok) {
+        setFlash(`@${pending.domain} wird ab jetzt automatisch vernichtet.`);
+        setDismissed((d) => ({ ...d, [pending.id]: true }));
+        setPending(null); setPendingAck(false);
+        await load();
+        if (typeof onAdded === 'function') onAdded();
+      } else {
+        setErr(body?.error || body?.message || ('HTTP ' + status));
+      }
+    } catch { setErr('Netzwerkfehler.'); }
+    finally { setBusy(null); }
+  };
+
+  const dismiss = (sug) => setDismissed((d) => ({ ...d, [sug.id]: true }));
+
+  return (
+    <>
+      <div className="mg-card" style={{ borderColor: 'var(--mg-accent, #6366f1)' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, opacity: 0.85 }}>
+          Vorschläge · aus deiner Purge-Historie (90&nbsp;Tage)
+        </div>
+        {flash && <div className="mg-alert" style={{ marginBottom: 8 }}>{flash}</div>}
+        {err && <div className="mg-alert mg-alert-err" style={{ marginBottom: 8 }}>{err}</div>}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {visible.map((sug) => (
+            <div
+              key={sug.id}
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 10,
+                padding: '8px 10px',
+                background: 'var(--mg-surface-alt, rgba(0,0,0,0.03))',
+                border: '1px solid var(--mg-border)',
+                borderRadius: 'var(--mg-radius, 8px)',
+              }}
+            >
+              <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 11, padding: '2px 6px', border: '1px solid var(--mg-border)', borderRadius: 999 }}>Domain</span>
+                  <strong className="mg-mono" style={{ fontSize: 13, wordBreak: 'break-all' }}>@{sug.domain}</strong>
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>
+                    · {sug.purge_count}× gepurgt, {sug.distinct_senders} verschiedene Absender
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, marginTop: 4, opacity: 0.85 }}>{sug.reason_text}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button className="mg-btn mg-btn--danger" onClick={() => { setPending(sug); setPendingAck(false); }} disabled={busy === sug.id}>
+                  {busy === sug.id ? '…' : 'Auto-Vernichten'}
+                </button>
+                <button className="mg-btn" onClick={() => dismiss(sug)} disabled={busy === sug.id}>Ignorieren</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <PurgeConfirmDialog
+        open={!!pending}
+        title={pending ? `Domain @${pending.domain} auf Auto-Vernichten setzen?` : ''}
+        description={pending && (
+          <>
+            <p style={{ margin: '0 0 8px' }}>Es passiert Folgendes:</p>
+            <ul style={{ margin: '0 0 8px 18px', padding: 0 }}>
+              <li>Alle zukünftigen Mails von <strong className="mg-mono">*@{pending.domain}</strong> werden direkt beim IMAP-Fetch per EXPUNGE verworfen.</li>
+              <li>Kein Ingest, kein Papierkorb, kein Undo.</li>
+              <li>Bereits eingegangene Mails bleiben unverändert — löschen musst du die manuell.</li>
+            </ul>
+            <p style={{ margin: '0 0 8px', fontSize: 13, opacity: 0.85 }}>Grund für Vorschlag: {pending.reason_text}</p>
+          </>
+        )}
+        checked={pendingAck}
+        onToggle={setPendingAck}
+        onCancel={() => { setPending(null); setPendingAck(false); }}
+        onConfirm={confirmAdd}
+        confirmLabel="Aktivieren"
       />
     </>
   );

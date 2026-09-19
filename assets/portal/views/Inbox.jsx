@@ -404,6 +404,11 @@ function SenderList({ filter, setFilter, onReload }) {
   const [purgeAck, setPurgeAck] = useState(false);
   const [purgeAlsoDomain, setPurgeAlsoDomain] = useState(false);
   const [purgeCreateRule, setPurgeCreateRule] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [dismissedSug, setDismissedSug] = useState({});
+  const [busySug, setBusySug] = useState(null);
+  const [sugFlash, setSugFlash] = useState(null);
+  const [sugErr, setSugErr] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -419,6 +424,36 @@ function SenderList({ filter, setFilter, onReload }) {
   useEffect(() => { load(); }, [load]);
   // Nach Filter-Wechsel Group-Cache invalidieren, damit alte Sender-Details nicht falsch bleiben.
   useEffect(() => { setGroups({}); }, [filter.account_id, filter.verdict, filter.q, filter.unsub_only]);
+
+  const loadSuggestions = useCallback(async () => {
+    try {
+      const { body } = await apiGet('inbox/pattern-suggestions?window_hours=72');
+      setSuggestions((body && body.ok) ? (body.items || []) : []);
+    } catch { /* still, kein Blocker */ }
+  }, []);
+  useEffect(() => { loadSuggestions(); }, [loadSuggestions]);
+
+  const applySuggestion = async (sug) => {
+    setBusySug(sug.id); setSugFlash(null); setSugErr(null);
+    try {
+      const { status, body } = await apiPost('rules', {
+        kind: sug.kind,
+        match_type: sug.match_type,
+        pattern: sug.pattern,
+        note: `Aus Vorschlag: ${sug.reason_text}`.slice(0, 250),
+      });
+      if (status === 201 || (body && body.ok)) {
+        setSugFlash(`Regel angelegt: ${sug.match_type} = ${sug.pattern}`);
+        setDismissedSug((d) => ({ ...d, [sug.id]: true }));
+        await Promise.all([load(), loadSuggestions()]);
+      } else {
+        setSugErr(body?.error || ('HTTP ' + status));
+      }
+    } catch { setSugErr('Netzwerkfehler.'); }
+    finally { setBusySug(null); }
+  };
+  const dismissSuggestion = (sug) => setDismissedSug((d) => ({ ...d, [sug.id]: true }));
+  const visibleSug = suggestions.filter((s) => !dismissedSug[s.id]);
 
   const reloadAll = () => { load(); onReload(); };
 
@@ -659,6 +694,26 @@ function SenderList({ filter, setFilter, onReload }) {
 
   return (
     <>
+      {visibleSug.length > 0 && (
+        <div className="mg-card" style={{ marginBottom: 12, borderColor: 'var(--mg-accent, #6366f1)' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, opacity: 0.85 }}>
+            Muster-Vorschläge · letzte 72&nbsp;h
+          </div>
+          {sugFlash && <div className="mg-alert" style={{ marginBottom: 8 }}>{sugFlash}</div>}
+          {sugErr && <div className="mg-alert mg-alert-err" style={{ marginBottom: 8 }}>{sugErr}</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {visibleSug.map((sug) => (
+              <PortalSuggestionRow
+                key={sug.id}
+                sug={sug}
+                busy={busySug === sug.id}
+                onApply={() => applySuggestion(sug)}
+                onDismiss={() => dismissSuggestion(sug)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
       {error && <div className="mg-card mg-error">{error}</div>}
       {loading && <div className="mg-card">Lade …</div>}
       {!loading && data.items.length === 0 && (
@@ -1498,4 +1553,35 @@ function formatUnsubError(body, status) {
     return '⚠ Abmeldung fehlgeschlagen (' + parts.join(' · ') + ')';
   }
   return '⚠ Abmeldung fehlgeschlagen: ' + (body.error || 'unbekannter Fehler');
+}
+
+function PortalSuggestionRow({ sug, busy, onApply, onDismiss }) {
+  const badge = sug.match_type === 'from_domain' ? 'Domain'
+              : sug.match_type === 'from_name_contains' ? 'Anzeigename'
+              : sug.match_type === 'subject_contains' ? 'Betreff'
+              : sug.match_type;
+  return (
+    <div
+      style={{
+        display: 'flex', alignItems: 'flex-start', gap: 10,
+        padding: '8px 10px',
+        background: 'var(--mg-surface-alt, rgba(0,0,0,0.03))',
+        border: '1px solid var(--mg-border)',
+        borderRadius: 'var(--mg-radius, 8px)',
+      }}
+    >
+      <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, padding: '2px 6px', border: '1px solid var(--mg-border)', borderRadius: 999 }}>{badge}</span>
+          <strong className="mg-mono" style={{ fontSize: 13, wordBreak: 'break-all' }}>{sug.pattern}</strong>
+          <span style={{ fontSize: 12, opacity: 0.7 }}>· {sug.sample_count} Mails</span>
+        </div>
+        <div style={{ fontSize: 12, marginTop: 4, opacity: 0.85 }}>{sug.reason_text}</div>
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+        <button className="mg-btn" onClick={onApply} disabled={busy}>{busy ? '…' : 'Regel anlegen'}</button>
+        <button className="mg-btn" onClick={onDismiss} disabled={busy}>Ignorieren</button>
+      </div>
+    </div>
+  );
 }
