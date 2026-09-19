@@ -7,6 +7,25 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.36.0] – 2026-09-19
+
+### Added
+- **Pattern-Vorschlaege** (`GET /wp-json/itdatex-mailguard/v1/inbox/pattern-suggestions`):
+  Neue Klasse `Antiphish\PatternSuggestions` clustert `mg_messages` der letzten
+  N Stunden (Default 72) nach drei Achsen und schlaegt eine einzelne
+  Blacklist-Regel vor, die den ganzen Cluster wegraeumt:
+  - `from_domain` — mehrere unterschiedliche Absender aus derselben Domain,
+    alle suspicious/dangerous, keiner whitelisted.
+  - `from_name_contains` — identischer Anzeigename ueber mehrere Domains
+    (typischer Absender-Spoof: "Sparkasse" von 5 Fantasy-Domains).
+  - `subject_contains` — identischer `body_fingerprint` = Kampagne von
+    mehreren Sendern; Vorschlag matched auf ein Subject-Snippet (60 Zeichen).
+  Duplikat-Schutz: bestehende Regeln (Whitelist + Blacklist) werden vor der
+  Vorschlags-Emission gegen `match_type` + normalisiertes `pattern` gecheckt,
+  sodass keine redundanten Vorschlaege gerendert werden. Ranking nach
+  `sample_count` DESC, max. 15 Vorschlaege pro Response. Read-only: die App
+  legt die Regel danach ueber den bestehenden `POST /rules`-Endpoint an.
+
 ## [0.35.1] – 2026-08-25
 
 ### Fixed

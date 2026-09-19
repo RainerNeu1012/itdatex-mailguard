@@ -25,6 +25,7 @@ use Itdatex\Mailguard\Oauth\MicrosoftClient;
 use Itdatex\Mailguard\Oauth\StateToken;
 use Itdatex\Mailguard\Antiphish\Client as AntiphishClient;
 use Itdatex\Mailguard\Antiphish\EradicateDomains;
+use Itdatex\Mailguard\Antiphish\PatternSuggestions;
 use Itdatex\Mailguard\Antiphish\PurgeService;
 use Itdatex\Mailguard\Antiphish\ScanService;
 use Itdatex\Mailguard\Antiphish\Unsub;
@@ -432,6 +433,19 @@ final class Controller {
 			'args'                => [
 				'limit'      => [ 'type' => 'integer', 'default' => 50 ],
 				'filter'     => [ 'type' => 'string' ], // 'unrated' | 'up' | 'down' | ''
+			],
+		] );
+
+		// Pattern-Vorschlaege: clustert verdaechtige Mails der letzten N Stunden
+		// nach Domain / Anzeigename / Body-Fingerprint und schlaegt eine einzelne
+		// Blacklist-Regel vor, die den ganzen Cluster wegraeumt. Read-only —
+		// der User legt die Regel danach ueber den bestehenden /rules-POST an.
+		register_rest_route( self::NAMESPACE, '/inbox/pattern-suggestions', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'pattern_suggestions' ],
+			'args'                => [
+				'window_hours' => [ 'type' => 'integer', 'default' => 72 ],
 			],
 		] );
 
@@ -1124,6 +1138,18 @@ final class Controller {
 			];
 		}
 		return new WP_REST_Response( [ 'ok' => true, 'items' => $out ], 200 );
+	}
+
+	public static function pattern_suggestions( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$window = (int) ( $req['window_hours'] ?? 72 );
+		$items  = PatternSuggestions::for_customer( $cid, $window );
+		return new WP_REST_Response( [
+			'ok'           => true,
+			'window_hours' => $window,
+			'items'        => $items,
+		], 200 );
 	}
 
 	public static function manual_scan_url( WP_REST_Request $req ) {
