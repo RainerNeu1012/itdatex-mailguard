@@ -25,6 +25,7 @@ use Itdatex\Mailguard\Oauth\MicrosoftClient;
 use Itdatex\Mailguard\Oauth\StateToken;
 use Itdatex\Mailguard\Antiphish\Client as AntiphishClient;
 use Itdatex\Mailguard\Antiphish\EradicateDomains;
+use Itdatex\Mailguard\Antiphish\AutoDestroySuggestions;
 use Itdatex\Mailguard\Antiphish\PatternSuggestions;
 use Itdatex\Mailguard\Antiphish\PurgeService;
 use Itdatex\Mailguard\Antiphish\ScanService;
@@ -446,6 +447,18 @@ final class Controller {
 			'callback'            => [ __CLASS__, 'pattern_suggestions' ],
 			'args'                => [
 				'window_hours' => [ 'type' => 'integer', 'default' => 72 ],
+			],
+		] );
+
+		// Auto-Vernichten-Vorschlaege: ermittelt Domains, die der User
+		// konsistent purge-t und nie zurueckholt — Kandidaten fuer die
+		// Eradicate-Liste (Pre-Ingest-Filter, siehe EradicateDomains).
+		register_rest_route( self::NAMESPACE, '/inbox/auto-destroy-suggestions', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'auto_destroy_suggestions' ],
+			'args'                => [
+				'window_days' => [ 'type' => 'integer', 'default' => 90 ],
 			],
 		] );
 
@@ -1149,6 +1162,18 @@ final class Controller {
 			'ok'           => true,
 			'window_hours' => $window,
 			'items'        => $items,
+		], 200 );
+	}
+
+	public static function auto_destroy_suggestions( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$window = (int) ( $req['window_days'] ?? 90 );
+		$items  = AutoDestroySuggestions::for_customer( $cid, $window );
+		return new WP_REST_Response( [
+			'ok'          => true,
+			'window_days' => $window,
+			'items'       => $items,
 		], 200 );
 	}
 

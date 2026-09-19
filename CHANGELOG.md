@@ -7,6 +7,22 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.38.0] – 2026-09-19
+
+### Added
+- **Auto-Vernichten-Vorschlaege** (`GET /wp-json/itdatex-mailguard/v1/inbox/auto-destroy-suggestions`):
+  Neue Klasse `Antiphish\AutoDestroySuggestions` liest `mg_actions` der letzten
+  N Tage (Default 90) und schlaegt Domains fuer die Eradicate-Liste vor, wenn
+  der User dort >= 3 Mails per `action='purge'` `status='done'` hart entsorgt
+  hat und keine einzige `quarantine`+`undone` oder `undo_quarantine`-Aktion
+  gegen Absender derselben Domain vorliegt. Zusaetzlich muss die Domain
+  >= 2 verschiedene Absender aufweisen — damit blockiert ein einzelner
+  Massen-Spammer (`security-noreply@microsoft.com` 44x gepurgt) nicht die
+  gesamte Provider-Domain. Filter: Domains die bereits in
+  `mg_eradicate_domains` stehen oder eine `blacklist`+`from_domain`+`action=purge`-
+  Regel haben werden uebersprungen. Read-only — die App legt via bestehendem
+  `POST /me/eradicate-domains` an (mit dem etablierten `confirm: "VERNICHTEN"`-Guard).
+
 ## [0.37.0] – 2026-09-19
 
 ### Changed
