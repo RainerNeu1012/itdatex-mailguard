@@ -7,6 +7,16 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.40.0] – 2026-09-19
+
+### Added
+- **On-demand Full-Body-Fetch** (`GET /inbox/messages/{id}/body`): laedt bei
+  Bedarf den vollen Mail-Text live per IMAP nach — die DB haelt weiter nur
+  den ~500-Zeichen-Preview (kein Storage-Blowup). HTML-Bodies werden zu
+  Klartext gestripped (`wp_strip_all_tags`) — kein Sanitize/Sandbox noetig
+  fuer Feature-2-Lite. Neue Methoden `ImapClient::fetch_body_text()` und
+  `XOauth2ImapClient::fetch_body_text()` mit 100.000-Zeichen-Cap.
+
 ## [0.39.0] – 2026-09-19
 
 ### Added

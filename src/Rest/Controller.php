@@ -409,6 +409,12 @@ final class Controller {
 			],
 		] );
 
+		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/body', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_message_body' ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/rescan', [
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
@@ -1898,6 +1904,52 @@ final class Controller {
 		$res = ScanService::scan_message( $id );
 		$row = ImapMessage::find_for_customer( $id, $cid );
 		return new WP_REST_Response( [ 'ok' => $res['ok'] ?? false, 'item' => $row ? ImapMessage::public_view( $row ) : null ], 200 );
+	}
+
+	/**
+	 * On-demand Full-Text-Fetch fuer die Read-View. Wir speichern in der
+	 * DB nur den ~500-Zeichen-Preview; wenn der User die Mail wirklich
+	 * oeffnen will, ziehen wir den Body live per IMAP nach. HTML-Bodies
+	 * werden zu Text ge-strippt (wp_strip_all_tags) — das ist Feature-2-
+	 * Lite ohne den vollen HTML-Sanitize-Umbau.
+	 */
+	public static function inbox_message_body( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id  = (int) $req['id'];
+		$msg = ImapMessage::find_for_customer( $id, $cid );
+		if ( ! $msg ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
+
+		$account_id = (int) ( $msg['account_id'] ?? 0 );
+		$folder     = (string) ( $msg['folder']  ?? '' );
+		$uid        = (int) ( $msg['imap_uid']   ?? 0 );
+		if ( $account_id === 0 || $folder === '' || $uid === 0 ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'no_imap_ref' ], 200 );
+		}
+
+		$acct = ImapAccount::find_for_customer( $account_id, $cid );
+		if ( ! $acct ) { return new WP_REST_Response( [ 'ok' => false, 'error' => 'no_account' ], 200 ); }
+
+		try {
+			$client = ClientFactory::for_account( $acct );
+			$client->connect();
+			$client->select_folder( $folder );
+			$body_text = $client->fetch_body_text( $uid, 100000 );
+			$client->close();
+		} catch ( \Throwable $e ) {
+			return new WP_REST_Response( [
+				'ok'    => false,
+				'error' => 'fetch_failed',
+				'message' => $e->getMessage(),
+			], 200 );
+		}
+
+		return new WP_REST_Response( [
+			'ok'         => true,
+			'body_text'  => $body_text,
+			'truncated'  => mb_strlen( $body_text ) >= 100000,
+			'length'     => mb_strlen( $body_text ),
+		], 200 );
 	}
 
 	public static function inbox_attachments( WP_REST_Request $req ) {

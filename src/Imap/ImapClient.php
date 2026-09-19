@@ -598,6 +598,19 @@ final class ImapClient {
 		return [ $name, $addr ];
 	}
 
+	/**
+	 * On-demand Full-Body-Fetch fuer die Mail-Read-View in App/Portal.
+	 * Wrapper um extract_text_preview mit hohem Limit — der Client kann
+	 * so eine Mail wirklich lesen ohne dass wir die volle Body in der DB
+	 * speichern muessen. Fehler swallowen → leerer String, damit der
+	 * REST-Endpoint sauber { ok: true, body: '' } zurueckgibt.
+	 */
+	public function fetch_body_text( int $uid, int $max = 100000 ) : string {
+		$structure = @imap_fetchstructure( $this->stream, $uid, FT_UID );
+		if ( ! $structure ) { return ''; }
+		return $this->extract_text_preview( $uid, $structure, $max );
+	}
+
 	private function extract_text_preview( int $uid, $structure, int $max = 500 ) : string {
 		if ( empty( $structure->parts ) ) {
 			$body = @imap_fetchbody( $this->stream, $uid, '1', FT_UID );

@@ -572,6 +572,13 @@ final class XOauth2ImapClient {
 	 * Wandert die Body-Struktur ab, pickt bevorzugt text/plain, fallback text/html
 	 * (HTML wird per wp_strip_all_tags entkleidet) und holt den Body-Part.
 	 */
+	public function fetch_body_text( int $uid, int $max = 100000 ) : string {
+		if ( ! $this->stream ) { $this->connect(); }
+		$structure = $this->fetch_structure( $uid );
+		if ( ! $structure ) { return ''; }
+		return $this->extract_preview( $uid, $structure, $max );
+	}
+
 	private function extract_preview( int $uid, array $structure, int $max ) : string {
 		$best_plain = null; $best_html = null;
 		$walk = function ( array $node, string $prefix ) use ( &$walk, &$best_plain, &$best_html ) {
