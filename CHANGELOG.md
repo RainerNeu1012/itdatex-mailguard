@@ -7,6 +7,19 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.47.0] – 2026-09-20
+
+### Added (Portal-Parity)
+- **HTML-Body-Rendering in der Portal-Inbox** — expandierte Mail-Row
+  bekommt neue `MessageBody`-Komponente mit HTML/Text-Toggle und
+  Load-Images-Toggle. HTML wird in sandboxed iframe mit strikter CSP
+  gerendert (default-src 'none'). Analog zur Desktop-App.
+- **Anhang-Download im Portal** — AttachmentList bekommt Download-Button.
+  Base64-Decode zu Blob → automatischer Browser-Download-Link.
+- **Reply-Button im Portal** — pro Mail-Row erscheint `✉ Antworten` (nur
+  wenn Resend-API-Key konfiguriert ist). Modal mit Subject/Body-Prefill
+  (Re: + quoted Body), sendet via `/inbox/messages/{id}/reply`.
+
 ## [0.46.0] – 2026-09-20
 
 ### Changed

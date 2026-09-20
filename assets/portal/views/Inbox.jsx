@@ -1294,7 +1294,7 @@ function Row({ m, expanded, busy, whitelisted, suggestion, onDismissSuggestion, 
             </div>
           )}
           <LlmReasoningInline reasons={m.scan_reasons} messageId={m.id} score={m.scan_score} />
-          <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{m.body_preview || <em className="mg-muted">(keine Vorschau)</em>}</p>
+          <MessageBody messageId={m.id} preview={m.body_preview} fromAddr={m.from_addr} subject={m.subject} />
           {hasAttachments && <AttachmentList messageId={m.id} />}
           {Array.isArray(m.scan_reasons) && m.scan_reasons.length > 0 && (
             <>
@@ -1303,6 +1303,7 @@ function Row({ m, expanded, busy, whitelisted, suggestion, onDismissSuggestion, 
             </>
           )}
           <div className="mg-mail__actions">
+            <ReplyButton message={m} />
             <button className="mg-btn" disabled={!!busy} onClick={(e) => { e.stopPropagation(); onRescan(); }}>
               {busy === 'rescan' ? '…' : '↻ Erneut scannen'}
             </button>
@@ -1376,6 +1377,7 @@ function Row({ m, expanded, busy, whitelisted, suggestion, onDismissSuggestion, 
 function AttachmentList({ messageId }) {
   const [items, setItems] = useState(null);
   const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1391,6 +1393,25 @@ function AttachmentList({ messageId }) {
     })();
     return () => { cancelled = true; };
   }, [messageId]);
+
+  const download = async (att) => {
+    setBusy(att.id);
+    try {
+      const { body, status } = await apiGet(`inbox/messages/${messageId}/attachments/${att.id}/content`);
+      if (status < 400 && body?.ok && body?.content_b64) {
+        const bytes = Uint8Array.from(atob(body.content_b64), (c) => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: body.mime_type || 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = body.filename || att.filename || 'attachment';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        alert('Anhang konnte nicht geladen werden: ' + (body?.error || ('HTTP ' + status)));
+      }
+    } catch (e) { alert('Netzwerkfehler: ' + e.message); }
+    finally { setBusy(null); }
+  };
 
   if (error) return <p className="mg-muted mg-tiny" style={{ margin: '0.75rem 0 0' }}>Anhänge nicht ladbar: {error}</p>;
   if (items === null) return <p className="mg-muted mg-tiny" style={{ margin: '0.75rem 0 0' }}>Lade Anhänge …</p>;
@@ -1410,6 +1431,9 @@ function AttachmentList({ messageId }) {
                 title={a.reasons.map((r) => r.description).join(' | ')}
               >⚠ verdächtig</span>
             )}
+            <button className="mg-btn" onClick={(e) => { e.stopPropagation(); download(a); }} disabled={busy === a.id}>
+              {busy === a.id ? '…' : '⬇ Download'}
+            </button>
           </li>
         ))}
       </ul>
@@ -1583,5 +1607,142 @@ function PortalSuggestionRow({ sug, busy, onApply, onDismiss }) {
         <button className="mg-btn" onClick={onDismiss} disabled={busy}>Ignorieren</button>
       </div>
     </div>
+  );
+}
+
+// Full-Body-Fetch mit HTML/Text-Toggle + Load-Images-Toggle. Rendert HTML
+// in einem sandboxed iframe mit strikter CSP (kein JS, keine externen
+// Ressourcen ausser Bildern nach User-Wunsch).
+function MessageBody({ messageId, preview, fromAddr, subject }) {
+  const [format, setFormat] = useState('html');
+  const [body, setBody] = useState(null);
+  const [err, setErr] = useState(null);
+  const [loadImages, setLoadImages] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setBody(null); setErr(null);
+    (async () => {
+      try {
+        const suffix = format === 'html' ? '?format=html' : '';
+        const { body: r, status } = await apiGet(`inbox/messages/${messageId}/body${suffix}`);
+        if (cancelled) return;
+        if (status >= 400 || !r?.ok) setErr(r?.message || r?.error || ('HTTP ' + status));
+        else setBody(r.body || r.body_text || '');
+      } catch { if (!cancelled) setErr('Netzwerkfehler.'); }
+    })();
+    return () => { cancelled = true; };
+  }, [messageId, format]);
+
+  const csp = loadImages
+    ? "default-src 'none'; img-src http: https: data:; style-src 'unsafe-inline'; font-src data:;"
+    : "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:;";
+  const iframeDoc = body ? `<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="${csp}"><style>body{margin:0;padding:12px;font-family:system-ui,sans-serif;font-size:14px;line-height:1.5;color:#111;word-wrap:break-word;overflow-wrap:break-word}img{max-width:100%;height:auto}a{color:#2563eb}</style></head><body>${body}</body></html>` : '';
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+        <span className="mg-muted mg-tiny">{body === null ? 'Lade…' : (format === 'html' ? 'HTML' : 'Text')}</span>
+        <button className="mg-btn" style={{ opacity: format === 'html' ? 1 : 0.6 }} onClick={(e) => { e.stopPropagation(); setFormat('html'); }} disabled={body === null}>HTML</button>
+        <button className="mg-btn" style={{ opacity: format === 'text' ? 1 : 0.6 }} onClick={(e) => { e.stopPropagation(); setFormat('text'); }} disabled={body === null}>Text</button>
+        {format === 'html' && (
+          <button className="mg-btn" onClick={(e) => { e.stopPropagation(); setLoadImages((v) => !v); }}>
+            {loadImages ? '✓ Bilder' : 'Bilder laden'}
+          </button>
+        )}
+      </div>
+      {err && <p className="mg-tiny" style={{ color: 'var(--mg-err)', margin: 0 }}>{err}</p>}
+      {body === null && !err && <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{preview || <em className="mg-muted">…</em>}</p>}
+      {body && format === 'html' && (
+        <iframe
+          key={String(loadImages)}
+          title="mail-body"
+          sandbox=""
+          srcDoc={iframeDoc}
+          style={{ width: '100%', height: '50vh', minHeight: 260, border: '1px solid var(--mg-border)', borderRadius: 4, background: '#fff' }}
+        />
+      )}
+      {body && format === 'text' && (
+        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '50vh', overflowY: 'auto', padding: 8, border: '1px solid var(--mg-border)', borderRadius: 4, background: 'var(--mg-surface, #fff)', fontSize: 13, lineHeight: 1.5 }}>{body}</div>
+      )}
+    </div>
+  );
+}
+
+// Reply-Button in mg-mail__actions. Oeffnet Modal fuer Antwort via Resend.
+function ReplyButton({ message }) {
+  const [available, setAvailable] = useState(false);
+  const [from, setFrom] = useState('');
+  const [open, setOpen] = useState(false);
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      const { body, status } = await apiGet('outbound/config');
+      if (status < 400 && body?.ok) {
+        setAvailable(!!body.available);
+        setFrom(body.from_address || '');
+      }
+    })();
+  }, []);
+
+  const openModal = (e) => {
+    e.stopPropagation();
+    const subj = (message.subject || '').trim();
+    setSubject(subj.toLowerCase().startsWith('re:') ? subj : ('Re: ' + subj));
+    setBody(`\n\nAm ${message.date_hdr || ''} schrieb ${message.from_addr || ''}:\n${(message.body_preview || '').split('\n').map((l) => '> ' + l).join('\n')}`);
+    setResult(null);
+    setOpen(true);
+  };
+
+  const send = async () => {
+    if (!body.trim()) return;
+    setSending(true); setResult(null);
+    const { body: r, status } = await apiPost(`inbox/messages/${message.id}/reply`, { body, subject_override: subject });
+    setSending(false);
+    if (r?.ok) setResult({ ok: true, msg: `Gesendet. Empfaenger sieht ${from || 'noreply@send.itdatex.support'} als Absender.` });
+    else       setResult({ ok: false, msg: r?.message || r?.error || ('HTTP ' + status) });
+  };
+
+  if (!available) return null;
+  return (
+    <>
+      <button className="mg-btn" onClick={openModal}>✉ Antworten</button>
+      {open && (
+        <div
+          role="dialog" aria-modal="true"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}
+          onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget && !sending) setOpen(false); }}
+        >
+          <div style={{ background: 'var(--mg-surface, #fff)', border: '1px solid var(--mg-border)', borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.2)', maxWidth: 640, width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: 20 }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>Antworten</h3>
+            <p className="mg-tiny mg-muted">Sendet via Resend als <code>{from || 'noreply@send.itdatex.support'}</code>, Reply-To auf deine echte Adresse.</p>
+            <p className="mg-tiny">An: <code>{message.from_addr}</code></p>
+            <label style={{ display: 'block', marginBottom: 8 }}>
+              <span className="mg-tiny mg-muted">Betreff</span>
+              <input type="text" style={{ width: '100%' }} value={subject} onChange={(e) => setSubject(e.target.value)} disabled={sending} />
+            </label>
+            <label style={{ display: 'block', marginBottom: 8 }}>
+              <span className="mg-tiny mg-muted">Text</span>
+              <textarea style={{ width: '100%', minHeight: 220, fontFamily: 'inherit', fontSize: 14, lineHeight: 1.5 }} value={body} onChange={(e) => setBody(e.target.value)} disabled={sending} autoFocus />
+            </label>
+            {result && (
+              <div className="mg-tiny" style={{ marginBottom: 8, color: result.ok ? 'var(--mg-ok)' : 'var(--mg-err)' }}>{result.msg}</div>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="mg-btn" onClick={() => setOpen(false)} disabled={sending}>{result?.ok ? 'Schliessen' : 'Abbrechen'}</button>
+              {!result?.ok && (
+                <button className="mg-btn mg-btn--primary" onClick={send} disabled={sending || !body.trim()}>
+                  {sending ? 'Sendet…' : 'Senden'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
