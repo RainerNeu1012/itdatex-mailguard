@@ -7,6 +7,14 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.46.0] – 2026-09-20
+
+### Changed
+- **Full-Text-Suche** in `/inbox/messages?q=…`: der bestehende q-Param
+  sucht jetzt zusaetzlich in `body_preview` (vorher nur subject +
+  from_addr + from_name). Aktive User bemerken sofort dass sie Worte
+  aus dem Mail-Text als Query verwenden koennen.
+
 ## [0.45.0] – 2026-09-20
 
 ### Added

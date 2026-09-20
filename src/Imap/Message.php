@@ -44,8 +44,8 @@ final class Message {
 		}
 		if ( ! empty( $filter['q'] ) ) {
 			$q        = '%' . $wpdb->esc_like( (string) $filter['q'] ) . '%';
-			$where[]  = '(subject LIKE %s OR from_addr LIKE %s OR from_name LIKE %s)';
-			$params[] = $q; $params[] = $q; $params[] = $q;
+			$where[]  = '(subject LIKE %s OR from_addr LIKE %s OR from_name LIKE %s OR body_preview LIKE %s)';
+			$params[] = $q; $params[] = $q; $params[] = $q; $params[] = $q;
 		}
 		if ( ! empty( $filter['from_addr'] ) ) {
 			$where[]  = 'LOWER(from_addr) = %s';
