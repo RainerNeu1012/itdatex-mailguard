@@ -81,6 +81,13 @@ final class Installer {
 			'av_clamav_timeout'            => 15,
 			'av_max_bytes'                 => 26214400, // 25 MiB
 			'av_notify_admin'              => 1,
+			// Resend-Outbound: itdatex-weite API-Konfiguration. Alle User
+			// senden via denselben Resend-Account, From=noreply@itdatex.support,
+			// Reply-To=ihre eigene IMAP-Adresse. Reines Value-Add (Anti-Spam-
+			// Antworten + Abuse-Reports) — nicht als voller Mail-Client positioniert.
+			'resend_api_key'               => '',
+			'resend_from_address'          => 'noreply@itdatex.support',
+			'resend_from_name'             => 'MailGuard User',
 		];
 		$existing = (array) get_option( self::OPTION_SETTINGS, [] );
 		update_option( self::OPTION_SETTINGS, array_merge( $defaults, $existing ), false );

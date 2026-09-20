@@ -25,6 +25,7 @@ use Itdatex\Mailguard\Oauth\MicrosoftClient;
 use Itdatex\Mailguard\Oauth\StateToken;
 use Itdatex\Mailguard\Antiphish\Client as AntiphishClient;
 use Itdatex\Mailguard\Antiphish\EradicateDomains;
+use Itdatex\Mailguard\Outbound\ResendClient;
 use Itdatex\Mailguard\Antiphish\AutoDestroySuggestions;
 use Itdatex\Mailguard\Antiphish\PatternSuggestions;
 use Itdatex\Mailguard\Antiphish\PurgeService;
@@ -420,6 +421,34 @@ final class Controller {
 			'methods'             => 'GET',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'inbox_attachment_content' ],
+		] );
+
+		// Outbound: Reply auf existierende Mail + Compose neu. Beide via
+		// Resend (noreply@itdatex.support), Reply-To auf User's echte Adresse.
+		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/reply', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_message_reply' ],
+			'args'                => [
+				'body' => [ 'type' => 'string', 'required' => true ],
+				'subject_override' => [ 'type' => 'string' ],
+			],
+		] );
+		register_rest_route( self::NAMESPACE, '/outbound/send', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'outbound_send' ],
+			'args'                => [
+				'to'         => [ 'type' => 'string', 'required' => true ],
+				'subject'    => [ 'type' => 'string', 'required' => true ],
+				'body'       => [ 'type' => 'string', 'required' => true ],
+				'account_id' => [ 'type' => 'integer' ],
+			],
+		] );
+		register_rest_route( self::NAMESPACE, '/outbound/config', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'outbound_config' ],
 		] );
 
 		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/rescan', [
@@ -2027,6 +2056,129 @@ final class Controller {
 			'size_bytes' => strlen( $content ),
 			'content_b64' => base64_encode( $content ),
 		], 200 );
+	}
+
+	/**
+	 * Zeigt der App/Portal ob Outbound-Send verfuegbar ist. Read-only —
+	 * gibt keinen API-Key zurueck, nur ob er gesetzt ist.
+	 */
+	public static function outbound_config( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$key = trim( (string) \Itdatex\Mailguard\Admin\Settings::get( 'resend_api_key', '' ) );
+		return new WP_REST_Response( [
+			'ok'           => true,
+			'available'    => $key !== '',
+			'from_address' => (string) \Itdatex\Mailguard\Admin\Settings::get( 'resend_from_address', 'noreply@itdatex.support' ),
+		], 200 );
+	}
+
+	/**
+	 * Reply auf eine bestehende Mail. Nutzt die msg-Row als Basis
+	 * (To=from_addr des Originals, In-Reply-To=msg_id_hdr, Subject=Re:...).
+	 * Reply-To wird auf den IMAP-User des Original-Accounts gesetzt.
+	 */
+	public static function inbox_message_reply( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$mid  = (int) $req['id'];
+		$msg  = ImapMessage::find_for_customer( $mid, $cid );
+		if ( ! $msg ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
+
+		$to = trim( (string) ( $msg['from_addr'] ?? '' ) );
+		if ( $to === '' ) { return new WP_REST_Response( [ 'ok' => false, 'error' => 'no_original_from' ], 200 ); }
+
+		$acct = ImapAccount::find_for_customer( (int) ( $msg['account_id'] ?? 0 ), $cid );
+		$reply_to = $acct ? (string) ( $acct['username'] ?? '' ) : '';
+
+		$json = (array) $req->get_json_params();
+		$body = trim( (string) ( $json['body'] ?? '' ) );
+		if ( $body === '' ) { return new WP_REST_Response( [ 'ok' => false, 'error' => 'empty_body' ], 200 ); }
+
+		$original_subject = trim( (string) ( $msg['subject'] ?? '' ) );
+		$subject = trim( (string) ( $json['subject_override'] ?? '' ) );
+		if ( $subject === '' ) {
+			$subject = stripos( $original_subject, 're:' ) === 0
+				? $original_subject
+				: 'Re: ' . $original_subject;
+		}
+
+		$msg_id_hdr = (string) ( $msg['msg_id_hdr'] ?? '' );
+		$in_reply_to = $msg_id_hdr !== '' ? ( '<' . trim( $msg_id_hdr, '<>' ) . '>' ) : '';
+
+		$res = ResendClient::send( [
+			'to'          => $to,
+			'subject'     => $subject,
+			'reply_to'    => $reply_to,
+			'body_text'   => $body,
+			'in_reply_to' => $in_reply_to,
+			'references'  => $in_reply_to,
+		] );
+
+		if ( ! empty( $res['ok'] ) ) {
+			self::log_outbound_action( $cid, $mid, $to, $subject, 'reply', $res['id'] ?? '' );
+		}
+		return new WP_REST_Response( $res, 200 );
+	}
+
+	/**
+	 * Compose neuer Mail (nicht als Reply). To/Subject/Body vom User.
+	 * Reply-To = username des angegebenen account_id, oder Fallback des
+	 * ersten Accounts wenn nicht gesetzt.
+	 */
+	public static function outbound_send( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json = (array) $req->get_json_params();
+		$to      = trim( (string) ( $json['to']      ?? '' ) );
+		$subject = trim( (string) ( $json['subject'] ?? '' ) );
+		$body    = trim( (string) ( $json['body']    ?? '' ) );
+		if ( $to === '' || $subject === '' || $body === '' ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'missing_fields' ], 200 );
+		}
+
+		$acct_id = (int) ( $json['account_id'] ?? 0 );
+		$acct = $acct_id > 0 ? ImapAccount::find_for_customer( $acct_id, $cid ) : null;
+		if ( ! $acct ) {
+			$all = ImapAccount::list_for_customer( $cid );
+			$acct = $all[0] ?? null;
+		}
+		$reply_to = $acct ? (string) ( $acct['username'] ?? '' ) : '';
+
+		$res = ResendClient::send( [
+			'to'        => $to,
+			'subject'   => $subject,
+			'reply_to'  => $reply_to,
+			'body_text' => $body,
+		] );
+
+		if ( ! empty( $res['ok'] ) ) {
+			self::log_outbound_action( $cid, 0, $to, $subject, 'compose', $res['id'] ?? '' );
+		}
+		return new WP_REST_Response( $res, 200 );
+	}
+
+	/**
+	 * Persist Outbound-Sends in mg_actions als Audit-Trail.
+	 * action='outbound_reply' oder 'outbound_compose'. Kein IMAP-Move —
+	 * die gesendete Mail landet nicht automatisch im Sent-Folder (die
+	 * Resend-API sendet nur — wenn der User die Mail im Sent-Folder haben
+	 * will, muesste MailGuard sie via IMAP APPEND dort ablegen. Feature-TODO.)
+	 */
+	private static function log_outbound_action( int $cid, int $mid, string $to, string $subject, string $kind, string $resend_id ) : void {
+		global $wpdb;
+		$t = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_ACTIONS;
+		$wpdb->insert( $t, [
+			'customer_id'   => $cid,
+			'account_id'    => 0,
+			'message_id'    => $mid,
+			'action'        => 'outbound_' . $kind,
+			'subject_snap'  => mb_substr( $subject, 0, 500 ),
+			'from_addr_snap' => mb_substr( $to, 0, 320 ),
+			'status'        => 'done',
+			'actor'         => 'user',
+			'created_at'    => current_time( 'mysql', true ),
+		] );
 	}
 
 	public static function inbox_attachments( WP_REST_Request $req ) {

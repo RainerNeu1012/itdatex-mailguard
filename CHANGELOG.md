@@ -7,6 +7,38 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.42.0] – 2026-09-20
+
+### Added
+- **Resend-Outbound-Integration** — MailGuard-User koennen jetzt auf Mails
+  antworten oder neue Compose-Mails senden. Alle User senden via einen
+  zentralen itdatex-Resend-Account (site-wide `resend_api_key` in Settings),
+  From = `noreply@itdatex.support`, Reply-To = die reale IMAP-Adresse des
+  Users. Positioniert als Anti-Spam-Feature (Antworten mit "STOP",
+  Abuse-Reports) plus Ergaenzung zu Feature-2-Read-View.
+- **Neuer Client** `Outbound\ResendClient::send()` — direkter HTTPS-Call
+  an `api.resend.com/v1/emails` mit Bearer-Auth, kein Composer-Dep.
+  Handhabt Threading-Header (In-Reply-To/References) fuer Mail-Client-
+  seitige Konversations-Zuordnung.
+- **Neue Endpoints:**
+  - `POST /inbox/messages/{id}/reply` — Reply auf existierende Mail;
+    zieht To/Subject/Threading aus dem Original.
+  - `POST /outbound/send` — Compose neu mit To/Subject/Body.
+  - `GET /outbound/config` — read-only: `available` (API-Key gesetzt?)
+    und `from_address` (fuer UI-Hinweis).
+- **Neue Settings-Defaults:** `resend_api_key`, `resend_from_address`,
+  `resend_from_name`. Muss admin-seitig ausgefuellt werden (Resend-Account
+  + Domain-Verification).
+- **Outbound-Audit:** Sendungen werden in `mg_actions` als
+  `outbound_reply` / `outbound_compose` protokolliert.
+
+### Bekannte Limitationen (bewusst)
+- Kein IMAP APPEND ins Sent-Folder — gesendete Mail ist nur in Resend-Log
+  + `mg_actions`, nicht im User-Mailbox-Sent-Ordner. Future TODO.
+- From-Address ist fix `noreply@itdatex.support` fuer alle User. Fuer
+  echten "aus deiner Adresse senden" braucht OAuth-SMTP-Route (nicht Teil
+  dieser Version, aber Migrations-Pfad ist offen).
+
 ## [0.41.0] – 2026-09-20
 
 ### Added
