@@ -55,6 +55,10 @@ final class Message {
 			$where[]  = 'body_fingerprint = %s';
 			$params[] = (string) $filter['fingerprint'];
 		}
+		if ( ! empty( $filter['folder'] ) ) {
+			$where[]  = 'folder = %s';
+			$params[] = (string) $filter['folder'];
+		}
 
 		$where_sql = 'WHERE ' . implode( ' AND ', $where );
 		$rows = $wpdb->get_results( $wpdb->prepare(

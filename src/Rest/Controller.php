@@ -466,6 +466,13 @@ final class Controller {
 			],
 		] );
 
+		register_rest_route( self::NAMESPACE, '/inbox/folders', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_folders' ],
+			'args'                => [ 'account_id' => [ 'type' => 'integer' ] ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/seen', [
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
@@ -911,6 +918,7 @@ final class Controller {
 			'q'          => trim( (string) $req->get_param( 'q' ) ),
 			'from_addr'  => trim( (string) $req->get_param( 'from_addr' ) ),
 			'fingerprint'=> trim( (string) $req->get_param( 'fingerprint' ) ),
+			'folder'     => trim( (string) $req->get_param( 'folder' ) ),
 		];
 		$page     = (int) $req->get_param( 'page' );
 		$per_page = (int) $req->get_param( 'per_page' );
@@ -1949,6 +1957,48 @@ final class Controller {
 		if ( is_wp_error( $cid ) ) { return $cid; }
 		$res = UnsubService::status_refresh( (int) $req['id'], $cid );
 		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
+	}
+
+	/**
+	 * Listet alle Ordner mit Message-Count pro Account. Wird von der App
+	 * fuer die Ordner-Navigation genutzt. Ohne account_id: aggregiert
+	 * ueber alle Accounts. Der Count kommt aus mg_messages (was wir
+	 * tatsaechlich gefetched haben), nicht aus IMAP live — snappy UI.
+	 */
+	public static function inbox_folders( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$account_id = (int) $req->get_param( 'account_id' );
+
+		global $wpdb;
+		$t = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_MESSAGES;
+		$where = 'customer_id = %d';
+		$args = [ $cid ];
+		if ( $account_id > 0 ) {
+			$where .= ' AND account_id = %d';
+			$args[] = $account_id;
+		}
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT folder, account_id, COUNT(*) AS total,
+				SUM(scan_verdict IN ('suspicious','dangerous')) AS risky,
+				SUM(quarantine_action_id IS NOT NULL) AS quarantined
+			 FROM {$t}
+			 WHERE {$where} AND folder <> ''
+			 GROUP BY folder, account_id
+			 ORDER BY total DESC",
+			$args
+		), ARRAY_A ) ?: [];
+
+		return new WP_REST_Response( [
+			'ok'    => true,
+			'items' => array_map( static fn( $r ) => [
+				'folder'      => (string) $r['folder'],
+				'account_id'  => (int) $r['account_id'],
+				'total'       => (int) $r['total'],
+				'risky'       => (int) $r['risky'],
+				'quarantined' => (int) $r['quarantined'],
+			], $rows ),
+		], 200 );
 	}
 
 	/**

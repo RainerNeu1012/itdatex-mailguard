@@ -7,6 +7,16 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.45.0] – 2026-09-20
+
+### Added
+- **Folder-Navigation-Endpoint** `GET /inbox/folders?account_id=N`: liefert
+  alle Ordner mit Message-Count aus mg_messages (total + risky + quarantined).
+  Sortiert nach total DESC — grosse Ordner zuerst.
+- **Folder-Filter in `/inbox/messages`**: neuer `?folder=X`-Query-Param
+  filtert Mails auf einen spezifischen IMAP-Ordner. Kombiniert sich mit
+  bestehenden account_id/verdict/q/from_addr-Filtern.
+
 ## [0.44.0] – 2026-09-20
 
 ### Added
