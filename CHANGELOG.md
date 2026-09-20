@@ -7,6 +7,17 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.44.0] – 2026-09-20
+
+### Added
+- **IMAP-Flag-Sync**: neue Methoden `ImapClient::set_flag()` / `clear_flag()`
+  und `XOauth2ImapClient::set_flag()` / `clear_flag()` fuer UID STORE
+  +FLAGS.SILENT (RFC 3501 §6.4.6).
+- **Endpoint** `POST /inbox/messages/{id}/seen?seen=true|false`: setzt/entfernt
+  `\\Seen` auf der Server-Mail. Wird von der App aufgerufen sobald der
+  User die Mail im Detail-View oeffnet — damit Outlook/iCloud auf
+  anderen Geraeten dieselbe Mail auch als gelesen anzeigen.
+
 ## [0.43.0] – 2026-09-20
 
 ### Added

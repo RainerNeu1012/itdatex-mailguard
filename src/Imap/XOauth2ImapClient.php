@@ -572,6 +572,29 @@ final class XOauth2ImapClient {
 	 * Wandert die Body-Struktur ab, pickt bevorzugt text/plain, fallback text/html
 	 * (HTML wird per wp_strip_all_tags entkleidet) und holt den Body-Part.
 	 */
+	/**
+	 * Setzt ein IMAP-Flag via UID STORE +FLAGS.SILENT. RFC 3501 §6.4.6.
+	 * Returns true bei Server-OK, sonst false — Fehler swallowen, ist
+	 * ein Convenience-Signal fuer den Provider, nicht kritisch fuer den
+	 * MailGuard-Zustand.
+	 */
+	public function set_flag( int $uid, string $flag ) : bool {
+		return $this->store_flags( $uid, $flag, true );
+	}
+
+	public function clear_flag( int $uid, string $flag ) : bool {
+		return $this->store_flags( $uid, $flag, false );
+	}
+
+	private function store_flags( int $uid, string $flag, bool $add ) : bool {
+		if ( ! $this->stream ) { $this->connect(); }
+		if ( $flag === '' ) { return false; }
+		$op  = $add ? '+' : '-';
+		$tag = $this->send( 'UID STORE ' . $uid . ' ' . $op . 'FLAGS.SILENT (' . $flag . ')' );
+		$response = $this->read_until_tag( $tag );
+		return (bool) preg_match( '/^' . preg_quote( $tag, '/' ) . ' OK/m', $response );
+	}
+
 	public function fetch_body_text( int $uid, int $max = 100000 ) : string {
 		if ( ! $this->stream ) { $this->connect(); }
 		$structure = $this->fetch_structure( $uid );

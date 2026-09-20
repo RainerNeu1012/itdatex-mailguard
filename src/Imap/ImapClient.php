@@ -605,6 +605,24 @@ final class ImapClient {
 	 * speichern muessen. Fehler swallowen → leerer String, damit der
 	 * REST-Endpoint sauber { ok: true, body: '' } zurueckgibt.
 	 */
+	/**
+	 * Setzt ein IMAP-Flag auf der Server-Mail (z.B. \\Seen wenn User die
+	 * Mail in MailGuard oeffnet). imap_setflag_full erwartet die UID im
+	 * Sequence-Set als String und den Flag mit fuehrendem Backslash.
+	 * Rueckgabe: true bei Erfolg, false wenn Set fehlschlaegt (nicht fatal).
+	 */
+	public function set_flag( int $uid, string $flag ) : bool {
+		if ( ! $this->stream ) { $this->connect(); }
+		if ( $flag === '' ) { return false; }
+		return (bool) @imap_setflag_full( $this->stream, (string) $uid, $flag, ST_UID );
+	}
+
+	public function clear_flag( int $uid, string $flag ) : bool {
+		if ( ! $this->stream ) { $this->connect(); }
+		if ( $flag === '' ) { return false; }
+		return (bool) @imap_clearflag_full( $this->stream, (string) $uid, $flag, ST_UID );
+	}
+
 	public function fetch_body_text( int $uid, int $max = 100000 ) : string {
 		$structure = @imap_fetchstructure( $this->stream, $uid, FT_UID );
 		if ( ! $structure ) { return ''; }

@@ -466,6 +466,13 @@ final class Controller {
 			],
 		] );
 
+		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/seen', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_message_mark_seen' ],
+			'args'                => [ 'seen' => [ 'type' => 'boolean', 'default' => true ] ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/rescan', [
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
@@ -1942,6 +1949,42 @@ final class Controller {
 		if ( is_wp_error( $cid ) ) { return $cid; }
 		$res = UnsubService::status_refresh( (int) $req['id'], $cid );
 		return new WP_REST_Response( $res, ! empty( $res['ok'] ) ? 200 : 502 );
+	}
+
+	/**
+	 * Setzt / entfernt \\Seen IMAP-Flag auf der Server-Mail. Wird von der
+	 * App aufgerufen sobald der User die Mail im Detail-View oeffnet —
+	 * damit Outlook/iCloud auf dem Handy dieselbe Mail auch als gelesen
+	 * anzeigen. Fehler swallowen — MailGuard bleibt funktionsfaehig auch
+	 * wenn IMAP kurz nicht mag.
+	 */
+	public static function inbox_message_mark_seen( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$mid = (int) $req['id'];
+		$msg = ImapMessage::find_for_customer( $mid, $cid );
+		if ( ! $msg ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
+
+		$seen = (bool) ( $req['seen'] ?? true );
+		$account_id = (int) ( $msg['account_id'] ?? 0 );
+		$folder     = (string) ( $msg['folder']  ?? '' );
+		$uid        = (int) ( $msg['imap_uid']   ?? 0 );
+		if ( $account_id === 0 || $folder === '' || $uid === 0 ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'no_imap_ref' ], 200 );
+		}
+		$acct = ImapAccount::find_for_customer( $account_id, $cid );
+		if ( ! $acct ) { return new WP_REST_Response( [ 'ok' => false, 'error' => 'no_account' ], 200 ); }
+
+		try {
+			$client = ClientFactory::for_account( $acct );
+			$client->connect();
+			$client->select_folder( $folder );
+			$ok = $seen ? $client->set_flag( $uid, '\\Seen' ) : $client->clear_flag( $uid, '\\Seen' );
+			$client->close();
+		} catch ( \Throwable $e ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'imap_error', 'message' => $e->getMessage() ], 200 );
+		}
+		return new WP_REST_Response( [ 'ok' => (bool) $ok, 'seen' => $seen ], 200 );
 	}
 
 	public static function inbox_rescan( WP_REST_Request $req ) {
