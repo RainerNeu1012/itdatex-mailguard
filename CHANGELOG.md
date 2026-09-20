@@ -7,6 +7,31 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.48.0] – 2026-09-20
+
+### Added
+- **IMAP APPEND to Sent** — nach jedem erfolgreichen Resend-Send
+  (Reply oder Compose) wird eine Kopie der Mail als RFC-822-formatiertes
+  Message-Objekt im "Gesendet"-Ordner des User-Postfachs abgelegt.
+  Neue Klasse `Outbound\SentFolderMirror::mirror()` mit:
+  - Sent-Folder-Detection anhand `mg_imap_folders` (kandidiert
+    "Sent", "Sent Messages", "Sent Items", "INBOX/Sent", "[Gmail]/Sent Mail")
+  - RFC-822-Bau mit MIME-8bit, UTF-8-Subject-Encoding fuer non-ASCII
+  - Threading-Header (In-Reply-To, References) fuer Konversations-Zuordnung
+- **Neue Methoden**: `ImapClient::append_message()` und
+  `XOauth2ImapClient::append_message()` — c-client via `imap_append`,
+  XOauth2 via manuellem RFC-3501-APPEND-Command mit Literal-Bytes.
+- Fire-and-forget aus dem Reply/Compose-Endpoint aufgerufen — die
+  User-facing Response bleibt "ok" auch wenn der Sent-Mirror fehlschlaegt.
+  Ergebnis wird als `sent_folder_mirror` in der Response mitgeliefert.
+
+### Bekannte Nuancen
+- Die Sent-Kopie hat als `From` die echte IMAP-Adresse des Users
+  (`itdatex@outlook.com`) — nicht `noreply@send.itdatex.support` wie
+  die tatsaechlich gesendete Mail. Grund: das ist eine lokale Anzeige-
+  Kopie in Outlook, nicht auf dem Wire — die echte From-Auth ist
+  bereits via Resend-Send abgehandelt.
+
 ## [0.47.0] – 2026-09-20
 
 ### Added (Portal-Parity)

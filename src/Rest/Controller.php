@@ -26,6 +26,7 @@ use Itdatex\Mailguard\Oauth\StateToken;
 use Itdatex\Mailguard\Antiphish\Client as AntiphishClient;
 use Itdatex\Mailguard\Antiphish\EradicateDomains;
 use Itdatex\Mailguard\Outbound\ResendClient;
+use Itdatex\Mailguard\Outbound\SentFolderMirror;
 use Itdatex\Mailguard\Antiphish\AutoDestroySuggestions;
 use Itdatex\Mailguard\Antiphish\PatternSuggestions;
 use Itdatex\Mailguard\Antiphish\PurgeService;
@@ -2225,6 +2226,15 @@ final class Controller {
 
 		if ( ! empty( $res['ok'] ) ) {
 			self::log_outbound_action( $cid, $mid, $to, $subject, 'reply', $res['id'] ?? '' );
+			// Kopie im Sent-Ordner des User-Postfachs ablegen — fire-and-forget.
+			$mirror = SentFolderMirror::mirror( $cid, (int) ( $msg['account_id'] ?? 0 ), [
+				'to'          => $to,
+				'subject'     => $subject,
+				'body_text'   => $body,
+				'in_reply_to' => $in_reply_to,
+				'references'  => $in_reply_to,
+			] );
+			$res['sent_folder_mirror'] = $mirror;
 		}
 		return new WP_REST_Response( $res, 200 );
 	}
@@ -2262,6 +2272,14 @@ final class Controller {
 
 		if ( ! empty( $res['ok'] ) ) {
 			self::log_outbound_action( $cid, 0, $to, $subject, 'compose', $res['id'] ?? '' );
+			if ( $acct ) {
+				$mirror = SentFolderMirror::mirror( $cid, (int) $acct['id'], [
+					'to'        => $to,
+					'subject'   => $subject,
+					'body_text' => $body,
+				] );
+				$res['sent_folder_mirror'] = $mirror;
+			}
 		}
 		return new WP_REST_Response( $res, 200 );
 	}

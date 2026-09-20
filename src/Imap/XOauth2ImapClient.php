@@ -582,6 +582,34 @@ final class XOauth2ImapClient {
 		return $this->store_flags( $uid, $flag, true );
 	}
 
+	/**
+	 * IMAP APPEND via manuellem RFC-3501-Command. Format:
+	 *   A0001 APPEND "Sent" (\Seen) {12345}\r\n
+	 *   <literal bytes><CRLF>
+	 * Server antwortet mit "+ Ready for..." wenn er das Literal erwartet,
+	 * dann OK/BAD nach dem CRLF.
+	 */
+	public function append_message( string $folder, string $rfc822, string $flags = '\\Seen' ) : bool {
+		if ( ! $this->stream ) { $this->connect(); }
+		if ( $folder === '' || $rfc822 === '' ) { return false; }
+
+		// CRLF-Normalisierung — IMAP verlangt \r\n, viele PHP-Strings haben nur \n.
+		$msg = preg_replace( "/\r?\n/", "\r\n", $rfc822 );
+		$len = strlen( $msg );
+
+		$tag = $this->send( 'APPEND "' . addslashes( $folder ) . '" (' . $flags . ') {' . $len . '}' );
+
+		// Server sollte "+ ..." zurueckgeben; danach senden wir die Bytes.
+		$line = $this->read_line();
+		if ( strlen( $line ) === 0 || $line[0] !== '+' ) {
+			return false;
+		}
+		fwrite( $this->stream, $msg . "\r\n" );
+
+		$response = $this->read_until_tag( $tag );
+		return (bool) preg_match( '/^' . preg_quote( $tag, '/' ) . ' OK/m', $response );
+	}
+
 	public function clear_flag( int $uid, string $flag ) : bool {
 		return $this->store_flags( $uid, $flag, false );
 	}

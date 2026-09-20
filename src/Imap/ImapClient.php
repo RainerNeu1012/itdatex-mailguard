@@ -617,6 +617,31 @@ final class ImapClient {
 		return (bool) @imap_setflag_full( $this->stream, (string) $uid, $flag, ST_UID );
 	}
 
+	/**
+	 * IMAP APPEND: legt eine bereits RFC-822-formatierte Mail im gegebenen
+	 * Folder ab. Wird nach Resend-Send genutzt, damit die Reply auch im
+	 * Outlook/iCloud "Gesendet"-Ordner sichtbar ist.
+	 * $flags z.B. '\\Seen' — imap_append will das mit einfachen Backslashes.
+	 */
+	public function append_message( string $folder, string $rfc822, string $flags = '\\Seen' ) : bool {
+		if ( ! $this->stream ) { $this->connect(); }
+		if ( $folder === '' || $rfc822 === '' ) { return false; }
+		$mbox = self::mailbox_string_for( $this->host, $this->port, $this->encryption, $folder );
+		return (bool) @imap_append( $this->stream, $mbox, $rfc822, $flags );
+	}
+
+	/**
+	 * Baut den mailbox-Referenz-String fuer imap_append. c-client will die
+	 * volle Referenz inkl. Host/Port/Flags, nicht nur den Folder-Namen.
+	 */
+	private static function mailbox_string_for( string $host, int $port, string $encryption, string $folder ) : string {
+		$flags = '/imap';
+		if ( strtolower( $encryption ) === 'ssl' ) { $flags .= '/ssl'; }
+		elseif ( strtolower( $encryption ) === 'tls' ) { $flags .= '/tls'; }
+		$flags .= '/novalidate-cert';
+		return sprintf( '{%s:%d%s}%s', $host, $port, $flags, $folder );
+	}
+
 	public function clear_flag( int $uid, string $flag ) : bool {
 		if ( ! $this->stream ) { $this->connect(); }
 		if ( $flag === '' ) { return false; }
