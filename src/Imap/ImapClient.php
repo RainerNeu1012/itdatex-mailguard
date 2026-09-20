@@ -611,6 +611,77 @@ final class ImapClient {
 		return $this->extract_text_preview( $uid, $structure, $max );
 	}
 
+	/**
+	 * Holt den HTML-Body einer Mail (mit strip-Cleanup fuer XSS-Vektoren).
+	 * Fallback: wenn keine HTML-Alternative existiert, wird der Plain-Text
+	 * mit <pre>-Escape zurueckgeliefert, damit der Client immer eine
+	 * konsistente Body-Response erhaelt.
+	 *
+	 * Returns: [ 'format' => 'html'|'text', 'body' => string ]
+	 */
+	public function fetch_body_html( int $uid, int $max = 500000 ) : array {
+		if ( ! $this->stream ) { $this->connect(); }
+		$structure = @imap_fetchstructure( $this->stream, $uid, FT_UID );
+		if ( ! $structure ) { return [ 'format' => 'text', 'body' => '' ]; }
+
+		if ( empty( $structure->parts ) ) {
+			$raw = (string) @imap_fetchbody( $this->stream, $uid, '1', FT_UID );
+			$decoded = $this->decode_part( $raw, (int) ( $structure->encoding ?? 0 ) );
+			return [ 'format' => 'text', 'body' => mb_substr( $decoded, 0, $max ) ];
+		}
+
+		$best_plain = null; $best_html = null;
+		$walk = function ( $parts, $prefix ) use ( &$walk, &$best_plain, &$best_html ) {
+			foreach ( $parts as $i => $p ) {
+				$num = $prefix === '' ? (string) ( $i + 1 ) : ( $prefix . '.' . ( $i + 1 ) );
+				$type    = (int) ( $p->type ?? 0 );
+				$subtype = strtolower( (string) ( $p->subtype ?? '' ) );
+				if ( $type === 0 && $subtype === 'plain' && $best_plain === null ) {
+					$best_plain = [ $num, (int) ( $p->encoding ?? 0 ) ];
+				}
+				if ( $type === 0 && $subtype === 'html' && $best_html === null ) {
+					$best_html = [ $num, (int) ( $p->encoding ?? 0 ) ];
+				}
+				if ( ! empty( $p->parts ) ) { $walk( $p->parts, $num ); }
+			}
+		};
+		$walk( $structure->parts, '' );
+
+		if ( $best_html !== null ) {
+			$body = (string) @imap_fetchbody( $this->stream, $uid, $best_html[0], FT_UID );
+			$decoded = $this->decode_part( $body, $best_html[1] );
+			return [ 'format' => 'html', 'body' => mb_substr( self::sanitize_html_body( $decoded ), 0, $max ) ];
+		}
+		if ( $best_plain !== null ) {
+			$body = (string) @imap_fetchbody( $this->stream, $uid, $best_plain[0], FT_UID );
+			$decoded = $this->decode_part( $body, $best_plain[1] );
+			return [ 'format' => 'text', 'body' => mb_substr( $decoded, 0, $max ) ];
+		}
+		return [ 'format' => 'text', 'body' => '' ];
+	}
+
+	/**
+	 * Minimal-Sanitize gegen die klassischen XSS-Vektoren. Der Client rendert
+	 * das Ergebnis in einem <iframe sandbox=""> ohne allow-scripts, das ist
+	 * die eigentliche Verteidigung. Dieser Strip ist Defense-in-Depth:
+	 *  - <script>, <style>, <link>, <meta>, <object>, <embed>, <iframe> raus
+	 *  - on*-Handler-Attribute raus
+	 *  - javascript:-URLs neutralisiert
+	 * External images (http/https src) bleiben — der Client hat einen
+	 * Load-Images-Toggle der sie initial per CSP blockt.
+	 */
+	public static function sanitize_html_body( string $html ) : string {
+		$html = preg_replace( '#<(script|style|link|meta|object|embed|iframe|frame|frameset|form)\b[^>]*>.*?</\1\s*>#is', '', $html ) ?? $html;
+		$html = preg_replace( '#<(script|style|link|meta|object|embed|iframe|frame|frameset|form|input|button|textarea)\b[^>]*/?>#is', '', $html ) ?? $html;
+		$html = preg_replace( '#\son[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^>\s]+)#is', '', $html ) ?? $html;
+		$html = preg_replace_callback(
+			'#(href|src|action|data)\s*=\s*(["\'])\s*javascript:[^"\']*\2#is',
+			fn( $m ) => $m[1] . '="#blocked-js"',
+			$html
+		) ?? $html;
+		return $html;
+	}
+
 	private function extract_text_preview( int $uid, $structure, int $max = 500 ) : string {
 		if ( empty( $structure->parts ) ) {
 			$body = @imap_fetchbody( $this->stream, $uid, '1', FT_UID );

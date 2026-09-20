@@ -7,6 +7,25 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.41.0] – 2026-09-20
+
+### Added
+- **HTML-Body-Fetch** (`GET /inbox/messages/{id}/body?format=html`): liefert
+  HTML-Body statt Plain-Text fuer sandboxed iframe-Rendering in App/Portal.
+  Server-seitiger Minimal-Strip gegen XSS-Vektoren: `<script>`/`<style>`/
+  `<link>`/`<meta>`/`<object>`/`<embed>`/`<iframe>`/`<form>` raus, `on*`-
+  Handler-Attribute raus, `javascript:`-URLs neutralisiert. Client-seitiges
+  Rendern erfolgt zusaetzlich in `<iframe sandbox="">` (ohne allow-scripts)
+  mit CSP — Defense-in-Depth.
+- **Attachment-Content-Fetch** (`GET /inbox/messages/{id}/attachments/{aid}/content`):
+  liefert Anhaenge on-demand, base64-kodiert im JSON. Cap 20 MB (schuetzt
+  vor Multi-GB-Videos). Nutzt bestehende `fetch_attachment_body`-API der
+  ImapClient/XOauth2ImapClient.
+- Neue Methoden `ImapClient::fetch_body_html()` und
+  `XOauth2ImapClient::fetch_body_html()` — beide mit Fallback auf Plain-
+  Text wenn kein HTML-Part vorhanden. Statische Helper
+  `ImapClient::sanitize_html_body()`.
+
 ## [0.40.0] – 2026-09-19
 
 ### Added

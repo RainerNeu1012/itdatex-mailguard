@@ -579,6 +579,44 @@ final class XOauth2ImapClient {
 		return $this->extract_preview( $uid, $structure, $max );
 	}
 
+	/**
+	 * XOAUTH2-Variante des HTML-Body-Fetch. Die Structure ist hier ein
+	 * assoc-Array (nicht object wie bei c-client), deshalb parallele
+	 * Implementation. Fallback auf Plain-Text wenn kein HTML-Part vorhanden.
+	 * Returns: [ 'format' => 'html'|'text', 'body' => string ]
+	 */
+	public function fetch_body_html( int $uid, int $max = 500000 ) : array {
+		if ( ! $this->stream ) { $this->connect(); }
+		$structure = $this->fetch_structure( $uid );
+		if ( ! $structure ) { return [ 'format' => 'text', 'body' => '' ]; }
+
+		$best_plain = null; $best_html = null;
+		$walk = function ( $parts, $prefix ) use ( &$walk, &$best_plain, &$best_html ) {
+			foreach ( $parts as $i => $p ) {
+				if ( ! is_array( $p ) ) { continue; }
+				$num = $prefix === '' ? (string) ( $i + 1 ) : ( $prefix . '.' . ( $i + 1 ) );
+				$mime = strtolower( (string) ( $p['content_type'] ?? '' ) );
+				$enc  = strtolower( (string) ( $p['encoding'] ?? '7bit' ) );
+				if ( str_contains( $mime, 'text/plain' ) && $best_plain === null ) { $best_plain = [ $num, $enc ]; }
+				if ( str_contains( $mime, 'text/html' )  && $best_html  === null ) { $best_html  = [ $num, $enc ]; }
+				if ( ! empty( $p['parts'] ) ) { $walk( $p['parts'], $num ); }
+			}
+		};
+		if ( ! empty( $structure['parts'] ) ) {
+			$walk( $structure['parts'], '' );
+		}
+
+		$pick = $best_html ?: $best_plain;
+		if ( ! $pick ) { return [ 'format' => 'text', 'body' => '' ]; }
+		$raw = $this->fetch_literal( $uid, 'BODY.PEEK[' . $pick[0] . ']' );
+		if ( $raw === null ) { return [ 'format' => 'text', 'body' => '' ]; }
+		$decoded = ImapClient::decode_transfer( $raw, $pick[1] );
+		if ( $pick === $best_html ) {
+			return [ 'format' => 'html', 'body' => mb_substr( ImapClient::sanitize_html_body( $decoded ), 0, $max ) ];
+		}
+		return [ 'format' => 'text', 'body' => mb_substr( $decoded, 0, $max ) ];
+	}
+
 	private function extract_preview( int $uid, array $structure, int $max ) : string {
 		$best_plain = null; $best_html = null;
 		$walk = function ( array $node, string $prefix ) use ( &$walk, &$best_plain, &$best_html ) {

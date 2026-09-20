@@ -413,6 +413,13 @@ final class Controller {
 			'methods'             => 'GET',
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'inbox_message_body' ],
+			'args'                => [ 'format' => [ 'type' => 'string' ] ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/attachments/(?P<aid>\d+)/content', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'inbox_attachment_content' ],
 		] );
 
 		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/rescan', [
@@ -1907,11 +1914,13 @@ final class Controller {
 	}
 
 	/**
-	 * On-demand Full-Text-Fetch fuer die Read-View. Wir speichern in der
+	 * On-demand Full-Body-Fetch fuer die Read-View. Wir speichern in der
 	 * DB nur den ~500-Zeichen-Preview; wenn der User die Mail wirklich
-	 * oeffnen will, ziehen wir den Body live per IMAP nach. HTML-Bodies
-	 * werden zu Text ge-strippt (wp_strip_all_tags) — das ist Feature-2-
-	 * Lite ohne den vollen HTML-Sanitize-Umbau.
+	 * oeffnen will, ziehen wir den Body live per IMAP nach.
+	 *
+	 * Query-Param `format=html`: liefert (leicht ge-strippten) HTML-Body,
+	 * damit die App ihn in einem sandboxed iframe rendern kann. Standard
+	 * ohne Param: Plain-Text (Rueckwaerts-Kompatibel v0.40.0).
 	 */
 	public static function inbox_message_body( WP_REST_Request $req ) {
 		$cid = self::require_customer();
@@ -1930,11 +1939,17 @@ final class Controller {
 		$acct = ImapAccount::find_for_customer( $account_id, $cid );
 		if ( ! $acct ) { return new WP_REST_Response( [ 'ok' => false, 'error' => 'no_account' ], 200 ); }
 
+		$want_html = ( (string) ( $req['format'] ?? '' ) ) === 'html';
+
 		try {
 			$client = ClientFactory::for_account( $acct );
 			$client->connect();
 			$client->select_folder( $folder );
-			$body_text = $client->fetch_body_text( $uid, 100000 );
+			if ( $want_html ) {
+				$result = $client->fetch_body_html( $uid, 500000 );
+			} else {
+				$result = [ 'format' => 'text', 'body' => $client->fetch_body_text( $uid, 100000 ) ];
+			}
 			$client->close();
 		} catch ( \Throwable $e ) {
 			return new WP_REST_Response( [
@@ -1945,10 +1960,72 @@ final class Controller {
 		}
 
 		return new WP_REST_Response( [
+			'ok'        => true,
+			'format'    => $result['format'],
+			'body'      => $result['body'],
+			// Legacy Rueckwaerts-Kompatibilitaet fuer v0.40.0-Clients:
+			'body_text' => $result['format'] === 'text' ? $result['body'] : '',
+			'length'    => mb_strlen( $result['body'] ),
+			'truncated' => mb_strlen( $result['body'] ) >= ( $want_html ? 500000 : 100000 ),
+		], 200 );
+	}
+
+	/**
+	 * Attachment-Content-Fetch on demand. IMAP-live-Zugriff auf die durch
+	 * mg_attachments referenzierte part_num. Groessen-Cap konservativ:
+	 * 20 MB max, damit ein Multi-GB-Video keinen PHP-Prozess sprengt.
+	 * Response ist base64-kodiert im JSON — vermeidet Content-Type-Fragen
+	 * und laesst den Client den Download-Blob selbst bauen.
+	 */
+	public static function inbox_attachment_content( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$mid = (int) $req['id'];
+		$aid = (int) $req['aid'];
+		$msg = ImapMessage::find_for_customer( $mid, $cid );
+		if ( ! $msg ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
+
+		global $wpdb;
+		$t = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_ATTACHMENTS;
+		$att = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$t} WHERE id = %d AND customer_id = %d AND message_id = %d LIMIT 1",
+			$aid, $cid, $mid
+		), ARRAY_A );
+		if ( ! $att ) { return new WP_Error( 'attach_not_found', '', [ 'status' => 404 ] ); }
+
+		$account_id = (int) ( $msg['account_id'] ?? 0 );
+		$folder     = (string) ( $msg['folder']  ?? '' );
+		$uid        = (int) ( $msg['imap_uid']   ?? 0 );
+		$part_num   = (string) ( $att['part_num'] ?? '' );
+		$encoding   = (string) ( $att['encoding'] ?? '' );
+		$size_hint  = (int) ( $att['size_bytes'] ?? 0 );
+		if ( $account_id === 0 || $folder === '' || $uid === 0 || $part_num === '' ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'no_imap_ref' ], 200 );
+		}
+
+		$acct = ImapAccount::find_for_customer( $account_id, $cid );
+		if ( ! $acct ) { return new WP_REST_Response( [ 'ok' => false, 'error' => 'no_account' ], 200 ); }
+
+		$max_bytes = 20 * 1024 * 1024; // 20 MB
+		try {
+			$client = ClientFactory::for_account( $acct );
+			$client->connect();
+			$client->select_folder( $folder );
+			$content = $client->fetch_attachment_body( $uid, $part_num, $encoding, $max_bytes, $size_hint );
+			$client->close();
+		} catch ( \Throwable $e ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'fetch_failed', 'message' => $e->getMessage() ], 200 );
+		}
+		if ( $content === null ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'too_large_or_missing', 'size_hint' => $size_hint, 'max_bytes' => $max_bytes ], 200 );
+		}
+
+		return new WP_REST_Response( [
 			'ok'         => true,
-			'body_text'  => $body_text,
-			'truncated'  => mb_strlen( $body_text ) >= 100000,
-			'length'     => mb_strlen( $body_text ),
+			'filename'   => (string) $att['filename'],
+			'mime_type'  => (string) $att['mime_type'],
+			'size_bytes' => strlen( $content ),
+			'content_b64' => base64_encode( $content ),
 		], 200 );
 	}
 
