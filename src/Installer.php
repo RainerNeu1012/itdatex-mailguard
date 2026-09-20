@@ -88,6 +88,11 @@ final class Installer {
 			'resend_api_key'               => '',
 			'resend_from_address'          => 'noreply@itdatex.support',
 			'resend_from_name'             => 'MailGuard User',
+			// Site-Operator: nur diese Customer-IDs duerfen /admin/settings
+			// updaten. Default cid=1 (Standard-Admin); bei aktuellem Setup
+			// ist itdatex-Operator cid=19 (Rainer). Wenn MailGuard je zu
+			// echtem Multi-Tenant wird, hier eine ordentliche Rolle einbauen.
+			'operator_customer_ids'        => [ 19 ],
 		];
 		$existing = (array) get_option( self::OPTION_SETTINGS, [] );
 		update_option( self::OPTION_SETTINGS, array_merge( $defaults, $existing ), false );

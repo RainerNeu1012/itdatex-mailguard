@@ -451,6 +451,21 @@ final class Controller {
 			'callback'            => [ __CLASS__, 'outbound_config' ],
 		] );
 
+		// Operator-Settings: read-only Settings-View (Key wird als "gesetzt/leer"
+		// zurueckgegeben, nicht als Klartext) plus write-only Update-Endpoint.
+		register_rest_route( self::NAMESPACE, '/admin/settings', [
+			[
+				'methods'             => 'GET',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'admin_settings_get' ],
+			],
+			[
+				'methods'             => 'POST',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'admin_settings_update' ],
+			],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)/rescan', [
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
@@ -2156,6 +2171,51 @@ final class Controller {
 			self::log_outbound_action( $cid, 0, $to, $subject, 'compose', $res['id'] ?? '' );
 		}
 		return new WP_REST_Response( $res, 200 );
+	}
+
+	private static function require_operator() {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$operators = (array) \Itdatex\Mailguard\Admin\Settings::get( 'operator_customer_ids', [] );
+		if ( ! in_array( (int) $cid, array_map( 'intval', $operators ), true ) ) {
+			return new WP_Error( 'not_operator', __( 'Site-Operator-Rechte erforderlich.', 'itdatex-mailguard' ), [ 'status' => 403 ] );
+		}
+		return (int) $cid;
+	}
+
+	public static function admin_settings_get( WP_REST_Request $req ) {
+		$cid = self::require_operator();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$key = trim( (string) \Itdatex\Mailguard\Admin\Settings::get( 'resend_api_key', '' ) );
+		return new WP_REST_Response( [
+			'ok'                => true,
+			'resend_key_set'    => $key !== '',
+			'resend_key_masked' => $key !== '' ? ( substr( $key, 0, 4 ) . '…' . substr( $key, -4 ) ) : '',
+			'resend_from_address' => (string) \Itdatex\Mailguard\Admin\Settings::get( 'resend_from_address', 'noreply@itdatex.support' ),
+			'resend_from_name'    => (string) \Itdatex\Mailguard\Admin\Settings::get( 'resend_from_name', 'MailGuard User' ),
+		], 200 );
+	}
+
+	public static function admin_settings_update( WP_REST_Request $req ) {
+		$cid = self::require_operator();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json = (array) $req->get_json_params();
+		$patch = [];
+		if ( array_key_exists( 'resend_api_key', $json ) ) {
+			$patch['resend_api_key'] = trim( (string) $json['resend_api_key'] );
+		}
+		if ( array_key_exists( 'resend_from_address', $json ) ) {
+			$patch['resend_from_address'] = trim( (string) $json['resend_from_address'] );
+		}
+		if ( array_key_exists( 'resend_from_name', $json ) ) {
+			$patch['resend_from_name'] = trim( (string) $json['resend_from_name'] );
+		}
+		if ( empty( $patch ) ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'no_changes' ], 200 );
+		}
+		$existing = (array) get_option( \Itdatex\Mailguard\Installer::OPTION_SETTINGS, [] );
+		update_option( \Itdatex\Mailguard\Installer::OPTION_SETTINGS, array_merge( $existing, $patch ), false );
+		return self::admin_settings_get( $req );
 	}
 
 	/**

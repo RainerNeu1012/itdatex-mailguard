@@ -7,6 +7,14 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.43.0] – 2026-09-20
+
+### Added
+- **Operator-Settings-Endpoints** (`GET/POST /admin/settings`): read
+  Resend-Konfig (Key masked) und update fuer Site-Operator. Gated auf
+  neuen `operator_customer_ids`-Setting (Default `[19]` fuer Rainer's
+  Account). Andere Customers bekommen 403.
+
 ## [0.42.0] – 2026-09-20
 
 ### Added
