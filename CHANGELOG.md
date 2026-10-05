@@ -7,6 +7,33 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.49.0] – 2026-10-05
+
+### Added
+- **Auto-Vernichten fuer dangerous-Mails** — neues Admin-Setting
+  `scan_auto_destroy_dangerous` (Standard: aus). Wenn aktiv, werden Mails
+  mit `scan_verdict='dangerous'` am Ende des Scans direkt per IMAP EXPUNGE
+  geloescht statt in Quarantaene verschoben. Unwiderruflich, kein Undo.
+  Nutzt den bestehenden `QuarantineService::purge_message()`-Pfad: Mail
+  landet uebergangsweise im Quarantaene-Ordner (damit das EXPUNGE keine
+  \\Deleted-Marker anderer Clients mitnimmt) und wird dort weggeraeumt.
+  Audit-Eintrag in `mg_actions` bleibt bestehen.
+- Greift fuer alle verdict='dangerous'-Mails: Blacklist mit
+  action='quarantine', DNS-unresolvable-Signale, AV-Infektionen und
+  kombinierte Hard-Signals. Blacklist mit action='purge' nimmt weiterhin
+  den bestehenden Purge-Pfad (gleicher Effekt, aelterer Code-Branch).
+
+### Rationale
+Der Operator sieht in der Inbox zunehmend klar boesartige Mails, auch
+wenn der Scan sie korrekt als "dangerous" markiert — Grund: Accounts
+ohne gesetzten `auto_quarantine_min_score` (z. B. heinoh@freenet.de)
+oder User, die den Quarantaene-Ordner nicht regelmaessig durchsehen.
+Globale Policy-Flag beseitigt den manuellen Aufraeum-Aufwand.
+False-Positive-Risiko (DNS-Hiccup, legitime geblacklistete Absender)
+wird durch den Opt-in-Default und die klare Admin-Beschreibung
+getragen; wer feiner steuern will, nutzt per-Account
+`auto_quarantine_min_score` plus Blacklist-action='purge'.
+
 ## [0.48.0] – 2026-09-20
 
 ### Added

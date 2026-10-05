@@ -68,6 +68,7 @@ final class Installer {
 			'antiphish_api_url'            => 'https://mailsec.itdatex.support',
 			'antiphish_api_key'            => '',
 			'scan_deep'                    => 0,
+			'scan_auto_destroy_dangerous'  => 0,
 			'scan_batch_size'              => 10,
 			'manual_scan_quota'            => 50,
 			'license_key'                  => '',

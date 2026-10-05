@@ -307,6 +307,29 @@ final class ScanService {
 			];
 		}
 
+		// Globale Policy: wenn das Admin-Setting scan_auto_destroy_dangerous
+		// aktiv ist, werden Mails mit Verdict 'dangerous' direkt per IMAP
+		// EXPUNGE entsorgt — kein Quarantaene-Umweg, kein Undo. Blacklist-
+		// Treffer sind bereits oben abgehandelt; dieser Branch greift fuer
+		// scan-abgeleitete dangerous-Verdicts (DNS-Fail, AV-Infektion,
+		// hoher kombinierter Score) UND fuer Blacklist mit action='quarantine',
+		// die durch den Dangerous-Verdict ebenfalls geloescht werden sollen.
+		// Audit-Trail: purge_message schreibt eine Action-Row (actor_type=auto)
+		// mit Verdict/Score-Snapshot — damit bleibt im Dashboard sichtbar,
+		// welche Mails warum vernichtet wurden.
+		if ( $verdict === 'dangerous' && (int) Settings::get( 'scan_auto_destroy_dangerous', 0 ) === 1 ) {
+			$purge_res = QuarantineService::purge_message( $id, $customer_id );
+			do_action( 'mailguard_scan_complete', $id, $customer_id, $verdict, $score_capped );
+			return [
+				'ok'              => true,
+				'verdict'         => $verdict,
+				'score'           => $score_capped,
+				'override'        => $override ? true : false,
+				'auto_purge'      => ! empty( $purge_res['ok'] ),
+				'auto_quarantine' => [ 'ran' => false ],
+			];
+		}
+
 		$force_quarantine = ! empty( $av_infections );
 		$auto = self::maybe_auto_quarantine( (int) $row['account_id'], $customer_id, $id, $verdict, $score_capped, $blacklist_hit || $force_quarantine );
 

@@ -57,6 +57,7 @@ final class Settings {
 		self::field_text( 'antiphish_api_url', __( 'API-URL', 'itdatex-mailguard' ), 'mg_api', [ 'placeholder' => 'https://mailsec.itdatex.support' ] );
 		self::field_password( 'antiphish_api_key', __( 'X-API-Key', 'itdatex-mailguard' ), 'mg_api' );
 		self::field_checkbox( 'scan_deep', __( 'LLM-Deep-Mode', 'itdatex-mailguard' ), 'mg_api', __( 'LLM-Tiefenanalyse erzwingen (~15–25 s/Mail; sonst nur Heuristik)', 'itdatex-mailguard' ) );
+		self::field_checkbox( 'scan_auto_destroy_dangerous', __( 'Dangerous auto-vernichten', 'itdatex-mailguard' ), 'mg_api', __( 'Mails mit Verdict „dangerous" direkt per IMAP EXPUNGE loeschen (statt Quarantaene). Unwiderruflich, kein Undo — gilt fuer alle Postfaecher. Blacklist-Treffer werden weiterhin ueber die Regel-Action entschieden.', 'itdatex-mailguard' ) );
 		self::field_number( 'scan_batch_size',    __( 'Scans pro Cron-Run', 'itdatex-mailguard' ), 'mg_api', 1, 100 );
 		self::field_number( 'manual_scan_quota',  __( 'Manuelle Scans / Endkunde / 24h', 'itdatex-mailguard' ), 'mg_api', 1, 1000 );
 
@@ -171,7 +172,7 @@ final class Settings {
 				$out['push_fcm_service_account'] = $json;
 			}
 		}
-		foreach ( [ 'allow_registration', 'require_email_verification', 'scan_deep', 'av_clamav_enabled', 'av_notify_admin' ] as $k ) {
+		foreach ( [ 'allow_registration', 'require_email_verification', 'scan_deep', 'scan_auto_destroy_dangerous', 'av_clamav_enabled', 'av_notify_admin' ] as $k ) {
 			$out[ $k ] = ! empty( $input[ $k ] ) ? 1 : 0;
 		}
 		if ( isset( $input['av_clamav_socket'] ) ) {
