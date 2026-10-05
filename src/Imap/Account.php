@@ -113,7 +113,29 @@ final class Account {
 			'oauth_scope'            => '',
 			'quarantine_folder'      => '',
 			'auto_quarantine_min_score' => null,
+			'imap_namespace_prefix'  => null,
+			'imap_delimiter'         => null,
 		];
+	}
+
+	/**
+	 * Persistiert den vom IMAP-Client detektierten Personal-Namespace
+	 * (Prefix inkl. Delimiter, z. B. "INBOX.") und den Hierarchy-Delimiter
+	 * ("." oder "/"). Wird vom QuarantineService lazy aufgerufen, wenn
+	 * die Felder NULL sind — danach bleibt das Ergebnis fuer den Account
+	 * stabil und kein weiterer Namespace-Query ist noetig.
+	 *
+	 * Prefix wird auf 32 Zeichen begrenzt (DB-Spalte), Delimiter auf 1
+	 * Zeichen. Leerer String ist ein gueltiger Wert fuer prefix und
+	 * markiert "kein Prefix erforderlich" (Microsoft/Gmail/iCloud).
+	 */
+	public static function save_namespace( int $id, string $prefix, string $delimiter ) : bool {
+		if ( $id <= 0 || $delimiter === '' ) { return false; }
+		global $wpdb;
+		return (bool) $wpdb->update( self::table(), [
+			'imap_namespace_prefix' => mb_substr( $prefix, 0, 32 ),
+			'imap_delimiter'        => mb_substr( $delimiter, 0, 1 ),
+		], [ 'id' => $id ], [ '%s', '%s' ], [ '%d' ] );
 	}
 
 	private static function filter_writable( array $in ) : array {

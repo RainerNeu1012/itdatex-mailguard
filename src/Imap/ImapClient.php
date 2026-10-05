@@ -169,6 +169,73 @@ final class ImapClient {
 	}
 
 	/**
+	 * Ermittelt Personal-Namespace-Prefix und Hierarchy-Delimiter des
+	 * Servers. Hintergrund: Dovecot-basierte Server (freenet.de u. a.)
+	 * erzwingen einen `INBOX.`-Prefix fuer Non-INBOX-Folder und nutzen
+	 * `.` als Separator — `CREATE MailGuard/Quarantine` schlaegt dort
+	 * mit "nonexistent namespace" fehl. Andere Server (Outlook, Gmail,
+	 * iCloud) nutzen `/` ohne Prefix.
+	 *
+	 * Heuristik:
+	 *  - Delimiter: aus `imap_getmailboxes(..., 'INBOX')->delimiter`. INBOX
+	 *    muss existieren und RFC-3501-konform einen Delimiter liefern.
+	 *  - Prefix: wenn der Delimiter `.` ist UND es mindestens einen Non-
+	 *    INBOX-Folder gibt, der mit `INBOX.` beginnt, UND KEINEN Folder
+	 *    gibt der weder "INBOX" ist noch mit `INBOX.` beginnt → Prefix
+	 *    `INBOX.`. Andernfalls leerer Prefix. Konservativ: ein einziger
+	 *    Folder auf Top-Ebene (z. B. Gmail "[Gmail]") kippt die Heuristik
+	 *    zu "kein Prefix".
+	 *
+	 * @return array{prefix:string,delimiter:string}
+	 */
+	public function detect_namespace() : array {
+		if ( ! $this->stream ) { $this->connect(); }
+		$flags = '/imap';
+		if ( $this->encryption === 'ssl' )      { $flags .= '/ssl'; }
+		elseif ( $this->encryption === 'tls' )  { $flags .= '/tls'; }
+		else                                    { $flags .= '/notls'; }
+		$flags .= '/novalidate-cert';
+		$ref = '{' . $this->host . ':' . $this->port . $flags . '}';
+
+		$delim = '/';
+		$inbox = @imap_getmailboxes( $this->stream, $ref, 'INBOX' );
+		if ( is_array( $inbox ) && isset( $inbox[0]->delimiter ) ) {
+			$d = (string) $inbox[0]->delimiter;
+			if ( $d !== '' ) { $delim = $d; }
+		}
+
+		if ( $delim !== '.' ) {
+			return [ 'prefix' => '', 'delimiter' => $delim ];
+		}
+
+		// Dovecot-typisch: Delimiter `.`. Pruefe, ob alle Non-INBOX-Folder
+		// unter INBOX. haengen — dann ist der Server im personal-namespace-
+		// mandatory-Modus.
+		$boxes = @imap_getmailboxes( $this->stream, $ref, '*' );
+		if ( ! is_array( $boxes ) || ! $boxes ) {
+			return [ 'prefix' => '', 'delimiter' => $delim ];
+		}
+		$has_prefixed    = false;
+		$has_top_outside = false;
+		foreach ( $boxes as $b ) {
+			$name = (string) ( $b->name ?? '' );
+			if ( str_starts_with( $name, $ref ) ) {
+				$name = substr( $name, strlen( $ref ) );
+			}
+			if ( $name === '' || strcasecmp( $name, 'INBOX' ) === 0 ) { continue; }
+			if ( stripos( $name, 'INBOX.' ) === 0 ) {
+				$has_prefixed = true;
+			} else {
+				$has_top_outside = true;
+			}
+		}
+		if ( $has_prefixed && ! $has_top_outside ) {
+			return [ 'prefix' => 'INBOX.', 'delimiter' => '.' ];
+		}
+		return [ 'prefix' => '', 'delimiter' => $delim ];
+	}
+
+	/**
 	 * Sicherstellen, dass ein Folder existiert. Idempotent.
 	 * Wirft, wenn create technisch fehlschlägt — nicht, wenn der Folder
 	 * schon da ist (CREATE auf existierenden Ordner liefert IMAP-NO,

@@ -50,7 +50,6 @@ final class QuarantineService {
 
 		$source_folder = (string) $msg['folder'];
 		$source_uid    = (int) $msg['imap_uid'];
-		$target_folder = self::quarantine_folder_for_account( $account );
 
 		try {
 			$client = ClientFactory::for_account_folder( $account, $source_folder );
@@ -58,6 +57,13 @@ final class QuarantineService {
 		} catch ( \Throwable $e ) {
 			return [ 'ok' => false, 'error' => 'connect_failed', 'detail' => $e->getMessage() ];
 		}
+
+		// Namespace-Detection lazy nach Connect — fuellt imap_namespace_prefix
+		// und imap_delimiter im $account-Array (und persistent), damit der
+		// Quarantaene-Folder-Name den Server-Prefix (z.B. "INBOX." bei Dovecot)
+		// bekommt. Danach erst den Target-Folder bauen.
+		self::ensure_namespace_detected( $account, $client );
+		$target_folder = self::quarantine_folder_for_account( $account );
 
 		try {
 			$client->ensure_folder( $target_folder );
@@ -405,12 +411,59 @@ final class QuarantineService {
 
 	/**
 	 * Liefert den Quarantäne-Ordner-Namen für einen Account.
-	 * Default ist Installer::DEFAULT_QUARANTINE_FOLDER, kann pro
-	 * Account in mg_imap_accounts.quarantine_folder überschrieben werden.
+	 *
+	 * Priority:
+	 *  1. `mg_imap_accounts.quarantine_folder` — expliziter Override vom User
+	 *     oder vom Admin. Wird 1:1 benutzt (kein Prefix-Umbau), damit
+	 *     Legacy-Overrides stabil bleiben.
+	 *  2. Dynamisch aus persistiertem `imap_namespace_prefix` +
+	 *     `imap_delimiter`: `{prefix}MailGuard{delim}Quarantine`. Fuer Dovecot
+	 *     mit prefix=`INBOX.` und delim=`.` ergibt das
+	 *     `INBOX.MailGuard.Quarantine`; fuer Microsoft/Gmail/iCloud (prefix=``,
+	 *     delim=`/`) ergibt das `MailGuard/Quarantine` — identisch zum alten
+	 *     `Installer::DEFAULT_QUARANTINE_FOLDER`.
+	 *  3. Hartes Fallback: `Installer::DEFAULT_QUARANTINE_FOLDER` (Account
+	 *     wurde noch nicht gegen die neue Namespace-Detection gerollt).
+	 *
+	 * {@see ensure_namespace_detected()} fuellt (2) lazy beim ersten Connect.
 	 */
 	public static function quarantine_folder_for_account( array $account ) : string {
 		$custom = trim( (string) ( $account['quarantine_folder'] ?? '' ) );
-		return $custom !== '' ? $custom : Installer::DEFAULT_QUARANTINE_FOLDER;
+		if ( $custom !== '' ) { return $custom; }
+		$prefix = $account['imap_namespace_prefix'] ?? null;
+		$delim  = $account['imap_delimiter'] ?? null;
+		if ( $delim === null || $delim === '' ) {
+			return Installer::DEFAULT_QUARANTINE_FOLDER;
+		}
+		return ( (string) $prefix ) . 'MailGuard' . ( (string) $delim ) . 'Quarantine';
+	}
+
+	/**
+	 * Lazy-Detection: wenn der Account noch keinen persistierten Namespace
+	 * hat (imap_delimiter IS NULL), fragt der uebergebene — bereits
+	 * connectete — Client den Server ab und speichert das Ergebnis.
+	 *
+	 * Modifiziert `$account` in-place, damit nachfolgende
+	 * `quarantine_folder_for_account()`-Aufrufe sofort den korrekten
+	 * Pfad bauen. Fehler in der Detection werden geswallowed — dann
+	 * bleibt das Feld NULL und `quarantine_folder_for_account()` faellt
+	 * auf den statischen Default zurueck (altes Verhalten).
+	 */
+	public static function ensure_namespace_detected( array &$account, $client ) : void {
+		$already = isset( $account['imap_delimiter'] ) && $account['imap_delimiter'] !== null && $account['imap_delimiter'] !== '';
+		if ( $already ) { return; }
+		if ( ! method_exists( $client, 'detect_namespace' ) ) { return; }
+		try {
+			$ns = $client->detect_namespace();
+		} catch ( \Throwable $e ) {
+			return;
+		}
+		$prefix = (string) ( $ns['prefix'] ?? '' );
+		$delim  = (string) ( $ns['delimiter'] ?? '' );
+		if ( $delim === '' ) { return; }
+		Account::save_namespace( (int) $account['id'], $prefix, $delim );
+		$account['imap_namespace_prefix'] = $prefix;
+		$account['imap_delimiter']        = $delim;
 	}
 
 	/**
@@ -447,14 +500,6 @@ final class QuarantineService {
 		$source_folder = (string) $msg['folder'];
 		$source_uid    = (int) $msg['imap_uid'];
 		$msg_id_hdr    = (string) ( $msg['msg_id_hdr'] ?? '' );
-		$quar_folder   = self::quarantine_folder_for_account( $account );
-
-		// Legacy: Mail liegt bereits in der Quarantaene, hat aber keine
-		// quarantine_action_id (Row aus alter Plugin-Version). MOVE-to-self
-		// wuerde auf IONOS/Dovecot in den FPM-Timeout laufen — stattdessen
-		// direkt expungen. Folder-weites EXPUNGE ist in der Quarantaene
-		// unkritisch, weil ausschliesslich MailGuard hineinschreibt.
-		$is_source_quarantine = ( $source_folder === $quar_folder );
 
 		try {
 			$client = ClientFactory::for_account_folder( $account, $source_folder );
@@ -462,6 +507,18 @@ final class QuarantineService {
 		} catch ( \Throwable $e ) {
 			return [ 'ok' => false, 'error' => 'connect_failed', 'detail' => $e->getMessage() ];
 		}
+
+		// Lazy Namespace-Detection → Target-Folder-Name bekommt den korrekten
+		// Server-Prefix. Danach erst entscheiden ob Source == Target.
+		self::ensure_namespace_detected( $account, $client );
+		$quar_folder = self::quarantine_folder_for_account( $account );
+
+		// Legacy: Mail liegt bereits in der Quarantaene, hat aber keine
+		// quarantine_action_id (Row aus alter Plugin-Version). MOVE-to-self
+		// wuerde auf IONOS/Dovecot in den FPM-Timeout laufen — stattdessen
+		// direkt expungen. Folder-weites EXPUNGE ist in der Quarantaene
+		// unkritisch, weil ausschliesslich MailGuard hineinschreibt.
+		$is_source_quarantine = ( $source_folder === $quar_folder );
 
 		if ( ! $is_source_quarantine ) {
 			try {

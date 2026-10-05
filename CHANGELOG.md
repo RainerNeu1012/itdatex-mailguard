@@ -7,6 +7,53 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.50.0] – 2026-10-05
+
+### Fixed
+- **IMAP Namespace-Prefix** auf Dovecot-Servern (freenet.de u. a.).
+  `CREATE MailGuard/Quarantine` schlug mit "Client tried to access
+  nonexistent namespace. (Mailbox name should probably be prefixed
+  with: INBOX.)" fehl, weil der Default-Quarantaene-Pfad hartcoded
+  war und den Server-Namespace ignorierte. Konsequenz: jede
+  Quarantaene-/Purge-/Auto-Destroy-Aktion lief auf freenet in
+  `create_folder_failed`.
+
+### Added
+- Neue DB-Spalten `imap_namespace_prefix` und `imap_delimiter` in
+  `mg_imap_accounts` (DB v27). Persistieren den vom Server
+  gemeldeten Personal-Namespace pro Account.
+- `ImapClient::detect_namespace()`: nutzt
+  `imap_getmailboxes(..., 'INBOX')->delimiter` und eine konservative
+  Heuristik — wenn Delimiter `.` ist und alle Non-INBOX-Folder unter
+  `INBOX.` haengen, wird `INBOX.` als Prefix erkannt.
+- `XOauth2ImapClient::detect_namespace()`: schickt RFC-2342 NAMESPACE
+  wenn der Server die Capability ankuendigt (Microsoft/Gmail tun das
+  in der Regel); Fallback via `LIST`-Response-Parse.
+- `QuarantineService::ensure_namespace_detected()`: ruft die Detection
+  lazy nach dem Connect auf, wenn in der DB noch NULL. Fehler werden
+  geswallowed → Default-Pfad bleibt Fallback.
+- `Account::save_namespace()` + Felder in `defaults()`.
+
+### Changed
+- `QuarantineService::quarantine_folder_for_account()` baut den Pfad
+  dynamisch aus Account-Prefix + Delimiter:
+  - Dovecot/freenet (`INBOX.` + `.`): `INBOX.MailGuard.Quarantine`
+  - Microsoft/Gmail/iCloud/GMX (`` + `/`): `MailGuard/Quarantine`
+    (unveraendert ggue. frueher)
+  - Custom `quarantine_folder` schlaegt beides weiterhin.
+- `QuarantineService::quarantine()` und `::purge_message()`:
+  Target-Folder-Name wird jetzt NACH Connect + Namespace-Detect
+  gebaut (vorher: VOR Connect, mit hartcoded Default).
+- `Folder::sync_from_imap()`: ruft die Detection ebenfalls auf, damit
+  der Quarantaene-Folder beim Pull-Sync korrekt ausgeschlossen bleibt.
+
+### Verification
+Live-Test gegen 4 echte IMAP-Server bestaetigt die Detection:
+- `mx.freenet.de` → prefix=`INBOX.`, delim=`.`
+- `outlook.office365.com` → prefix=``, delim=`/`
+- `imap.mail.me.com` (iCloud) → prefix=``, delim=`/`
+- `imap.gmx.net` → prefix=``, delim=`/`
+
 ## [0.49.0] – 2026-10-05
 
 ### Added

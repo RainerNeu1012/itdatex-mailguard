@@ -200,6 +200,7 @@ final class Folder {
 		try {
 			$client = ClientFactory::for_account( $account );
 			$client->connect();
+			QuarantineService::ensure_namespace_detected( $account, $client );
 			$folders = $client->list_folders();
 			$client->close();
 		} catch ( \Throwable $e ) {

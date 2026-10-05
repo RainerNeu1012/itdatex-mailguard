@@ -229,6 +229,82 @@ final class XOauth2ImapClient {
 	}
 
 	/**
+	 * Ermittelt Personal-Namespace-Prefix und Hierarchy-Delimiter des
+	 * Servers. Nutzt RFC 2342 NAMESPACE wenn der Server es ankuendigt
+	 * (Microsoft/Gmail tun das in der Regel), sonst Fallback via
+	 * `LIST "" "INBOX"` — RFC 3501 §7.2.2 garantiert in der LIST-Response
+	 * den Delimiter zwischen den Anfuehrungszeichen.
+	 *
+	 * Returns:
+	 *  - prefix: typisch "" fuer Microsoft/Gmail, "INBOX." fuer Dovecot-
+	 *    Server mit personal-namespace-mandatory.
+	 *  - delimiter: typisch "/" (Microsoft, Gmail, iCloud) oder "." (Dovecot).
+	 *
+	 * @return array{prefix:string,delimiter:string}
+	 */
+	public function detect_namespace() : array {
+		if ( ! $this->stream ) { $this->connect(); }
+
+		if ( $this->has_capability( 'namespace' ) ) {
+			$tag  = $this->send( 'NAMESPACE' );
+			$resp = $this->read_until_tag( $tag );
+			if ( preg_match( '/^' . $tag . ' OK/m', $resp ) ) {
+				// * NAMESPACE (("" "/")) NIL NIL
+				// * NAMESPACE (("INBOX." ".")) NIL NIL
+				// NIL als personal-namespace heisst "keiner" — dann fallen wir auf LIST zurueck.
+				if ( preg_match( '/\*\s+NAMESPACE\s+\(\(\s*"([^"]*)"\s+"([^"]*)"\s*\)\)/i', $resp, $m ) ) {
+					$prefix = (string) $m[1];
+					$delim  = (string) $m[2];
+					if ( $delim !== '' ) {
+						return [ 'prefix' => $prefix, 'delimiter' => $delim ];
+					}
+				}
+			}
+		}
+
+		// Fallback: LIST "" "INBOX" — die Delimiter-Response ist RFC-3501-
+		// garantiert; den Prefix leiten wir aus einer breiteren LIST ab.
+		$tag  = $this->send( 'LIST "" "INBOX"' );
+		$resp = $this->read_until_tag( $tag );
+		$delim = '/';
+		if ( preg_match( '/^\*\s+LIST\s+\([^)]*\)\s+"([^"]*)"\s+/mi', $resp, $m ) ) {
+			$d = (string) $m[1];
+			if ( $d !== '' ) { $delim = $d; }
+		}
+		if ( $delim !== '.' ) {
+			return [ 'prefix' => '', 'delimiter' => $delim ];
+		}
+
+		// Dovecot-typisch: Delimiter `.`. Breiteres LIST, pruefen ob alles
+		// unter INBOX.<X> haengt.
+		$tag  = $this->send( 'LIST "" "*"' );
+		$resp = $this->read_until_tag( $tag );
+		$has_prefixed    = false;
+		$has_top_outside = false;
+		foreach ( explode( "\n", $resp ) as $line ) {
+			if ( ! preg_match( '/^\*\s+LIST\s+\(([^)]*)\)\s+"([^"]*)"\s+("([^"\\\\]|\\\\.)*"|\S+)\s*$/i', trim( $line ), $m ) ) {
+				continue;
+			}
+			$attrs_lower = array_map( 'strtolower', preg_split( '/\s+/', trim( $m[1] ) ) ?: [] );
+			if ( in_array( '\\noselect', $attrs_lower, true ) ) { continue; }
+			$name_raw = $m[3];
+			$name = ( strlen( $name_raw ) >= 2 && $name_raw[0] === '"' && substr( $name_raw, -1 ) === '"' )
+				? stripcslashes( substr( $name_raw, 1, -1 ) )
+				: $name_raw;
+			if ( $name === '' || strcasecmp( $name, 'INBOX' ) === 0 ) { continue; }
+			if ( stripos( $name, 'INBOX.' ) === 0 ) {
+				$has_prefixed = true;
+			} else {
+				$has_top_outside = true;
+			}
+		}
+		if ( $has_prefixed && ! $has_top_outside ) {
+			return [ 'prefix' => 'INBOX.', 'delimiter' => '.' ];
+		}
+		return [ 'prefix' => '', 'delimiter' => $delim ];
+	}
+
+	/**
 	 * Idempotenter CREATE des Zielordners. Wenn der Server NO antwortet
 	 * (z.B. ALREADYEXISTS), prüfen wir per STATUS, dass der Folder
 	 * tatsächlich existiert — sonst werfen wir.
