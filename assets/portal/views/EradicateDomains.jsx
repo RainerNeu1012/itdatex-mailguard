@@ -41,7 +41,7 @@ export default function EradicateDomains() {
       </div>
       {tab === 'domains' && <DomainsList />}
       {tab === 'tlds'    && <TldsList />}
-      {tab === 'content' && <ContentBlocksList />}
+      {tab === 'content' && <><PatternSuggestionsCard /><ContentBlocksList /></>}
     </div>
   );
 }
@@ -478,6 +478,84 @@ function fmtDate(s) {
 // Ingest per EXPUNGE geloescht — analog zu TLD-Sperre und Absender-Domain.
 // Whitelist-Rules greifen hier NICHT. Whole-word verhindert False-Positives
 // bei kurzen Wortstaemmen ("date" -> auch "update", "sex" -> auch "sexy").
+function PatternSuggestionsCard() {
+  const [items, setItems] = useState([]);
+  const [dismissed, setDismissed] = useState({});
+  const [busy, setBusy] = useState(null);
+  const [flash, setFlash] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const { body } = await apiGet('inbox/pattern-suggestions?window_hours=72');
+      const all = (body && body.ok) ? (body.items || []) : [];
+      setItems(all.filter((s) => s.match_type === 'subject_contains'));
+    } catch { /* non-blocking */ }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const visible = items.filter((s) => !dismissed[s.id]);
+  if (visible.length === 0 && !flash && !err) return null;
+
+  const apply = async (sug) => {
+    setBusy(sug.id); setFlash(null); setErr(null);
+    try {
+      const { status, body } = await apiPost('me/content-blocks', {
+        pattern: sug.pattern, scope: 'subject', case_sensitive: false, whole_word: true,
+      });
+      if (status < 400 && body?.ok) {
+        setFlash(body.existed
+          ? `Muster "${sug.pattern}" war bereits aktiv.`
+          : `Muster "${sug.pattern}" als Inhalts-Regel gespeichert.`);
+        setDismissed((d) => ({ ...d, [sug.id]: true }));
+        await load();
+      } else {
+        setErr(body?.error || ('HTTP ' + status));
+      }
+    } catch { setErr('Netzwerkfehler.'); }
+    finally { setBusy(null); }
+  };
+
+  return (
+    <div className="mg-card" style={{ borderColor: 'var(--mg-accent, #6366f1)' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, opacity: 0.85 }}>
+        Inhalts-Vorschläge · aus deiner Purge-Historie (72&nbsp;h)
+      </div>
+      {flash && <div className="mg-alert" style={{ marginBottom: 8 }}><span>✓</span> {flash}</div>}
+      {err && <div className="mg-alert mg-alert-err" style={{ marginBottom: 8 }}><span>⚠</span> {err}</div>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {visible.map((sug) => (
+          <div key={sug.id} style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10,
+            padding: '8px 10px',
+            background: 'var(--mg-surface-alt, rgba(0,0,0,0.03))',
+            border: '1px solid var(--mg-border)',
+            borderRadius: 'var(--mg-radius, 8px)',
+          }}>
+            <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, padding: '2px 6px', border: '1px solid var(--mg-border)', borderRadius: 999 }}>Betreff</span>
+                <strong className="mg-mono" style={{ fontSize: 13, wordBreak: 'break-all' }}>{sug.pattern}</strong>
+                <span style={{ fontSize: 12, opacity: 0.7 }}>· {sug.sample_count} Mails</span>
+              </div>
+              <div style={{ fontSize: 12, marginTop: 4, opacity: 0.85 }}>{sug.reason_text}</div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              <button className="mg-btn mg-btn--danger" onClick={() => apply(sug)} disabled={busy === sug.id}>
+                {busy === sug.id ? '…' : '+ Inhalts-Regel'}
+              </button>
+              <button className="mg-btn" onClick={() => setDismissed((d) => ({ ...d, [sug.id]: true }))} disabled={busy === sug.id}>
+                Ignorieren
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ContentBlocksList() {
   const [items, setItems] = useState(null);
   const [error, setError] = useState(null);

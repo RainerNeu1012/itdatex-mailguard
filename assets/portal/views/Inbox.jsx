@@ -172,35 +172,45 @@ export default function Inbox() {
         </div>
 
         <div className={'mg-filter-sheet' + (filtersOpen ? ' mg-filter-sheet--open' : '')}>
-          <div className="mg-form__row">
-            <label style={{ flex: 1 }}>Verdict
+          <div className="mg-filter-bar">
+            <label className="mg-filter-bar__field mg-filter-bar__field--select" title="Nach Scan-Verdict filtern">
+              <span>🏷</span>
               <select value={filter.verdict} onChange={(e) => setFilter({ ...filter, verdict: e.target.value, page: 1 })}>
-                <option value="">— alle —</option>
-                <option value="risky">⚠ verdächtig/gefährlich</option>
-                <option value="dangerous">gefährlich</option>
-                <option value="suspicious">verdächtig</option>
-                <option value="clean">sauber</option>
+                <option value="">Alle Verdicts</option>
+                <option value="risky">⚠ verdächtig+gefährlich</option>
+                <option value="dangerous">nur gefährlich</option>
+                <option value="suspicious">nur verdächtig</option>
+                <option value="clean">nur sauber</option>
                 <option value="unscanned">noch nicht gescannt</option>
               </select>
             </label>
-            <label style={{ flex: 2 }}>Suche (Subject/Absender)
-              <input type="search" value={filter.q} onChange={(e) => setFilter({ ...filter, q: e.target.value, page: 1 })} />
+
+            <label className="mg-filter-bar__field mg-filter-bar__field--search" title="Volltext-Suche in Subject, Absender und Body-Preview">
+              <span>🔍</span>
+              <input type="search" placeholder="Subject, Absender, Text…" value={filter.q} onChange={(e) => setFilter({ ...filter, q: e.target.value, page: 1 })} />
             </label>
-            <label className="mg-form__checkbox">
+
+            <label className={'mg-filter-pill' + (filter.unsub_only ? ' mg-filter-pill--active' : '')} title="Nur Mails mit List-Unsubscribe-Header anzeigen">
               <input type="checkbox" checked={!!filter.unsub_only} onChange={(e) => setFilter({ ...filter, unsub_only: e.target.checked ? 1 : 0, page: 1 })} />
-              {' '}Nur Newsletter (List-Unsubscribe vorhanden)
+              <span className="mg-filter-pill__icon">📧</span>
+              Newsletter
             </label>
-            <label className="mg-form__checkbox" title="Automatisch quarantinierte Mails aus der Liste ausblenden — 24h widerrufbar unter Aktionen.">
+
+            <label className={'mg-filter-pill' + (filter.hide_quarantine ? ' mg-filter-pill--active' : '')} title="Automatisch quarantinierte Mails ausblenden — 24h widerrufbar unter Aktionen">
               <input type="checkbox" checked={!!filter.hide_quarantine} onChange={(e) => setFilter({ ...filter, hide_quarantine: e.target.checked ? 1 : 0, page: 1 })} />
-              {' '}Quarantäne verbergen
+              <span className="mg-filter-pill__icon">🛡</span>
+              Quarantäne
             </label>
-            <label className="mg-form__checkbox" title="Mails von Absendern die per Blacklist-Regel blockiert sind ausblenden — sie sind auf dem Server noch da, nur unsichtbar in der Liste.">
+
+            <label className={'mg-filter-pill' + (filter.hide_blocked ? ' mg-filter-pill--active' : '')} title="Mails von per Blacklist blockierten Absendern ausblenden">
               <input type="checkbox" checked={!!filter.hide_blocked} onChange={(e) => setFilter({ ...filter, hide_blocked: e.target.checked ? 1 : 0, page: 1 })} />
-              {' '}Blockierte Absender verbergen
+              <span className="mg-filter-pill__icon">⛔</span>
+              Blockierte
             </label>
+
             {activeFilterCount > 0 && (
-              <button className="mg-btn mg-btn--ghost" onClick={() => setFilter((f) => ({ ...EMPTY_FILTER, account_id: f.account_id }))}>
-                Zurücksetzen
+              <button className="mg-filter-bar__reset" onClick={() => setFilter((f) => ({ ...EMPTY_FILTER, account_id: f.account_id }))}>
+                × Zurücksetzen
               </button>
             )}
           </div>
