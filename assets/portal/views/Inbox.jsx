@@ -299,12 +299,25 @@ function ChronoList({ filter, setFilter, onReload }) {
 
   const reloadAll = () => { load(); onReload(); };
   const { dialogElement: msgPurgeDialog, requestPurge } = useMsgPurgeDialog(() => reloadAll());
-  const handlers = useRowHandlers(busy, setBusy, reloadAll, requestPurge);
+  const { dialogElement: rowConfirmDialog, requestConfirm } = useRowConfirmDialog();
+  const [rowFlash, setRowFlash] = useState(null);
+  useEffect(() => {
+    if (!rowFlash) return;
+    const t = setTimeout(() => setRowFlash(null), 5000);
+    return () => clearTimeout(t);
+  }, [rowFlash]);
+  const handlers = useRowHandlers(busy, setBusy, reloadAll, requestPurge, requestConfirm, setRowFlash);
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / (data.per_page || 25)));
 
   return (
     <>
       {error && <div className="mg-card mg-error">{error}</div>}
+      {rowFlash && (
+        <div className={'mg-card' + (rowFlash.type === 'err' ? ' mg-error' : '')} style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ flex: 1 }}>{rowFlash.msg}</span>
+          {rowFlash.undo && <button className="mg-btn" style={{ flexShrink: 0 }} onClick={() => { setRowFlash(null); rowFlash.undo(); }}>↶ Rückgängig</button>}
+        </div>
+      )}
       {loading && <div className="mg-card">Lade …</div>}
       {!loading && data.items.length === 0 && (
         <div className="mg-card mg-muted">
@@ -393,6 +406,7 @@ function ChronoList({ filter, setFilter, onReload }) {
         </div>
       )}
       {msgPurgeDialog}
+      {rowConfirmDialog}
     </>
   );
 }
@@ -721,10 +735,11 @@ function SenderList({ filter, setFilter, onReload }) {
     reloadAll();
     if (from_addr) reloadGroup(from_addr);
   });
+  const { dialogElement: rowConfirmDialog, requestConfirm } = useRowConfirmDialog();
   const handlers = useRowHandlers(busy, setBusy, (from_addr) => {
     reloadAll();
     if (from_addr) reloadGroup(from_addr);
-  }, requestPurge);
+  }, requestPurge, requestConfirm, setSenderFlash);
 
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / (data.per_page || 50)));
 
@@ -752,8 +767,9 @@ function SenderList({ filter, setFilter, onReload }) {
       )}
       {error && <div className="mg-card mg-error">{error}</div>}
       {senderFlash && (
-        <div className={'mg-card' + (senderFlash.type === 'err' ? ' mg-error' : '')} style={{ marginBottom: 8 }}>
-          {senderFlash.msg}
+        <div className={'mg-card' + (senderFlash.type === 'err' ? ' mg-error' : '')} style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ flex: 1 }}>{senderFlash.msg}</span>
+          {senderFlash.undo && <button className="mg-btn" style={{ flexShrink: 0 }} onClick={() => { setSenderFlash(null); senderFlash.undo(); }}>↶ Rückgängig</button>}
         </div>
       )}
       {loading && <div className="mg-card">Lade …</div>}
@@ -850,6 +866,7 @@ function SenderList({ filter, setFilter, onReload }) {
           onClose={() => setSenderDialog(null)}
         />
       )}
+      {rowConfirmDialog}
     </>
   );
 }
@@ -896,9 +913,14 @@ function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBloc
 
   useEffect(() => {
     if (!menuOpen) return;
-    const handler = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    const clickHandler = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
+    const keyHandler = (e) => { if (e.key === 'Escape') setMenuOpen(false); };
+    document.addEventListener('mousedown', clickHandler);
+    document.addEventListener('keydown', keyHandler);
+    return () => {
+      document.removeEventListener('mousedown', clickHandler);
+      document.removeEventListener('keydown', keyHandler);
+    };
   }, [menuOpen]);
 
   const worst = s.worst_verdict;
@@ -1028,7 +1050,7 @@ function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBloc
                 {menuItems.map((item, i) => (
                   <button
                     key={i}
-                    className={'mg-btn' + (item.danger ? ' mg-btn--warn' : '')}
+                    className={'mg-btn' + (item.danger ? ' mg-btn--danger' : '')}
                     disabled={!!busy || item.disabled}
                     title={item.title}
                     onClick={(e) => {
@@ -1073,37 +1095,80 @@ function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBloc
 /* Shared: Row + Handlers                                                     */
 /* -------------------------------------------------------------------------- */
 
-function useRowHandlers(busy, setBusy, reload, requestPurge) {
+// Generischer Promise-basierter Confirm-Dialog fuer useRowHandlers.
+// requestConfirm({ title, description, confirmLabel, confirmStyle })
+// gibt ein Promise<boolean> zurueck — true wenn bestaetigt.
+function useRowConfirmDialog() {
+  const [dialog, setDialog] = useState(null);
+  const resolveRef = useRef(null);
+
+  const requestConfirm = useCallback((config) => {
+    return new Promise((resolve) => {
+      resolveRef.current = resolve;
+      setDialog(config);
+    });
+  }, []);
+
+  const handle = (confirmed) => {
+    const res = resolveRef.current;
+    resolveRef.current = null;
+    setDialog(null);
+    res?.(confirmed);
+  };
+
+  const dialogElement = dialog ? (
+    <SenderConfirmDialog
+      dialog={{ ...dialog, onConfirm: () => handle(true), onCancel: () => handle(false) }}
+      onClose={() => handle(false)}
+    />
+  ) : null;
+
+  return { dialogElement, requestConfirm };
+}
+
+function useRowHandlers(busy, setBusy, reload, requestPurge, requestConfirm, showFlash) {
   // Reload akzeptiert optional from_addr, damit SenderList die Gruppe re-fetchen kann.
   const reloadRef = useRef(reload);
   reloadRef.current = reload;
   const purgeRef = useRef(requestPurge);
   purgeRef.current = requestPurge;
+  const confirmRef = useRef(requestConfirm);
+  confirmRef.current = requestConfirm;
+  const flashRef = useRef(showFlash);
+  flashRef.current = showFlash;
+  const flash = (type, msg, undo) => flashRef.current?.({ type, msg, undo });
   return useMemo(() => ({
     for(m, from_addr = null) {
       const finish = () => reloadRef.current && reloadRef.current(from_addr || null);
+      const confirm = (cfg) => confirmRef.current?.(cfg) ?? Promise.resolve(false);
       // Whitelist/Blacklist-Regel-Anlage aus einer Nachricht heraus.
       const addRule = async (kind, matchType) => {
         const addr = (m.from_addr || '').toLowerCase().trim();
-        if (!addr) return alert('Kein Absender bekannt.');
+        if (!addr) { flash('err', 'Kein Absender bekannt.'); return; }
         const pattern = matchType === 'from_domain'
           ? addr.slice(addr.lastIndexOf('@') + 1)
           : addr;
-        if (!pattern) return alert('Kein gueltiges Muster ableitbar.');
+        if (!pattern) { flash('err', 'Kein gültiges Muster ableitbar.'); return; }
         const scope = matchType === 'from_domain' ? `*@${pattern}` : pattern;
-        const kindLabel = kind === 'whitelist' ? 'als sicher einstufen' : 'blockieren';
-        const kindNote  = kind === 'whitelist'
-          ? 'Whitelist-Regel — Scan-Ergebnisse fuer diesen Absender werden uebersteuert.'
-          : 'Blacklist-Regel — als gefaehrlich einstufen.';
-        if (!window.confirm(`Alle kuenftigen Mails von ${scope} ${kindLabel}?\n\n${kindNote}\n\nBereits vorhandene Mails bleiben unveraendert.`)) return;
+        const listName = kind === 'whitelist' ? 'Whitelist' : 'Blacklist';
+        const kindNote = kind === 'whitelist'
+          ? 'Scan-Ergebnisse werden übersteuert — nicht mehr als gefährlich markiert.'
+          : 'Künftige Mails werden als gefährlich eingestuft.';
+        const ok = await confirm({
+          title: `${scope} ${kind === 'whitelist' ? 'als sicher einstufen' : 'blockieren'}?`,
+          description: `${kindNote} Bereits vorhandene Mails bleiben unverändert.`,
+          confirmLabel: kind === 'whitelist' ? '✓ In Whitelist' : '⛔ In Blacklist',
+          confirmStyle: kind === 'whitelist' ? { background: 'var(--mg-ok)', color: '#fff' } : { background: 'var(--mg-err)', color: '#fff' },
+        });
+        if (!ok) return;
         const busyKey = (kind === 'whitelist' ? 'wl_' : 'bl_') + (matchType === 'from_domain' ? 'domain' : 'addr');
         setBusy((b) => ({ ...b, [m.id]: busyKey }));
         try {
           const { body, status } = await apiPost('rules', { kind, match_type: matchType, pattern, note: 'Aus Nachricht ' + m.id });
           if ((status === 200 || status === 201) && body && body.ok) {
-            alert(kind === 'whitelist' ? `${scope} in Whitelist eingetragen.` : `${scope} in Blacklist eingetragen.`);
+            flash('ok', `✔ ${scope} in ${listName} eingetragen.`);
           } else {
-            alert('Regel-Anlage fehlgeschlagen: ' + ((body && body.error) || status));
+            flash('err', 'Regel-Anlage fehlgeschlagen: ' + ((body && body.error) || status));
           }
           finish();
         } finally { setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; }); }
@@ -1115,24 +1180,21 @@ function useRowHandlers(busy, setBusy, reload, requestPurge) {
         onBlacklistDomain: () => addRule('blacklist', 'from_domain'),
         onAutoPurgeAddr: async () => {
           const addr = (m.from_addr || '').toLowerCase().trim();
-          if (!addr) return alert('Kein Absender bekannt.');
-          if (!window.confirm(
-            `Absender ${addr} auf Auto-Vernichten stellen?\n\n` +
-            `Kuenftige Mails werden direkt beim Scan endgueltig geloescht — nicht in Quarantaene, nicht im Papierkorb.\n\n` +
-            `Aufheben spaeter in der Absender-Ansicht per "↺ Auto-Vernichten aus".`
-          )) return;
+          if (!addr) { flash('err', 'Kein Absender bekannt.'); return; }
+          const ok = await confirm({
+            title: `Auto-Vernichten für ${addr}?`,
+            description: 'Künftige Mails werden direkt beim Scan endgültig gelöscht — kein Papierkorb. Aufheben in der Absender-Ansicht per "↺ Auto-Vernichten aus".',
+            confirmLabel: '🚫 Aktivieren',
+            confirmStyle: { background: 'var(--mg-err)', color: '#fff' },
+          });
+          if (!ok) return;
           setBusy((b) => ({ ...b, [m.id]: 'auto_purge' }));
           try {
             const { body, status } = await apiPost('inbox/senders/block', { from_addr: addr, action: 'purge' });
-            if (status !== 200 || !body.ok) {
-              alert('Auto-Vernichten fehlgeschlagen: ' + (body.error || status));
-            } else if (body.upgraded) {
-              alert('✔ Bestehende Blockier-Regel auf Auto-Vernichten hochgestuft.');
-            } else if (body.existed) {
-              alert('ℹ Regel war bereits auf Auto-Vernichten gesetzt.');
-            } else {
-              alert('✔ Auto-Vernichten aktiviert.');
-            }
+            if (status !== 200 || !body.ok) flash('err', 'Auto-Vernichten fehlgeschlagen: ' + (body.error || status));
+            else if (body.upgraded) flash('ok', '✔ Auf Auto-Vernichten hochgestuft.');
+            else if (body.existed)  flash('ok', 'ℹ Regel war bereits auf Auto-Vernichten.');
+            else                    flash('ok', '✔ Auto-Vernichten aktiviert.');
             finish();
           } finally { setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; }); }
         },
@@ -1142,7 +1204,15 @@ function useRowHandlers(busy, setBusy, reload, requestPurge) {
           finally { setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; }); }
         },
         onUnsub: async () => {
-          if (m.scan_verdict === 'dangerous' && !window.confirm('Diese Mail ist als Phishing eingestuft. Trotzdem auf den Abmelde-Link klicken? (Empfehlung: NICHT)')) return;
+          if (m.scan_verdict === 'dangerous') {
+            const ok = await confirm({
+              title: 'Mail als Phishing eingestuft',
+              description: 'Diese Mail ist als gefährlich markiert. Trotzdem auf den Abmelde-Link klicken? (Empfehlung: Abbrechen)',
+              confirmLabel: 'Trotzdem abmelden',
+              confirmStyle: { background: 'var(--mg-err)', color: '#fff' },
+            });
+            if (!ok) return;
+          }
           setBusy((b) => ({ ...b, [m.id]: 'unsub' }));
           try {
             const { body, status } = await apiPost(`inbox/messages/${m.id}/unsubscribe`, {});
@@ -1153,38 +1223,49 @@ function useRowHandlers(busy, setBusy, reload, requestPurge) {
               const cause = body.dead_cause === 'http'
                 ? 'Die Abmelde-URL antwortet dauerhaft mit einem Fehler (Kampagne abgelaufen oder Endpoint zurückgezogen).'
                 : 'Die Abmelde-Adressen sind im DNS nicht mehr erreichbar.';
-              if (window.confirm(
-                `Absender ${m.from_addr} lässt sich nicht mehr regulär abmelden.\n\n${cause}\n\n` +
-                `Direkt blockieren? Es wird eine Blacklist-Regel angelegt; bestehende Mails bleiben unverändert.`
-              )) {
+              const ok2 = await confirm({
+                title: 'Abmeldung nicht möglich',
+                description: `${m.from_addr} lässt sich nicht regulär abmelden. ${cause} Stattdessen direkt blockieren? Bestehende Mails bleiben unverändert.`,
+                confirmLabel: '⛔ Blockieren',
+                confirmStyle: { background: 'var(--mg-err)', color: '#fff' },
+              });
+              if (ok2) {
                 const { body: b2, status: s2 } = await apiPost('inbox/senders/block', { from_addr: m.from_addr });
-                if (s2 !== 200 || !b2.ok)     alert('Blockieren fehlgeschlagen: ' + (b2.error || s2));
-                else if (b2.existed)          alert('ℹ Sender war bereits blockiert.');
-                else                          alert('✔ Sender blockiert (Regel angelegt).');
+                if (s2 !== 200 || !b2.ok)  flash('err', 'Blockieren fehlgeschlagen: ' + (b2.error || s2));
+                else if (b2.existed)        flash('ok', 'ℹ Sender war bereits blockiert.');
+                else                        flash('ok', '✔ Sender blockiert.');
               }
             } else if (body.already) {
-              alert('ℹ Bereits abgemeldet — kein neuer Versuch nötig.');
+              flash('ok', 'ℹ Bereits abgemeldet — kein neuer Versuch nötig.');
             } else if (body.ok) {
-              alert(`✔ Abgemeldet (${(body.api && body.api.status) || 'ok'})`);
+              flash('ok', `✔ Abgemeldet (${(body.api && body.api.status) || 'ok'})`);
             } else {
-              alert(formatUnsubError(body, status));
+              flash('err', formatUnsubError(body, status));
             }
             finish();
           } finally { setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; }); }
         },
         onQuarantine: async () => {
           const score = m.scan_score;
-          if ((score === null || score < 70) && !window.confirm(
-            'Diese Mail ist NICHT eindeutig als gefährlich eingestuft (Score ' + (score ?? '–') + '). Trotzdem in den Quarantäne-Ordner verschieben?'
-          )) return;
+          if (score === null || score < 70) {
+            const ok = await confirm({
+              title: 'Mail nicht eindeutig gefährlich',
+              description: `Score: ${score ?? '–'}. Diese Mail ist nicht eindeutig als gefährlich eingestuft. Trotzdem in Quarantäne verschieben?`,
+              confirmLabel: '🛡 Verschieben',
+              confirmStyle: {},
+            });
+            if (!ok) return;
+          }
           setBusy((b) => ({ ...b, [m.id]: 'quarantine' }));
           try {
             const { body, status } = await apiPost(`inbox/messages/${m.id}/quarantine`);
             if (status === 200 && body.ok) {
-              const undo = window.confirm('Mail in Quarantäne verschoben.\n\nOK = Aktion belassen.\nAbbrechen = sofort rückgängig machen.');
-              if (!undo && body.action_id) await apiPost(`actions/${body.action_id}/undo`);
+              const actionId = body.action_id;
+              flash('ok', '✔ In Quarantäne verschoben.', actionId
+                ? async () => { await apiPost(`actions/${actionId}/undo`); finish(); }
+                : undefined);
             } else {
-              alert('Quarantäne fehlgeschlagen: ' + (body.error || status) + (body.detail ? '\n' + body.detail : ''));
+              flash('err', 'Quarantäne fehlgeschlagen: ' + (body.error || status) + (body.detail ? ' · ' + body.detail : ''));
             }
             finish();
           } finally { setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; }); }
@@ -1194,29 +1275,31 @@ function useRowHandlers(busy, setBusy, reload, requestPurge) {
           setBusy((b) => ({ ...b, [m.id]: 'undo' }));
           try {
             const { body, status } = await apiPost(`actions/${m.quarantine_action_id}/undo`);
-            if (status !== 200 || !body.ok) alert('Wiederherstellen fehlgeschlagen: ' + (body.error || status) + (body.detail ? '\n' + body.detail : ''));
+            if (status !== 200 || !body.ok) flash('err', 'Wiederherstellen fehlgeschlagen: ' + (body.error || status) + (body.detail ? ' · ' + body.detail : ''));
             finish();
           } finally { setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; }); }
         },
         onPurge: () => {
-          // Fall-back auf window.confirm nur, falls das Parent-View keinen
-          // Dialog bereitstellt (defensiv — sollte in Prod nicht passieren).
-          if (!purgeRef.current) {
-            if (!window.confirm('Mail ENDGÜLTIG vom Mailserver löschen?')) return;
-            (async () => {
-              setBusy((b) => ({ ...b, [m.id]: 'purge' }));
-              try {
-                const endpoint = m.quarantine_action_id
-                  ? `actions/${m.quarantine_action_id}/purge`
-                  : `inbox/messages/${m.id}/purge`;
-                const { body, status } = await apiPost(endpoint);
-                if (status !== 200 || !body.ok) alert('Löschen fehlgeschlagen: ' + (body.error || status));
-                finish();
-              } finally { setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; }); }
-            })();
-            return;
-          }
-          purgeRef.current(m, from_addr);
+          if (purgeRef.current) { purgeRef.current(m, from_addr); return; }
+          // Fallback: sollte in Prod nicht passieren
+          (async () => {
+            const ok = await confirm({
+              title: 'Mail endgültig löschen?',
+              description: 'Kein Papierkorb, kein Undo.',
+              confirmLabel: '🗑 Löschen',
+              confirmStyle: { background: 'var(--mg-err)', color: '#fff' },
+            });
+            if (!ok) return;
+            setBusy((b) => ({ ...b, [m.id]: 'purge' }));
+            try {
+              const endpoint = m.quarantine_action_id
+                ? `actions/${m.quarantine_action_id}/purge`
+                : `inbox/messages/${m.id}/purge`;
+              const { body, status } = await apiPost(endpoint);
+              if (status !== 200 || !body.ok) flash('err', 'Löschen fehlgeschlagen: ' + (body.error || status));
+              finish();
+            } finally { setBusy((b) => { const n = { ...b }; delete n[m.id]; return n; }); }
+          })();
         },
       };
     }

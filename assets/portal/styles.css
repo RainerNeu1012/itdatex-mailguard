@@ -652,8 +652,9 @@ a:hover { color: var(--mg-accent); }
   min-height: 44px;
 }
 .mg-sender__head:hover .mg-sender__chevron { color: var(--mg-fg); }
-.mg-sender__from { min-width: 0; }
-.mg-sender__from strong { color: var(--mg-fg); overflow-wrap: anywhere; }
+.mg-sender__from { min-width: 0; overflow: hidden; }
+.mg-sender__from strong { color: var(--mg-fg); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mg-sender__from .mg-tiny { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mg-sender__subject {
   min-width: 0;
   overflow: hidden;
