@@ -33,7 +33,10 @@ html, body {
   font-size: 1rem;
   /* Verhindert horizontales Scrollen, wenn eine Zelle doch mal rausrutscht. */
   overflow-x: hidden;
+  color-scheme: dark;
 }
+/* Native form controls (select-Dropdown-Liste etc.) im Dark-Theme halten */
+select, input, textarea { color-scheme: dark; }
 /* Alle Text-Container: lange Woerter/URLs innerhalb umbrechen statt Container sprengen. */
 p, li, dd, dt, td, th, div, span, strong, em, code, a {
   overflow-wrap: anywhere;
