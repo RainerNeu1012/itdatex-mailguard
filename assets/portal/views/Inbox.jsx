@@ -38,6 +38,7 @@ export default function Inbox() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [stats, setStats]           = useState(null);
   const [pulling, setPulling]       = useState(false);
+  const [pullFlash, setPullFlash]   = useState(null);
 
   const loadAccounts = useCallback(async () => {
     const { body } = await apiGet('accounts');
@@ -66,6 +67,12 @@ export default function Inbox() {
   // Stats folgen dem aktiven Konto.
   useEffect(() => { loadStats(filter.account_id); }, [loadStats, filter.account_id]);
 
+  useEffect(() => {
+    if (!pullFlash) return;
+    const t = setTimeout(() => setPullFlash(null), 5000);
+    return () => clearTimeout(t);
+  }, [pullFlash]);
+
   const switchAccount = (id) => {
     if (id === filter.account_id) return;
     saveStoredAccountId(id);
@@ -83,18 +90,21 @@ export default function Inbox() {
   const activeFilterCount = countActive(filter);
 
   const pullAll = async () => {
-    if (!accounts.length) { alert('Erst ein Postfach anlegen.'); return; }
+    if (!accounts.length) { setPullFlash({ type: 'err', msg: 'Erst ein Postfach anlegen.' }); return; }
     setPulling(true);
     try {
       // Nur das aktive Konto pullen, sonst waere der Button irrefuehrend:
       // Anzeige zeigt Postfach A, Button holt auch B, C, D ab.
       const active = accounts.find((a) => a.id === filter.account_id);
-      if (!active) { alert('Kein Konto ausgewaehlt.'); return; }
+      if (!active) { setPullFlash({ type: 'err', msg: 'Kein Konto ausgewählt.' }); return; }
       const { body } = await apiPost(`accounts/${active.id}/pull`);
       // scanned kommt seit Plugin v0.25.0 mit — Backend scannt neue Mails jetzt
       // direkt im Pull statt asynchron via Cron.
       const scanned = body.scanned ?? 0;
-      alert(`${active.label || active.host}: ` + (body.ok ? `+${body.fetched} (dup ${body.duplicates}${body.fetched > 0 ? `, ${scanned} gescannt` : ''})` : `Fehler ${body.error}`));
+      const msg = `${active.label || active.host}: ` + (body.ok
+        ? `+${body.fetched} (dup ${body.duplicates}${body.fetched > 0 ? `, ${scanned} gescannt` : ''})`
+        : `Fehler ${body.error}`);
+      setPullFlash({ type: body.ok ? 'ok' : 'err', msg });
       loadStats(filter.account_id);
       setFilter((f) => ({ ...f }));
     } finally {
@@ -119,6 +129,12 @@ export default function Inbox() {
           </button>
         </div>
       </div>
+
+      {pullFlash && (
+        <div className={'mg-card' + (pullFlash.type === 'err' ? ' mg-error' : '')} style={{ padding: '10px 14px' }}>
+          {pullFlash.msg}
+        </div>
+      )}
 
       <AccountTabs accounts={accounts} activeId={filter.account_id} onSwitch={switchAccount} />
 
@@ -298,7 +314,7 @@ function ChronoList({ filter, setFilter, onReload }) {
   useEffect(() => { load(); }, [load]);
 
   const reloadAll = () => { load(); onReload(); };
-  const { dialogElement: msgPurgeDialog, requestPurge } = useMsgPurgeDialog(() => reloadAll());
+  const { dialogElement: msgPurgeDialog, requestPurge } = useMsgPurgeDialog(() => reloadAll(), setRowFlash);
   const { dialogElement: rowConfirmDialog, requestConfirm } = useRowConfirmDialog();
   const [rowFlash, setRowFlash] = useState(null);
   useEffect(() => {
@@ -711,7 +727,7 @@ function SenderList({ filter, setFilter, onReload }) {
         create_purge_rule: createRule,
       });
       if (status === 422) {
-        alert('Abgebrochen: ' + (body.message || 'Bestätigung fehlgeschlagen.'));
+        setSenderFlash({ type: 'err', msg: 'Abgebrochen: ' + (body.message || 'Bestätigung fehlgeschlagen.') });
         return;
       }
       let extra = '';
@@ -721,10 +737,10 @@ function SenderList({ filter, setFilter, onReload }) {
           confirm: 'VERNICHTEN',
         });
         extra = res?.body?.ok
-          ? `\n\n✔ Domain *@${domain} auf Auto-Vernichten gesetzt.`
-          : `\n\n⚠ Domain-Auto-Vernichten fehlgeschlagen: ${res?.body?.message || 'unbekannter Fehler'}`;
+          ? ` ✔ Domain *@${domain} auf Auto-Vernichten gesetzt.`
+          : ` ⚠ Domain-Auto-Vernichten fehlgeschlagen: ${res?.body?.message || 'unbekannter Fehler'}`;
       }
-      alert(formatEradicateResult(body, from_addr) + extra);
+      setSenderFlash({ type: 'ok', msg: formatEradicateResult(body, from_addr) + extra });
       reloadAll();
     } finally {
       setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
@@ -734,7 +750,7 @@ function SenderList({ filter, setFilter, onReload }) {
   const { dialogElement: msgPurgeDialog, requestPurge } = useMsgPurgeDialog((from_addr) => {
     reloadAll();
     if (from_addr) reloadGroup(from_addr);
-  });
+  }, setSenderFlash);
   const { dialogElement: rowConfirmDialog, requestConfirm } = useRowConfirmDialog();
   const handlers = useRowHandlers(busy, setBusy, (from_addr) => {
     reloadAll();
@@ -1312,7 +1328,7 @@ function useRowHandlers(busy, setBusy, reload, requestPurge, requestConfirm, sho
  * Checkboxen (Ack + optionaler "Absender kuenftig auto-vernichten"-Toggle)
  * und wird von ChronoList und SenderList gleichermassen genutzt.
  */
-function useMsgPurgeDialog(afterPurge) {
+function useMsgPurgeDialog(afterPurge, showFlash) {
   const [target, setTarget] = useState(null);
   const [ack, setAck] = useState(false);
   const [createRule, setCreateRule] = useState(false);
@@ -1335,13 +1351,13 @@ function useMsgPurgeDialog(afterPurge) {
         : `inbox/messages/${m.id}/purge`;
       const { body, status } = await apiPost(endpoint, { create_purge_rule: !!createRule });
       if (status !== 200 || !body.ok) {
-        alert('Löschen fehlgeschlagen: ' + (body.error || status) + (body.detail ? '\n' + body.detail : ''));
+        showFlash?.({ type: 'err', msg: 'Löschen fehlgeschlagen: ' + (body.error || status) + (body.detail ? ' — ' + body.detail : '') });
       }
       const cbFromAddr = target.from_addr || (m.from_addr || null);
       close();
       afterPurge && afterPurge(cbFromAddr);
     } catch (e) {
-      alert('Löschen fehlgeschlagen: ' + String(e));
+      showFlash?.({ type: 'err', msg: 'Löschen fehlgeschlagen: ' + String(e) });
       setBusy(false);
     }
   };
@@ -1578,6 +1594,7 @@ function AttachmentList({ messageId }) {
   const [items, setItems] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [attachErr, setAttachErr] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1595,7 +1612,7 @@ function AttachmentList({ messageId }) {
   }, [messageId]);
 
   const download = async (att) => {
-    setBusy(att.id);
+    setBusy(att.id); setAttachErr(null);
     try {
       const { body, status } = await apiGet(`inbox/messages/${messageId}/attachments/${att.id}/content`);
       if (status < 400 && body?.ok && body?.content_b64) {
@@ -1607,9 +1624,9 @@ function AttachmentList({ messageId }) {
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         URL.revokeObjectURL(url);
       } else {
-        alert('Anhang konnte nicht geladen werden: ' + (body?.error || ('HTTP ' + status)));
+        setAttachErr('Anhang konnte nicht geladen werden: ' + (body?.error || ('HTTP ' + status)));
       }
-    } catch (e) { alert('Netzwerkfehler: ' + e.message); }
+    } catch (e) { setAttachErr('Netzwerkfehler: ' + e.message); }
     finally { setBusy(null); }
   };
 
@@ -1619,6 +1636,7 @@ function AttachmentList({ messageId }) {
 
   return (
     <div style={{ margin: '0.75rem 0 0' }}>
+      {attachErr && <p className="mg-tiny" style={{ margin: '0 0 0.5rem', color: 'var(--mg-err)' }}>{attachErr}</p>}
       <p className="mg-muted mg-tiny" style={{ margin: '0 0 0.25rem' }}>Anhänge:</p>
       <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
         {items.map((a) => (

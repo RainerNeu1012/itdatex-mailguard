@@ -181,6 +181,12 @@ a:hover { color: var(--mg-accent); }
   color: var(--mg-fg);
   border-color: var(--mg-fg);
 }
+.mg-nav__btn--active {
+  background: var(--mg-surface-2);
+  color: var(--mg-fg);
+  border-color: var(--mg-fg);
+}
+.mg-nav__icon { font-style: normal; }
 /* Marketing-Nav: nur Text-Links, kein Border, gleicher Look wie Landing-Nav. */
 .mg-nav--marketing {
   display: flex;

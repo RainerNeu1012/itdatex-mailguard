@@ -99,21 +99,36 @@ export default function App() {
               <span></span><span></span><span></span>
             </button>
             <nav className={menuOpen ? 'mg-nav mg-nav--open' : 'mg-nav'}>
-              <button className="mg-nav__btn" onClick={() => navigate('dashboard')}>Dashboard</button>
-              <button className="mg-nav__btn" onClick={() => navigate('inbox')}>Inbox</button>
-              <button className="mg-nav__btn" onClick={() => navigate('newsletters')}>Newsletter</button>
-              <button className="mg-nav__btn" onClick={() => navigate('scanner')}>Scanner</button>
-              <button className="mg-nav__btn" onClick={() => navigate('rules')}>Regeln</button>
-              <button className="mg-nav__btn" onClick={() => navigate('postbox-rules')}>Postfach</button>
-              <button className="mg-nav__btn" onClick={() => navigate('eradicate-domains')}>Auto-Vernichten</button>
-              <button className="mg-nav__btn" onClick={() => navigate('actions')}>Aktionen</button>
-              <button className="mg-nav__btn" onClick={() => navigate('llm-feedback')}>KI-Bewertungen</button>
-              <button className="mg-nav__btn" onClick={() => navigate('accounts')}>Postfächer</button>
-              <button className="mg-nav__btn" onClick={() => navigate('plan')}>Plan</button>
-              <button className="mg-nav__btn" onClick={() => navigate('devices')}>Geräte</button>
+              {[
+                { r: 'dashboard',        label: 'Dashboard',       icon: '⌂' },
+                { r: 'inbox',            label: 'Inbox',           icon: '📥' },
+                { r: 'newsletters',      label: 'Newsletter',      icon: '📧' },
+                { r: 'scanner',          label: 'Scanner',         icon: '🔍' },
+                { r: 'rules',            label: 'Regeln',          icon: '⚖' },
+                { r: 'postbox-rules',    label: 'Postfach',        icon: '📂' },
+                { r: 'eradicate-domains', label: 'Auto-Vernichten', icon: '🔥' },
+                { r: 'actions',          label: 'Aktionen',        icon: '⚡' },
+                { r: 'llm-feedback',     label: 'KI-Bewertungen',  icon: '🤖' },
+                { r: 'accounts',         label: 'Postfächer',      icon: '🔗' },
+                { r: 'plan',             label: 'Plan',            icon: '★' },
+                { r: 'devices',          label: 'Geräte',          icon: '💻' },
+              ].map(({ r, label, icon }) => (
+                <button
+                  key={r}
+                  className={'mg-nav__btn' + (route.name === r ? ' mg-nav__btn--active' : '')}
+                  onClick={() => navigate(r)}
+                  title={label}
+                >
+                  <span className="mg-nav__icon" aria-hidden="true">{icon}</span>
+                  <span className="mg-nav__label">{label}</span>
+                </button>
+              ))}
               <NotificationsBell />
               <span className="mg-nav__email">{me.email}</span>
-              <button className="mg-nav__btn" onClick={() => navigate('logout')}>Logout</button>
+              <button className="mg-nav__btn" onClick={() => navigate('logout')} title="Logout">
+                <span className="mg-nav__icon" aria-hidden="true">⎋</span>
+                <span className="mg-nav__label">Logout</span>
+              </button>
             </nav>
           </>
         )}

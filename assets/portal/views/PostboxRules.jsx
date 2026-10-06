@@ -48,7 +48,21 @@ export default function PostboxRules() {
   useEffect(() => { load(); }, [load]);
 
   const save = async () => {
-    setSaving(true); setErr(null); setFlash(null);
+    setErr(null); setFlash(null);
+    for (const c of editing.conditions) {
+      const meta = FIELD_META[c.field] || FIELD_META.from_addr;
+      if (meta.type !== 'bool' && meta.type !== 'enum' && !String(c.value ?? '').trim()) {
+        setErr(`Bedingung „${meta.label}": Wert darf nicht leer sein.`);
+        return;
+      }
+    }
+    for (const a of editing.actions) {
+      if (a.type === 'move' && !String(a.folder ?? '').trim()) {
+        setErr('Aktion „Verschieben": Zielordner darf nicht leer sein.');
+        return;
+      }
+    }
+    setSaving(true);
     const payload = {
       name: editing.name, priority: editing.priority, enabled: editing.enabled,
       match_op: editing.match_op, stop_processing: editing.stop_processing,
