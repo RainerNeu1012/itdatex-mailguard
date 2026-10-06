@@ -411,7 +411,6 @@ function SenderList({ filter, setFilter, onReload }) {
   const [senderBusy, setSenderBusy] = useState({});
   const [expandedMsg, setExpandedMsg] = useState(null);
   const [purgeTarget, setPurgeTarget] = useState(null); // { from_addr, msg_count, domain }
-  const [purgeAck, setPurgeAck] = useState(false);
   const [purgeAlsoDomain, setPurgeAlsoDomain] = useState(false);
   const [purgeCreateRule, setPurgeCreateRule] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
@@ -809,8 +808,6 @@ function SenderList({ filter, setFilter, onReload }) {
         ) : null}
         senderToggleChecked={purgeCreateRule}
         onSenderToggle={setPurgeCreateRule}
-        checked={purgeAck}
-        onToggle={setPurgeAck}
         onCancel={closeEradicateDialog}
         onConfirm={confirmEradicate}
       />
