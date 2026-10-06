@@ -255,6 +255,7 @@ a:hover { color: var(--mg-accent); }
   padding: 0.7rem 0.85rem;
   border: 1px solid var(--mg-border);
   border-radius: 6px;
+  color-scheme: dark;
   font: inherit;
   font-family: var(--mg-sans);
   font-size: 1rem;
