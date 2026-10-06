@@ -418,6 +418,14 @@ function SenderList({ filter, setFilter, onReload }) {
   const [busySug, setBusySug] = useState(null);
   const [sugFlash, setSugFlash] = useState(null);
   const [sugErr, setSugErr] = useState(null);
+  const [senderDialog, setSenderDialog] = useState(null);
+  const [senderFlash, setSenderFlash] = useState(null);
+
+  useEffect(() => {
+    if (!senderFlash) return;
+    const t = setTimeout(() => setSenderFlash(null), 5000);
+    return () => clearTimeout(t);
+  }, [senderFlash]);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -493,58 +501,70 @@ function SenderList({ filter, setFilter, onReload }) {
 
   const unsubSender = async (from_addr) => {
     setSenderBusy((b) => ({ ...b, [from_addr]: 'unsub' }));
+    let delegated = false;
     try {
       const { body, status } = await apiPost('subscriptions/unsubscribe', { from_addr });
       const manualUrl = body.manual_url || (body.api && body.api.manual_url) || '';
       if (body.needs_manual && manualUrl) {
         window.open(manualUrl, '_blank', 'noopener');
       } else if (body.reason === 'endpoints_dead') {
+        delegated = true;
         const cause = body.dead_cause === 'http'
           ? 'Die Abmelde-URL antwortet dauerhaft mit einem Fehler (Kampagne abgelaufen oder Endpoint zurückgezogen).'
           : 'Die Abmelde-Adressen sind im DNS nicht mehr erreichbar.';
-        if (window.confirm(
-          `Absender ${from_addr} lässt sich nicht mehr regulär abmelden.\n\n${cause}\n\n` +
-          `Direkt blockieren? Es wird eine Blacklist-Regel angelegt; bestehende Mails bleiben unverändert.`
-        )) {
-          const { body: b2, status: s2 } = await apiPost('inbox/senders/block', { from_addr });
-          if (s2 !== 200 || !b2.ok)     alert('Blockieren fehlgeschlagen: ' + (b2.error || s2));
-          else if (b2.existed)          alert('ℹ Sender war bereits blockiert.');
-          else                          alert('✔ Sender blockiert (Regel angelegt).');
-        }
+        setSenderDialog({
+          title: 'Abmeldung nicht möglich',
+          description: `${from_addr} lässt sich nicht regulär abmelden. ${cause} Stattdessen direkt blockieren? Eine Blacklist-Regel wird angelegt; bestehende Mails bleiben unverändert.`,
+          confirmLabel: '⛔ Blockieren',
+          confirmStyle: { background: 'var(--mg-err)', color: '#fff' },
+          onConfirm: async () => {
+            setSenderDialog(null);
+            setSenderBusy((b) => ({ ...b, [from_addr]: 'block' }));
+            try {
+              const { body: b2, status: s2 } = await apiPost('inbox/senders/block', { from_addr });
+              if (s2 !== 200 || !b2.ok)    setSenderFlash({ type: 'err', msg: 'Blockieren fehlgeschlagen: ' + (b2.error || s2) });
+              else if (b2.existed)         setSenderFlash({ type: 'ok', msg: 'ℹ Sender war bereits blockiert.' });
+              else                         setSenderFlash({ type: 'ok', msg: '✔ Sender blockiert.' });
+              reloadAll();
+            } finally {
+              setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
+            }
+          },
+          onCancel: () => { setSenderDialog(null); reloadAll(); },
+        });
       } else if (body.already) {
-        alert('ℹ Bereits abgemeldet — kein neuer Versuch nötig.');
+        setSenderFlash({ type: 'ok', msg: 'ℹ Bereits abgemeldet — kein neuer Versuch nötig.' });
       } else if (body.ok) {
-        alert(`✔ Abgemeldet (${(body.api && body.api.status) || 'ok'})`);
+        setSenderFlash({ type: 'ok', msg: `✔ Abgemeldet (${(body.api && body.api.status) || 'ok'})` });
       } else {
-        alert(formatUnsubError(body, status));
+        setSenderFlash({ type: 'err', msg: formatUnsubError(body, status) });
       }
-      reloadAll();
+      if (!delegated) reloadAll();
     } finally {
-      setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
+      if (!delegated) setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
     }
   };
 
-  const blockSender = async (from_addr) => {
-    if (!window.confirm(
-      `Absender ${from_addr} blockieren?\n\n` +
-      `Es wird eine Blacklist-Regel angelegt. Künftige Mails dieses Senders werden als gefährlich eingestuft ` +
-      `und — bei aktivierter Auto-Quarantäne-Schwelle — automatisch in Quarantäne verschoben.\n\n` +
-      `Diese Aktion löscht keine bereits vorhandenen Mails.`
-    )) return;
-    setSenderBusy((b) => ({ ...b, [from_addr]: 'block' }));
-    try {
-      const { body, status } = await apiPost('inbox/senders/block', { from_addr });
-      if (status !== 200 || !body.ok) {
-        alert('Blockieren fehlgeschlagen: ' + (body.error || status));
-      } else if (body.existed) {
-        alert('ℹ Sender war bereits blockiert.');
-      } else {
-        alert('✔ Sender blockiert (Regel angelegt).');
-      }
-      reloadAll();
-    } finally {
-      setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
-    }
+  const blockSender = (from_addr) => {
+    setSenderDialog({
+      title: 'Absender blockieren?',
+      description: `${from_addr} wird auf die Blacklist gesetzt. Künftige Mails werden als gefährlich eingestuft — bei aktivierter Auto-Quarantäne automatisch verschoben. Bestehende Mails bleiben unverändert.`,
+      confirmLabel: '⛔ Blockieren',
+      confirmStyle: { background: 'var(--mg-err)', color: '#fff' },
+      onConfirm: async () => {
+        setSenderDialog(null);
+        setSenderBusy((b) => ({ ...b, [from_addr]: 'block' }));
+        try {
+          const { body, status } = await apiPost('inbox/senders/block', { from_addr });
+          if (status !== 200 || !body.ok) setSenderFlash({ type: 'err', msg: 'Blockieren fehlgeschlagen: ' + (body.error || status) });
+          else if (body.existed) setSenderFlash({ type: 'ok', msg: 'ℹ Sender war bereits blockiert.' });
+          else setSenderFlash({ type: 'ok', msg: '✔ Sender blockiert.' });
+          reloadAll();
+        } finally {
+          setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
+        }
+      },
+    });
   };
 
   // Ein-Klick-Auto-Vernichten. Legt blacklist from_addr mit action=purge an
@@ -553,61 +573,69 @@ function SenderList({ filter, setFilter, onReload }) {
   // Papierkorb, keine Quarantaene. Undo geht ueber "Blockierung rueckgaengig"
   // (loescht die Regel ganz). Bestehende Mails bleiben unangetastet — dafuer
   // ist der "💥 Sender vernichten"-Button rechts daneben.
-  const autoPurgeSender = async (from_addr) => {
-    const isUpgrade = false; // fuer Wortlaut der Confirm-Message; existed==true entdecken wir erst nach dem Call
-    if (!window.confirm(
-      `Absender ${from_addr} auf Auto-Vernichten stellen?\n\n` +
-      `Kuenftige Mails werden direkt beim Scan endgueltig geloescht — nicht in Quarantaene, nicht im Papierkorb.\n\n` +
-      `Aufheben spaeter per "↺ Blockierung rueckgaengig". Bestehende Mails bleiben — dafuer den "💥 Sender vernichten"-Button rechts.`
-    )) return;
-    setSenderBusy((b) => ({ ...b, [from_addr]: 'auto_purge' }));
-    try {
-      const { body, status } = await apiPost('inbox/senders/block', { from_addr, action: 'purge' });
-      if (status !== 200 || !body.ok) {
-        alert('Auto-Vernichten fehlgeschlagen: ' + (body.error || status));
-      } else if (body.upgraded) {
-        alert('✔ Bestehende Blockier-Regel auf Auto-Vernichten hochgestuft.');
-      } else if (body.existed) {
-        alert('ℹ Regel war bereits auf Auto-Vernichten gesetzt.');
-      } else {
-        alert('✔ Auto-Vernichten aktiviert (Regel angelegt).');
-      }
-      reloadAll();
-    } finally {
-      setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
-    }
+  const autoPurgeSender = (from_addr) => {
+    setSenderDialog({
+      title: `Auto-Vernichten für ${from_addr}?`,
+      description: 'Künftige Mails werden direkt beim Scan endgültig gelöscht — kein Papierkorb, kein Undo. Aufheben später per "↺ Blockierung rückgängig". Bestehende Mails bleiben unverändert.',
+      confirmLabel: '🚫 Aktivieren',
+      confirmStyle: { background: 'var(--mg-err)', color: '#fff' },
+      onConfirm: async () => {
+        setSenderDialog(null);
+        setSenderBusy((b) => ({ ...b, [from_addr]: 'auto_purge' }));
+        try {
+          const { body, status } = await apiPost('inbox/senders/block', { from_addr, action: 'purge' });
+          if (status !== 200 || !body.ok) setSenderFlash({ type: 'err', msg: 'Auto-Vernichten fehlgeschlagen: ' + (body.error || status) });
+          else if (body.upgraded) setSenderFlash({ type: 'ok', msg: '✔ Auf Auto-Vernichten hochgestuft.' });
+          else if (body.existed) setSenderFlash({ type: 'ok', msg: 'ℹ Regel war bereits auf Auto-Vernichten.' });
+          else setSenderFlash({ type: 'ok', msg: '✔ Auto-Vernichten aktiviert.' });
+          reloadAll();
+        } finally {
+          setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
+        }
+      },
+    });
   };
 
   // Domain-Block bzw. Whitelist per POST /rules. Nutzt die Rules-Engine
   // direkt, weil /inbox/senders/block nur from_addr kennt.
-  const addSenderRule = async (from_addr, kind, matchType, busyKey) => {
+  const addSenderRule = (from_addr, kind, matchType, busyKey) => {
     const addr = String(from_addr || '').toLowerCase().trim();
-    if (!addr) { alert('Kein Absender bekannt.'); return; }
+    if (!addr) { setSenderFlash({ type: 'err', msg: 'Kein Absender bekannt.' }); return; }
     const pattern = matchType === 'from_domain'
       ? addr.slice(addr.lastIndexOf('@') + 1)
       : addr;
-    if (!pattern) { alert('Kein gueltiges Muster ableitbar.'); return; }
+    if (!pattern) { setSenderFlash({ type: 'err', msg: 'Kein gültiges Muster ableitbar.' }); return; }
     const scope = matchType === 'from_domain' ? `*@${pattern}` : pattern;
-    const label = kind === 'whitelist' ? 'als sicher einstufen' : 'blockieren';
+    const listName = kind === 'whitelist' ? 'Whitelist' : 'Blacklist';
     const note  = kind === 'whitelist'
-      ? 'Scan-Ergebnisse werden uebersteuert — nicht mehr als gefaehrlich markiert.'
-      : 'Kuenftige Mails werden als gefaehrlich eingestuft (Auto-Quarantaene ggf. aktiv).';
-    if (!window.confirm(`Alle kuenftigen Mails von ${scope} ${label}?\n\n${note}\n\nBereits vorhandene Mails bleiben unveraendert.`)) return;
-    setSenderBusy((b) => ({ ...b, [from_addr]: busyKey }));
-    try {
-      const { body, status } = await apiPost('rules', {
-        kind, match_type: matchType, pattern,
-        note: 'Aus Absender-Uebersicht',
-      });
-      if ((status === 200 || status === 201) && body && body.ok) {
-        alert(`✔ ${scope} in ${kind === 'whitelist' ? 'Whitelist' : 'Blacklist'} eingetragen.`);
-      } else {
-        alert('Regel-Anlage fehlgeschlagen: ' + ((body && body.error) || status));
-      }
-      reloadAll();
-    } finally {
-      setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
-    }
+      ? 'Scan-Ergebnisse werden übersteuert — nicht mehr als gefährlich markiert.'
+      : 'Künftige Mails werden als gefährlich eingestuft (Auto-Quarantäne ggf. aktiv).';
+    setSenderDialog({
+      title: `${scope} ${kind === 'whitelist' ? 'als sicher einstufen' : 'blockieren'}?`,
+      description: `${note} Bereits vorhandene Mails bleiben unverändert.`,
+      confirmLabel: kind === 'whitelist' ? '✓ In Whitelist' : '⛔ In Blacklist',
+      confirmStyle: kind === 'whitelist'
+        ? { background: 'var(--mg-ok)', color: '#fff' }
+        : { background: 'var(--mg-err)', color: '#fff' },
+      onConfirm: async () => {
+        setSenderDialog(null);
+        setSenderBusy((b) => ({ ...b, [from_addr]: busyKey }));
+        try {
+          const { body, status } = await apiPost('rules', {
+            kind, match_type: matchType, pattern,
+            note: 'Aus Absender-Übersicht',
+          });
+          if ((status === 200 || status === 201) && body && body.ok) {
+            setSenderFlash({ type: 'ok', msg: `✔ ${scope} in ${listName} eingetragen.` });
+          } else {
+            setSenderFlash({ type: 'err', msg: 'Regel-Anlage fehlgeschlagen: ' + ((body && body.error) || status) });
+          }
+          reloadAll();
+        } finally {
+          setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
+        }
+      },
+    });
   };
   const blockDomain     = (from_addr) => addSenderRule(from_addr, 'blacklist', 'from_domain', 'bl_domain');
   const whitelistAddr   = (from_addr) => addSenderRule(from_addr, 'whitelist', 'from_addr',  'wl_addr');
@@ -615,29 +643,30 @@ function SenderList({ filter, setFilter, onReload }) {
 
   // Rueckgaengig — loescht die vorhandene Block-/Whitelist-Regel via
   // Rule-ID aus der SenderIndex-Response. Kein zweiter Roundtrip auf /rules.
-  const undoSenderRule = async (sender, kind) => {
+  const undoSenderRule = (sender, kind) => {
     const from_addr = sender.from_addr;
     const ruleId = kind === 'blacklist' ? sender.block_rule_id : sender.whitelist_rule_id;
-    if (!ruleId) { alert('Keine Regel gefunden — bereits entfernt?'); reloadAll(); return; }
+    if (!ruleId) { setSenderFlash({ type: 'err', msg: 'Keine Regel gefunden — bereits entfernt?' }); reloadAll(); return; }
     const label = kind === 'blacklist' ? 'Blockierung' : 'Freigabe';
-    if (!window.confirm(
-      `${label} fuer ${from_addr} aufheben?\n\n` +
-      `Die entsprechende Regel wird geloescht. Bereits verarbeitete Mails bleiben unveraendert.`
-    )) return;
-    setSenderBusy((b) => ({ ...b, [from_addr]: 'undo' }));
-    try {
-      const { body, status } = await apiDelete(`rules/${ruleId}`);
-      if (status === 200 && body && body.ok) {
-        alert(`✔ ${label} fuer ${from_addr} aufgehoben.`);
-      } else if (status === 404) {
-        alert(`ℹ Regel war bereits entfernt.`);
-      } else {
-        alert('Aufheben fehlgeschlagen: ' + ((body && body.error) || status));
-      }
-      reloadAll();
-    } finally {
-      setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
-    }
+    setSenderDialog({
+      title: `${label} für ${from_addr} aufheben?`,
+      description: 'Die entsprechende Regel wird gelöscht. Bereits verarbeitete Mails bleiben unverändert.',
+      confirmLabel: '↺ Aufheben',
+      confirmStyle: {},
+      onConfirm: async () => {
+        setSenderDialog(null);
+        setSenderBusy((b) => ({ ...b, [from_addr]: 'undo' }));
+        try {
+          const { body, status } = await apiDelete(`rules/${ruleId}`);
+          if (status === 200 && body && body.ok) setSenderFlash({ type: 'ok', msg: `✔ ${label} für ${from_addr} aufgehoben.` });
+          else if (status === 404) setSenderFlash({ type: 'ok', msg: 'ℹ Regel war bereits entfernt.' });
+          else setSenderFlash({ type: 'err', msg: 'Aufheben fehlgeschlagen: ' + ((body && body.error) || status) });
+          reloadAll();
+        } finally {
+          setSenderBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
+        }
+      },
+    });
   };
 
   const openEradicateDialog = (from_addr, msg_count) => {
@@ -722,6 +751,11 @@ function SenderList({ filter, setFilter, onReload }) {
         </div>
       )}
       {error && <div className="mg-card mg-error">{error}</div>}
+      {senderFlash && (
+        <div className={'mg-card' + (senderFlash.type === 'err' ? ' mg-error' : '')} style={{ marginBottom: 8 }}>
+          {senderFlash.msg}
+        </div>
+      )}
       {loading && <div className="mg-card">Lade …</div>}
       {!loading && data.items.length === 0 && (
         <div className="mg-card mg-muted">
@@ -810,18 +844,107 @@ function SenderList({ filter, setFilter, onReload }) {
         onConfirm={confirmEradicate}
       />
       {msgPurgeDialog}
+      {senderDialog && (
+        <SenderConfirmDialog
+          dialog={senderDialog}
+          onClose={() => setSenderDialog(null)}
+        />
+      )}
     </>
+  );
+}
+
+function SenderConfirmDialog({ dialog, onClose }) {
+  if (!dialog) return null;
+  const { title, description, confirmLabel = 'Bestätigen', confirmStyle = {}, onConfirm, onCancel } = dialog;
+  const handleCancel = onCancel || onClose;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed', inset: 0,
+        background: 'rgba(0,0,0,0.55)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 1000, padding: 20,
+        backdropFilter: 'blur(4px)',
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) handleCancel(); }}
+    >
+      <div style={{
+        background: 'var(--mg-surface, #0e0e14)',
+        border: '1px solid var(--mg-border)',
+        borderRadius: 'var(--mg-radius-xl, 14px)',
+        boxShadow: 'var(--mg-shadow-2)',
+        maxWidth: 480, width: '100%', padding: 24,
+      }}>
+        <h2 style={{ fontSize: 17, margin: '0 0 12px', fontWeight: 600 }}>{title}</h2>
+        {description && <div style={{ fontSize: 14, lineHeight: 1.6, opacity: 0.85 }}>{description}</div>}
+        <div className="mg-row" style={{ gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+          <button className="mg-btn" onClick={handleCancel}>Abbrechen</button>
+          <button className="mg-btn" onClick={onConfirm} style={confirmStyle}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
 function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBlock, onAutoPurge, onBlockDomain, onWhitelistAddr, onWhitelistDomain, onUndoBlock, onUndoWhitelist, renderRow }) {
   const s = sender;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
+
   const worst = s.worst_verdict;
   const worstClass = worst === 'dangerous' ? ' mg-sender--danger' : '';
   const canUnsub = s.has_unsub === 1 && !s.sender_unsubscribed;
-  const isBlocked     = !!s.sender_blocked;
+  const isBlocked      = !!s.sender_blocked;
   const isPurgeBlocked = isBlocked && s.block_rule_action === 'purge';
-  const isWhitelisted = !!s.sender_whitelisted;
+  const isWhitelisted  = !!s.sender_whitelisted;
+
+  const menuItems = [
+    !isWhitelisted && !isBlocked && {
+      label: '✓ Absender als sicher',
+      busyKey: 'wl_addr',
+      onClick: onWhitelistAddr,
+      title: `Whitelist-Regel für ${s.from_addr}`,
+    },
+    {
+      label: '✓ Domain als sicher',
+      busyKey: 'wl_domain',
+      onClick: onWhitelistDomain,
+      title: 'Whitelist-Regel für die ganze Absender-Domain',
+    },
+    !isBlocked && {
+      label: '⛔ Absender blockieren',
+      busyKey: 'block',
+      onClick: isWhitelisted ? null : onBlock,
+      disabled: isWhitelisted,
+      title: isWhitelisted ? 'Erst Freigabe aufheben' : `Blacklist-Regel für ${s.from_addr}`,
+      danger: true,
+    },
+    !isPurgeBlocked && !isWhitelisted && {
+      label: isBlocked ? '⚡ Hochstufen: Auto-Vernichten' : '🚫 Auto-Vernichten',
+      busyKey: 'auto_purge',
+      onClick: onAutoPurge,
+      title: isBlocked ? 'Blockier-Regel auf Auto-Vernichten hochstufen' : `Künftige Mails direkt beim Scan endgültig löschen`,
+      danger: true,
+    },
+    {
+      label: '⛔ Domain blockieren',
+      busyKey: 'bl_domain',
+      onClick: onBlockDomain,
+      title: 'Ganze Absender-Domain auf die Blacklist',
+      danger: true,
+    },
+  ].filter(Boolean);
+
   return (
     <div className={'mg-card mg-sender' + worstClass}>
       <div className="mg-sender__head" role="button" tabIndex={0} onClick={onToggle}
@@ -842,8 +965,8 @@ function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBloc
             ? <span className="mg-pill mg-pill--muted" title="Sender bereits abgemeldet">✓ abgemeldet</span>
             : <span className="mg-pill mg-pill--ok">Newsletter</span>)}
           {isBlocked && (isPurgeBlocked
-            ? <span className="mg-pill mg-pill--err" title="Auto-Vernichten aktiv — kuenftige Mails werden direkt geloescht">🚫 auto-vernichten</span>
-            : <span className="mg-pill mg-pill--err" title="Blacklist-Regel aktiv (Quarantaene)">⛔ blockiert</span>)}
+            ? <span className="mg-pill mg-pill--err" title="Auto-Vernichten aktiv — künftige Mails werden direkt gelöscht">🚫 auto-vernichten</span>
+            : <span className="mg-pill mg-pill--err" title="Blacklist-Regel aktiv">⛔ blockiert</span>)}
           {isWhitelisted && <span className="mg-pill mg-pill--ok" title="Whitelist-Regel aktiv">✓ erlaubt</span>}
           <span className="mg-muted mg-tiny">{fmtDate(s.latest_at)}</span>
           <span className={'mg-sender__chevron' + (group.expanded ? ' mg-sender__chevron--open' : '')} aria-hidden="true">▾</span>
@@ -856,90 +979,79 @@ function SenderCard({ sender, group, busy, onToggle, onUnsub, onPurgeAll, onBloc
             className="mg-btn mg-btn--primary"
             disabled={!!busy}
             onClick={(e) => { e.stopPropagation(); onUnsub(); }}
-            title={`Alle ${s.msg_count} Mails dieses Absenders in einem Rutsch abmelden`}
+            title={`Alle ${s.msg_count} Mails dieses Absenders abmelden`}
           >
             {busy === 'unsub' ? '…' : '✉ Newsletter abmelden'}
           </button>
         )}
-        {isWhitelisted ? (
+        {isWhitelisted && (
           <button
             className="mg-btn"
             disabled={!!busy}
             onClick={(e) => { e.stopPropagation(); onUndoWhitelist && onUndoWhitelist(); }}
-            title={`Whitelist-Regel fuer ${s.from_addr} aufheben`}
+            title={`Whitelist-Regel für ${s.from_addr} aufheben`}
           >
-            {busy === 'undo' ? '…' : '↺ Freigabe rueckgaengig'}
-          </button>
-        ) : (
-          <button
-            className="mg-btn"
-            disabled={!!busy || isBlocked}
-            onClick={(e) => { e.stopPropagation(); onWhitelistAddr && onWhitelistAddr(); }}
-            title={isBlocked
-              ? 'Erst Blockierung aufheben, dann als sicher einstufen'
-              : `Whitelist-Regel für ${s.from_addr} — kuenftige Mails immer als sauber durchlassen`}
-          >
-            {busy === 'wl_addr' ? '…' : '✓ Absender als sicher'}
+            {busy === 'undo' ? '…' : '↺ Freigabe rückgängig'}
           </button>
         )}
-        <button
-          className="mg-btn"
-          disabled={!!busy}
-          onClick={(e) => { e.stopPropagation(); onWhitelistDomain && onWhitelistDomain(); }}
-          title="Whitelist-Regel fuer die ganze Absender-Domain"
-        >
-          {busy === 'wl_domain' ? '…' : '✓ Domain als sicher'}
-        </button>
-        {isBlocked ? (
+        {isBlocked && (
           <button
             className="mg-btn mg-btn--warn"
             disabled={!!busy}
             onClick={(e) => { e.stopPropagation(); onUndoBlock && onUndoBlock(); }}
-            title={isPurgeBlocked
-              ? `Auto-Vernichten-Regel fuer ${s.from_addr} aufheben`
-              : `Blacklist-Regel fuer ${s.from_addr} aufheben`}
+            title={isPurgeBlocked ? `Auto-Vernichten für ${s.from_addr} aufheben` : `Blockierung für ${s.from_addr} aufheben`}
           >
-            {busy === 'undo' ? '…' : (isPurgeBlocked ? '↺ Auto-Vernichten aus' : '↺ Blockierung rueckgaengig')}
-          </button>
-        ) : (
-          <button
-            className="mg-btn mg-btn--warn"
-            disabled={!!busy || isWhitelisted}
-            onClick={(e) => { e.stopPropagation(); onBlock(); }}
-            title={isWhitelisted
-              ? 'Erst Freigabe aufheben, dann blockieren'
-              : `Blacklist-Regel für ${s.from_addr} anlegen`}
-          >
-            {busy === 'block' ? '…' : '⛔ Absender blockieren'}
+            {busy === 'undo' ? '…' : (isPurgeBlocked ? '↺ Auto-Vernichten aus' : '↺ Blockierung rückgängig')}
           </button>
         )}
-        {!isPurgeBlocked && !isWhitelisted && (
-          <button
-            className="mg-btn mg-btn--danger"
-            disabled={!!busy}
-            onClick={(e) => { e.stopPropagation(); onAutoPurge && onAutoPurge(); }}
-            title={isBlocked
-              ? `Blockier-Regel fuer ${s.from_addr} auf Auto-Vernichten hochstufen — kuenftige Mails werden direkt geloescht`
-              : `Kuenftige Mails von ${s.from_addr} direkt beim Scan endgueltig loeschen (kein Papierkorb)`}
-          >
-            {busy === 'auto_purge' ? '…' : (isBlocked ? '⚡ Hochstufen: Auto-Vernichten' : '🚫 Auto-Vernichten')}
-          </button>
+        {menuItems.length > 0 && (
+          <div style={{ position: 'relative' }} ref={menuRef}>
+            <button
+              className="mg-btn"
+              disabled={!!busy}
+              onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
+              title="Weitere Aktionen"
+              aria-haspopup="true"
+              aria-expanded={menuOpen}
+            >
+              ⋯
+            </button>
+            {menuOpen && (
+              <div style={{
+                position: 'absolute', top: '100%', right: 0, marginTop: 4,
+                background: 'var(--mg-surface, #0e0e14)',
+                border: '1px solid var(--mg-border)',
+                borderRadius: 'var(--mg-radius-xl, 10px)',
+                boxShadow: 'var(--mg-shadow-2)',
+                minWidth: 220, zIndex: 100, padding: 6,
+              }}>
+                {menuItems.map((item, i) => (
+                  <button
+                    key={i}
+                    className={'mg-btn' + (item.danger ? ' mg-btn--warn' : '')}
+                    disabled={!!busy || item.disabled}
+                    title={item.title}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpen(false);
+                      if (item.onClick && !item.disabled) item.onClick();
+                    }}
+                    style={{ width: '100%', textAlign: 'left', justifyContent: 'flex-start', marginBottom: i < menuItems.length - 1 ? 2 : 0 }}
+                  >
+                    {busy === item.busyKey ? '…' : item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
-        <button
-          className="mg-btn mg-btn--warn"
-          disabled={!!busy}
-          onClick={(e) => { e.stopPropagation(); onBlockDomain && onBlockDomain(); }}
-          title="Ganze Absender-Domain blockieren"
-        >
-          {busy === 'bl_domain' ? '…' : '⛔ Domain blockieren'}
-        </button>
         <button
           className="mg-btn mg-btn--danger"
           disabled={!!busy}
           onClick={(e) => { e.stopPropagation(); onPurgeAll(); }}
-          title={`Best-effort abmelden + Sender blockieren + alle ${s.msg_count} Mails ENDGÜLTIG löschen — nicht wiederherstellbar`}
+          title={`Abmelden + blockieren + alle ${s.msg_count} Mails ENDGÜLTIG löschen`}
         >
-          {busy === 'eradicate' ? '…' : `💥 Sender vernichten (${s.msg_count})`}
+          {busy === 'eradicate' ? '…' : `💥 Vernichten (${s.msg_count})`}
         </button>
       </div>
 
