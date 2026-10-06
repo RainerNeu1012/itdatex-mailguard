@@ -643,14 +643,12 @@ function SenderList({ filter, setFilter, onReload }) {
   const openEradicateDialog = (from_addr, msg_count) => {
     const at = String(from_addr || '').lastIndexOf('@');
     const domain = at >= 0 ? String(from_addr).slice(at + 1).toLowerCase().trim() : '';
-    setPurgeAck(false);
     setPurgeAlsoDomain(false);
     setPurgeCreateRule(false);
     setPurgeTarget({ from_addr, msg_count, domain });
   };
   const closeEradicateDialog = () => {
     setPurgeTarget(null);
-    setPurgeAck(false);
     setPurgeAlsoDomain(false);
     setPurgeCreateRule(false);
   };
