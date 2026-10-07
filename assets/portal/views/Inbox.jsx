@@ -314,9 +314,9 @@ function ChronoList({ filter, setFilter, onReload }) {
   useEffect(() => { load(); }, [load]);
 
   const reloadAll = () => { load(); onReload(); };
+  const [rowFlash, setRowFlash] = useState(null);
   const { dialogElement: msgPurgeDialog, requestPurge } = useMsgPurgeDialog(() => reloadAll(), setRowFlash);
   const { dialogElement: rowConfirmDialog, requestConfirm } = useRowConfirmDialog();
-  const [rowFlash, setRowFlash] = useState(null);
   useEffect(() => {
     if (!rowFlash) return;
     const t = setTimeout(() => setRowFlash(null), 5000);
