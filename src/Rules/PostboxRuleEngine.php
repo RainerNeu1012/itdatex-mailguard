@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Itdatex\Mailguard\Rules;
 
-use Itdatex\Mailguard\Antiphish\PurgeService;
+use Itdatex\Mailguard\Imap\QuarantineService;
 use Itdatex\Mailguard\Imap\Account as ImapAccount;
 use Itdatex\Mailguard\Imap\ClientFactory;
 use Itdatex\Mailguard\Installer;
@@ -50,7 +50,7 @@ final class PostboxRuleEngine {
 				$type = (string) ( $a['type'] ?? '' );
 				if ( $type === 'delete' ) {
 					// Hard-Purge via bestehenden PurgeService — respektiert Audit-Log.
-					$res = PurgeService::purge_message( (int) $msg['id'], $customer_id );
+					$res = QuarantineService::purge_message( (int) $msg['id'], $customer_id );
 					if ( ! empty( $res['ok'] ) ) {
 						$deleted = true;
 					}
@@ -122,7 +122,7 @@ final class PostboxRuleEngine {
 			if ( ! $has_delete ) { continue; }
 			if ( ! self::matches( $conditions, (string) $r['match_op'], $msg ) ) { continue; }
 
-			$res = PurgeService::purge_message( (int) $msg['id'], $customer_id );
+			$res = QuarantineService::purge_message( (int) $msg['id'], $customer_id );
 			if ( ! empty( $res['ok'] ) ) {
 				PostboxRule::record_hit( (int) $r['id'] );
 				return [ 'deleted' => true, 'rule_id' => (int) $r['id'] ];
