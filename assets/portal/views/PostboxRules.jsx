@@ -7,6 +7,7 @@ const FIELD_META = {
   from_name:       { label: 'Anzeigename',      type: 'string',  placeholder: 'Sparkasse' },
   subject:         { label: 'Betreff',          type: 'string',  placeholder: 'Rechnung' },
   body:            { label: 'Text (Preview)',   type: 'string',  placeholder: 'Zahlungserinnerung' },
+  folder:          { label: 'IMAP-Ordner',      type: 'string',  placeholder: 'Junk' },
   verdict:         { label: 'Verdict',          type: 'enum',    options: ['clean', 'suspicious', 'dangerous'] },
   score:           { label: 'Score',            type: 'number',  placeholder: '50' },
   has_unsub:       { label: 'Hat Unsubscribe',  type: 'bool' },

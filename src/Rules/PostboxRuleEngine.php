@@ -191,6 +191,7 @@ final class PostboxRuleEngine {
 			case 'from_name':        return (string) ( $msg['from_name']        ?? '' );
 			case 'subject':          return (string) ( $msg['subject']          ?? '' );
 			case 'body':             return (string) ( $msg['body_preview']     ?? '' );
+			case 'folder':           return (string) ( $msg['folder']           ?? '' );
 			case 'verdict':          return (string) ( $msg['scan_verdict']     ?? '' );
 			case 'score':            return (int)    ( $msg['scan_score']       ?? 0 );
 			case 'has_unsub':        return (int) ( ! empty( $msg['has_unsub'] ) ? 1 : 0 );
