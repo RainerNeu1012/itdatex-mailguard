@@ -95,6 +95,44 @@ final class PostboxRuleEngine {
 	}
 
 	/**
+	 * Pre-Quarantine-Pass: nur delete-Actions auswerten, damit explizite
+	 * User-Rules ("diese Mails vernichten") vor der Scanner-Heuristik
+	 * (Auto-Quarantaene) greifen. Move/flag-Rules bleiben Post-Quarantine
+	 * im normalen apply() — Dangerous-Mails sollen nicht in Newsletter-
+	 * Ordner wandern.
+	 *
+	 * @return array{deleted:bool, rule_id:?int}
+	 */
+	public static function apply_delete_only( int $customer_id, array $msg ) : array {
+		$rules = PostboxRule::list_enabled_for_customer( $customer_id );
+		if ( empty( $rules ) ) {
+			return [ 'deleted' => false, 'rule_id' => null ];
+		}
+		foreach ( $rules as $r ) {
+			$conditions = json_decode( (string) $r['conditions_json'], true );
+			$actions    = json_decode( (string) $r['actions_json'], true );
+			if ( ! is_array( $conditions ) || ! is_array( $actions ) ) { continue; }
+			$has_delete = false;
+			foreach ( $actions as $a ) {
+				if ( is_array( $a ) && (string) ( $a['type'] ?? '' ) === 'delete' ) {
+					$has_delete = true;
+					break;
+				}
+			}
+			if ( ! $has_delete ) { continue; }
+			if ( ! self::matches( $conditions, (string) $r['match_op'], $msg ) ) { continue; }
+
+			$res = PurgeService::purge_message( (int) $msg['id'], $customer_id );
+			if ( ! empty( $res['ok'] ) ) {
+				PostboxRule::record_hit( (int) $r['id'] );
+				return [ 'deleted' => true, 'rule_id' => (int) $r['id'] ];
+			}
+			// Purge fehlgeschlagen -> naechste Regel probieren.
+		}
+		return [ 'deleted' => false, 'rule_id' => null ];
+	}
+
+	/**
 	 * @param array $conditions Liste von {field, op, value}
 	 */
 	private static function matches( array $conditions, string $match_op, array $msg ) : bool {

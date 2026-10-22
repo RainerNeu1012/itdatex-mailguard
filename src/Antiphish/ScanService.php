@@ -330,6 +330,27 @@ final class ScanService {
 			];
 		}
 
+		// Pre-Quarantine-Pass: delete-Postbox-Rules greifen VOR der Auto-
+		// Quarantaene. Explizite User-Rules ("diese Mails vernichten") schlagen
+		// die generische Scanner-Heuristik — sonst landen Mails die der User
+		// ausdruecklich geloescht haben will in Quarantaene statt expunged.
+		$fresh_pre = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$t} WHERE id = %d", $id ), ARRAY_A );
+		if ( $fresh_pre ) {
+			$pre_delete = \Itdatex\Mailguard\Rules\PostboxRuleEngine::apply_delete_only( $customer_id, $fresh_pre );
+			if ( ! empty( $pre_delete['deleted'] ) ) {
+				do_action( 'mailguard_scan_complete', $id, $customer_id, $verdict, $score_capped );
+				return [
+					'ok'              => true,
+					'verdict'         => $verdict,
+					'score'           => $score_capped,
+					'override'        => $override ? true : false,
+					'auto_purge'      => true,
+					'auto_quarantine' => [ 'ran' => false ],
+					'postbox_rules'   => [ 'applied' => [ [ 'rule_id' => $pre_delete['rule_id'], 'deleted' => true ] ], 'deleted' => true ],
+				];
+			}
+		}
+
 		$force_quarantine = ! empty( $av_infections );
 		$auto = self::maybe_auto_quarantine( (int) $row['account_id'], $customer_id, $id, $verdict, $score_capped, $blacklist_hit || $force_quarantine );
 
