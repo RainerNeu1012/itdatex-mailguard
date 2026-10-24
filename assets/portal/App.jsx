@@ -23,6 +23,7 @@ import Devices        from './views/Devices.jsx';
 import LlmFeedback    from './views/LlmFeedback.jsx';
 import NotificationsBell from './components/NotificationsBell.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
+import BrandMark from './components/BrandMark.jsx';
 
 export default function App() {
   const route = useRoute();
@@ -72,7 +73,7 @@ export default function App() {
         <a href={isMarketing ? 'https://guard.itdatex.support/' : portalUrl()}
            className="mg-brand"
            onClick={(e) => { if (!isMarketing) { e.preventDefault(); navigate('dashboard'); } }}>
-          <img src={`${(window.itdatexMailguard||{}).pluginUrl || ''}assets/img/mark-white.svg`} alt="!tdatex" className="mg-brand__logo" />
+          <BrandMark className="mg-brand__logo" size={28} />
           <span className="mg-brand__txt">
             <span className="mg-brand__name">MAIL<span className="mg-brand__accent">GUARD</span></span>
             <span className="mg-brand__sub">// {isMarketing ? 'saas' : 'portal'}</span>

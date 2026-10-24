@@ -1939,3 +1939,25 @@ body::before {
   letter-spacing: 0.08em;
   min-width: 1.75rem;
 }
+
+/* Theme-aware Brand-Mark: Default (dark) zeigt weiss-mark, Light zeigt
+   schwarz-mark. Flipt via :root[data-theme] oder prefers-color-scheme. */
+.mg-brand-mark__dark  { display: inline-block; }
+.mg-brand-mark__light { display: none; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .mg-brand-mark__dark  { display: none; }
+  :root:not([data-theme="dark"]) .mg-brand-mark__light { display: inline-block; }
+}
+:root[data-theme="light"] .mg-brand-mark__dark  { display: none; }
+:root[data-theme="light"] .mg-brand-mark__light { display: inline-block; }
+:root[data-theme="dark"] .mg-brand-mark__dark  { display: inline-block; }
+:root[data-theme="dark"] .mg-brand-mark__light { display: none; }
+
+/* Auth-Views: der Mark-img ist mark-white.svg direkt eingebaut. Im Light-Mode
+   via CSS-filter invertieren damit's schwarz wird. Funktioniert mit SVG
+   die auf einfachen fill="#fff" basieren. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .mg-auth__brand img { filter: invert(1); }
+}
+:root[data-theme="light"] .mg-auth__brand img { filter: invert(1); }
+:root[data-theme="dark"]  .mg-auth__brand img { filter: none; }
