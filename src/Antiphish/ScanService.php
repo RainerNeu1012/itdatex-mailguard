@@ -166,6 +166,17 @@ final class ScanService {
 			$score += 40;
 		}
 
+		// Google Safe Browsing: URLs im Body gegen Google's Phishing-/Malware-
+		// Datenbank pruefen. Treffer = sehr starker Score-Boost (+40 pro URL,
+		// gedeckelt bei 70 via Score-Cap unten). Transient-Cache 24h pro URL
+		// damit Rate-Limits (10k/Tag) nicht ueberfahren werden. No-op wenn
+		// kein API-Key konfiguriert ist.
+		$sb_reasons = UrlReputationService::reasons_for_body( (string) ( $row['body_preview'] ?? '' ) );
+		foreach ( $sb_reasons as $r ) {
+			$reasons[] = $r;
+			$score += (int) ( $r['score'] ?? 0 );
+		}
+
 		// Kaltakquise-Heuristik: Sales/Kaltakquise-Mails haben typisch drei
 		// Merkmale: (1) List-Unsubscribe-Header (Mass-Mail-Merkmal), (2) neuer
 		// Absender ohne Vorgeschichte im Postfach (kein regulaerer Newsletter,

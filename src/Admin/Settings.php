@@ -61,6 +61,10 @@ final class Settings {
 		self::field_number( 'scan_batch_size',    __( 'Scans pro Cron-Run', 'itdatex-mailguard' ), 'mg_api', 1, 100 );
 		self::field_number( 'manual_scan_quota',  __( 'Manuelle Scans / Endkunde / 24h', 'itdatex-mailguard' ), 'mg_api', 1, 1000 );
 
+		add_settings_section( 'mg_safebrowsing', __( 'Google Safe Browsing', 'itdatex-mailguard' ), [ __CLASS__, 'safebrowsing_intro' ], self::PAGE_SLUG );
+		self::field_checkbox( 'safe_browsing_enabled', __( 'Safe Browsing aktivieren', 'itdatex-mailguard' ), 'mg_safebrowsing', __( 'URLs aus eingehenden Mails gegen Googles Phishing-/Malware-Liste pruefen (10.000 Lookups/Tag kostenlos). Treffer += 40 Score pro URL.', 'itdatex-mailguard' ) );
+		self::field_password( 'safe_browsing_api_key', __( 'Google-Cloud API-Key', 'itdatex-mailguard' ), 'mg_safebrowsing' );
+
 		add_settings_section( 'mg_av', __( 'ClamAV Anhang-Scan', 'itdatex-mailguard' ), [ __CLASS__, 'clamav_intro' ], self::PAGE_SLUG );
 		self::field_checkbox( 'av_clamav_enabled', __( 'ClamAV aktivieren', 'itdatex-mailguard' ), 'mg_av', __( 'Bei aktivem Scan werden Anhaenge waehrend des Cron-Runs per IMAP nachgeladen und gegen clamd gestreamt', 'itdatex-mailguard' ) );
 		self::field_text(     'av_clamav_socket',  __( 'clamd-Socket', 'itdatex-mailguard' ), 'mg_av', [ 'placeholder' => '/var/run/clamav/clamd.ctl oder tcp://127.0.0.1:3310' ] );
@@ -109,6 +113,14 @@ final class Settings {
 		echo '<code style="user-select:all;background:var(--it-bg-elevated,#f0f0f1);color:var(--it-text,#1d2327);padding:4px 8px;display:inline-block;margin-top:4px">' . esc_html( $redirect ) . '</code></p>';
 		echo '<p class="description">' . wp_kses(
 			__( 'Anleitung: <a href="https://console.cloud.google.com" target="_blank" rel="noopener">console.cloud.google.com</a> → neues Projekt → <em>APIs &amp; Services</em> → <em>Library</em> → <em>Gmail API</em> aktivieren. Dann <em>OAuth consent screen</em>: User type „External", App-Name, Developer-Email; eigene Email als <em>Test user</em> hinzufügen; Scope <code>https://mail.google.com/</code>. Schließlich <em>Credentials</em> → <em>+ Create credentials</em> → <em>OAuth client ID</em> → <em>Web application</em>, Redirect-URI = die URL oben. Hinweis: <code>mail.google.com</code> ist „restricted scope" — bis 100 Test-User reicht der Test-Modus, für Production später Google-Verifikation einreichen.', 'itdatex-mailguard' ),
+			[ 'a' => [ 'href' => [], 'target' => [], 'rel' => [] ], 'em' => [], 'code' => [] ]
+		) . '</p>';
+	}
+
+	public static function safebrowsing_intro() : void {
+		echo '<p>' . esc_html__( 'URLs aus eingehenden Mails werden gegen Googles Safe-Browsing-DB abgeglichen (Phishing, Malware, Social Engineering). Treffer = Score +40 pro URL. Clean-URLs werden 24h gecacht, damit das Daily-Quota reicht.', 'itdatex-mailguard' ) . '</p>';
+		echo '<p class="description">' . wp_kses(
+			__( 'API-Key: <a href="https://console.cloud.google.com/apis/library/safebrowsing.googleapis.com" target="_blank" rel="noopener">Google Cloud Console</a> → neues Projekt → Safe Browsing API aktivieren → <em>Credentials</em> → <em>Create credentials</em> → <em>API key</em>. Keine Billing noetig, Free-Tier reicht fuer die meisten Postfaecher.', 'itdatex-mailguard' ),
 			[ 'a' => [ 'href' => [], 'target' => [], 'rel' => [] ], 'em' => [], 'code' => [] ]
 		) . '</p>';
 	}
@@ -172,8 +184,14 @@ final class Settings {
 				$out['push_fcm_service_account'] = $json;
 			}
 		}
-		foreach ( [ 'allow_registration', 'require_email_verification', 'scan_deep', 'scan_auto_destroy_dangerous', 'av_clamav_enabled', 'av_notify_admin' ] as $k ) {
+		foreach ( [ 'allow_registration', 'require_email_verification', 'scan_deep', 'scan_auto_destroy_dangerous', 'av_clamav_enabled', 'av_notify_admin', 'safe_browsing_enabled' ] as $k ) {
 			$out[ $k ] = ! empty( $input[ $k ] ) ? 1 : 0;
+		}
+		if ( array_key_exists( 'safe_browsing_api_key', $input ) ) {
+			$key = trim( (string) $input['safe_browsing_api_key'] );
+			if ( $key !== '' ) {
+				$out['safe_browsing_api_key'] = $key;
+			}
 		}
 		if ( isset( $input['av_clamav_socket'] ) ) {
 			$out['av_clamav_socket'] = sanitize_text_field( (string) $input['av_clamav_socket'] );
