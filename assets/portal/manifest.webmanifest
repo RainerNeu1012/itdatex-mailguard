@@ -1,0 +1,59 @@
+{
+  "name": "MailGuard — Anti-Phishing · Multi-Mailbox",
+  "short_name": "MailGuard",
+  "description": "Multi-Mailbox Anti-Phishing · Monochrom · Dark & Light",
+  "start_url": "/portal/",
+  "scope": "/portal/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "lang": "de",
+  "categories": ["productivity", "security", "utilities"],
+  "icons": [
+    {
+      "src": "/wp-content/plugins/itdatex-mailguard/assets/img/pwa/icon-192-white.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/wp-content/plugins/itdatex-mailguard/assets/img/pwa/icon-256-white.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/wp-content/plugins/itdatex-mailguard/assets/img/pwa/icon-384-white.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/wp-content/plugins/itdatex-mailguard/assets/img/pwa/icon-512-white.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Inbox",
+      "short_name": "Inbox",
+      "url": "/portal/inbox",
+      "description": "Zum Posteingang springen"
+    },
+    {
+      "name": "Scanner",
+      "short_name": "Scanner",
+      "url": "/portal/scanner",
+      "description": "URL oder Mail-Snippet prüfen"
+    },
+    {
+      "name": "Postfach-Regeln",
+      "short_name": "Regeln",
+      "url": "/portal/postbox-rules",
+      "description": "Spam-Regeln verwalten"
+    }
+  ]
+}

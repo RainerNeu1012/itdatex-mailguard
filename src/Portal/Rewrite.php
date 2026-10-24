@@ -21,6 +21,11 @@ final class Rewrite {
 			return;
 		}
 		add_rewrite_tag( '%' . self::QUERY_VAR . '%', '([^&]+)' );
+		// Spezielle PWA-Routes zuerst — damit /portal/sw.js und /portal/manifest.webmanifest
+		// nicht in der SPA-Shell gefangen werden, sondern mit korrektem Content-Type
+		// vom Server-Side gerendert werden.
+		add_rewrite_rule( '^' . preg_quote( $slug, '#' ) . '/sw\.js$',               'index.php?' . self::QUERY_VAR . '=__sw',       'top' );
+		add_rewrite_rule( '^' . preg_quote( $slug, '#' ) . '/manifest\.webmanifest$', 'index.php?' . self::QUERY_VAR . '=__manifest', 'top' );
 		add_rewrite_rule( '^' . preg_quote( $slug, '#' ) . '/?$',         'index.php?' . self::QUERY_VAR . '=', 'top' );
 		add_rewrite_rule( '^' . preg_quote( $slug, '#' ) . '/(.+?)/?$',   'index.php?' . self::QUERY_VAR . '=$matches[1]', 'top' );
 	}
@@ -34,6 +39,30 @@ final class Rewrite {
 		$route = get_query_var( self::QUERY_VAR, null );
 		if ( $route === null || $route === false ) {
 			return;
+		}
+
+		// PWA Service-Worker — serviert aus assets/portal/sw.js mit korrektem
+		// Content-Type. Der Scope ist /portal/ — darum MUSS die SW-URL unter
+		// genau diesem Pfad erreichbar sein (Browser respektieren Scope nur
+		// bis zum Pfad des Service-Workers).
+		if ( $route === '__sw' ) {
+			$sw_file = ITDATEX_MAILGUARD_DIR . 'assets/portal/sw.js';
+			status_header( file_exists( $sw_file ) ? 200 : 404 );
+			header( 'Content-Type: application/javascript; charset=UTF-8' );
+			header( 'Service-Worker-Allowed: /portal/' );
+			header( 'Cache-Control: no-cache, max-age=0' );
+			if ( file_exists( $sw_file ) ) { readfile( $sw_file ); }
+			exit;
+		}
+
+		// PWA Web-App-Manifest.
+		if ( $route === '__manifest' ) {
+			$mf_file = ITDATEX_MAILGUARD_DIR . 'assets/portal/manifest.webmanifest';
+			status_header( file_exists( $mf_file ) ? 200 : 404 );
+			header( 'Content-Type: application/manifest+json; charset=UTF-8' );
+			header( 'Cache-Control: public, max-age=3600' );
+			if ( file_exists( $mf_file ) ) { readfile( $mf_file ); }
+			exit;
 		}
 
 		status_header( 200 );
@@ -57,8 +86,16 @@ final class Rewrite {
 		echo '<meta name="viewport" content="width=device-width, initial-scale=1">';
 		echo '<title>MailGuard SaaS — Portal</title>';
 		echo '<meta name="robots" content="noindex, nofollow">';
-		echo '<meta name="theme-color" content="#0d1117">';
+		echo '<meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)">';
+		echo '<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">';
+		echo '<meta name="apple-mobile-web-app-capable" content="yes">';
+		echo '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">';
+		echo '<meta name="apple-mobile-web-app-title" content="MailGuard">';
+		echo '<meta name="application-name" content="MailGuard">';
 		echo '<link rel="icon" type="image/svg+xml" href="' . esc_url( ITDATEX_MAILGUARD_URL . 'assets/img/mark.svg' ) . '">';
+		echo '<link rel="manifest" href="' . esc_url( $portal_url . 'manifest.webmanifest' ) . '">';
+		echo '<link rel="apple-touch-icon" sizes="192x192" href="' . esc_url( ITDATEX_MAILGUARD_URL . 'assets/img/pwa/icon-192-white.png' ) . '">';
+		echo '<link rel="apple-touch-icon" sizes="512x512" href="' . esc_url( ITDATEX_MAILGUARD_URL . 'assets/img/pwa/icon-512-white.png' ) . '">';
 		// Webfonts — exakt der itdatex-Standard-Stack (Bebas Neue, IBM Plex Sans, JetBrains Mono).
 		echo '<link rel="preconnect" href="https://fonts.googleapis.com">';
 		echo '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>';
