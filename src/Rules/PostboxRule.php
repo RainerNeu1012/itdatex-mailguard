@@ -28,7 +28,7 @@ final class PostboxRule {
 
 	public const FIELDS  = [
 		'from_addr', 'from_domain', 'from_name',
-		'subject', 'body', 'verdict', 'score',
+		'subject', 'body', 'folder', 'verdict', 'score',
 		'has_unsub', 'has_attachments',
 	];
 	public const OPS     = [

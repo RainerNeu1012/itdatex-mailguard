@@ -36,6 +36,8 @@ use Itdatex\Mailguard\Antiphish\Subscriptions;
 use Itdatex\Mailguard\Antiphish\UnsubService;
 use Itdatex\Mailguard\Rules\PostboxRule;
 use Itdatex\Mailguard\Rules\Rule;
+use Itdatex\Mailguard\Rules\SharedRule;
+use Itdatex\Mailguard\Rules\SharedRuleOptout;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_Error;
@@ -695,6 +697,47 @@ final class Controller {
 				'methods'             => 'DELETE',
 				'permission_callback' => '__return_true',
 				'callback'            => [ __CLASS__, 'postbox_rules_delete' ],
+			],
+		] );
+
+		// Shared Rules (globale Spam-DB): read-only + opt-out fuer alle Kunden,
+		// create/update/delete nur fuer Operator (require_operator).
+		register_rest_route( self::NAMESPACE, '/shared-rules', [
+			[
+				'methods'             => 'GET',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'shared_rules_list' ],
+			],
+		] );
+		register_rest_route( self::NAMESPACE, '/shared-rules/(?P<id>\d+)/opt-out', [
+			[
+				'methods'             => 'POST',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'shared_rules_opt_out_set' ],
+			],
+			[
+				'methods'             => 'DELETE',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'shared_rules_opt_out_remove' ],
+			],
+		] );
+		register_rest_route( self::NAMESPACE, '/admin/shared-rules', [
+			[
+				'methods'             => 'POST',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'admin_shared_rules_create' ],
+			],
+		] );
+		register_rest_route( self::NAMESPACE, '/admin/shared-rules/(?P<id>\d+)', [
+			[
+				'methods'             => 'PUT',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'admin_shared_rules_update' ],
+			],
+			[
+				'methods'             => 'DELETE',
+				'permission_callback' => '__return_true',
+				'callback'            => [ __CLASS__, 'admin_shared_rules_delete' ],
 			],
 		] );
 
@@ -1428,6 +1471,73 @@ final class Controller {
 			return new WP_Error( 'not_found', '', [ 'status' => 404 ] );
 		}
 		PostboxRule::delete( $id, $cid );
+		return new WP_REST_Response( [ 'ok' => true ], 200 );
+	}
+
+	public static function shared_rules_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		global $wpdb;
+		$rows = $wpdb->get_results( 'SELECT * FROM ' . SharedRule::table() . ' ORDER BY priority ASC, id ASC', ARRAY_A ) ?: [];
+		$items = array_map( static fn( $r ) => SharedRule::public_view( $r, $cid ), $rows );
+		$operators = (array) \Itdatex\Mailguard\Admin\Settings::get( 'operator_customer_ids', [] );
+		$is_operator = in_array( (int) $cid, array_map( 'intval', $operators ), true );
+		return new WP_REST_Response( [ 'ok' => true, 'items' => $items, 'is_operator' => $is_operator ], 200 );
+	}
+
+	public static function shared_rules_opt_out_set( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req['id'];
+		if ( ! SharedRule::find( $id ) ) {
+			return new WP_Error( 'not_found', '', [ 'status' => 404 ] );
+		}
+		SharedRuleOptout::set( $cid, $id );
+		return new WP_REST_Response( [ 'ok' => true, 'opted_out' => true ], 200 );
+	}
+
+	public static function shared_rules_opt_out_remove( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req['id'];
+		SharedRuleOptout::remove( $cid, $id );
+		return new WP_REST_Response( [ 'ok' => true, 'opted_out' => false ], 200 );
+	}
+
+	public static function admin_shared_rules_create( WP_REST_Request $req ) {
+		$cid = self::require_operator();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json = (array) $req->get_json_params();
+		$res = SharedRule::create( $json );
+		if ( empty( $res['ok'] ) ) {
+			return new WP_REST_Response( $res, 400 );
+		}
+		$row = SharedRule::find( (int) $res['id'] );
+		return new WP_REST_Response( [ 'ok' => true, 'item' => SharedRule::public_view( $row, $cid ) ], 201 );
+	}
+
+	public static function admin_shared_rules_update( WP_REST_Request $req ) {
+		$cid = self::require_operator();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req['id'];
+		$json = (array) $req->get_json_params();
+		$res = SharedRule::update( $id, $json );
+		if ( empty( $res['ok'] ) ) {
+			$status = ( $res['error'] ?? '' ) === 'not_found' ? 404 : 400;
+			return new WP_REST_Response( $res, $status );
+		}
+		$row = SharedRule::find( $id );
+		return new WP_REST_Response( [ 'ok' => true, 'item' => SharedRule::public_view( $row, $cid ) ], 200 );
+	}
+
+	public static function admin_shared_rules_delete( WP_REST_Request $req ) {
+		$cid = self::require_operator();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req['id'];
+		if ( ! SharedRule::find( $id ) ) {
+			return new WP_Error( 'not_found', '', [ 'status' => 404 ] );
+		}
+		SharedRule::delete( $id );
 		return new WP_REST_Response( [ 'ok' => true ], 200 );
 	}
 

@@ -27,7 +27,7 @@ final class PostboxRuleEngine {
 	 * @return array{applied:array<int,array>, folder_after:?string, deleted:bool}
 	 */
 	public static function apply( int $customer_id, array $msg ) : array {
-		$rules = PostboxRule::list_enabled_for_customer( $customer_id );
+		$rules = self::merged_rules_for_customer( $customer_id );
 		if ( empty( $rules ) ) {
 			return [ 'applied' => [], 'folder_after' => null, 'deleted' => false ];
 		}
@@ -49,12 +49,10 @@ final class PostboxRuleEngine {
 				if ( ! is_array( $a ) ) { continue; }
 				$type = (string) ( $a['type'] ?? '' );
 				if ( $type === 'delete' ) {
-					// Hard-Purge via bestehenden PurgeService — respektiert Audit-Log.
 					$res = QuarantineService::purge_message( (int) $msg['id'], $customer_id );
 					if ( ! empty( $res['ok'] ) ) {
 						$deleted = true;
 					}
-					// Nach delete keine weiteren Actions dieser Regel — Mail ist weg.
 					break;
 				}
 				if ( $type === 'move' ) {
@@ -67,16 +65,14 @@ final class PostboxRuleEngine {
 					continue;
 				}
 				if ( $type === 'flag' ) {
-					// TODO: IMAP-Flag setzen. Ohne Client-API-Erweiterung erstmal no-op.
-					// Wir loggen es in $applied, damit User sieht dass die Regel
-					// theoretisch getriggert haette.
 					continue;
 				}
 			}
 
-			PostboxRule::record_hit( (int) $r['id'] );
+			self::record_hit_for( $r );
 			$applied[] = [
 				'rule_id'   => (int) $r['id'],
+				'rule_type' => (string) ( $r['__source'] ?? 'customer' ),
 				'name'      => (string) $r['name'],
 				'actions'   => $actions,
 				'deleted'   => $deleted,
@@ -95,6 +91,43 @@ final class PostboxRuleEngine {
 	}
 
 	/**
+	 * Merged Liste: Customer-Rules + Shared-Rules (minus Opt-outs), stabil
+	 * sortiert nach priority ASC (ties: customer vor shared, dann id ASC).
+	 * Jede Row bekommt ein '__source' Feld ('customer' | 'shared') damit
+	 * record_hit die richtige Tabelle trifft.
+	 */
+	private static function merged_rules_for_customer( int $customer_id ) : array {
+		$merged = [];
+		foreach ( PostboxRule::list_enabled_for_customer( $customer_id ) as $r ) {
+			$r['__source'] = 'customer';
+			$merged[] = $r;
+		}
+		foreach ( SharedRule::list_active_for_customer( $customer_id ) as $r ) {
+			$r['__source'] = 'shared';
+			$merged[] = $r;
+		}
+		usort( $merged, static function ( $a, $b ) {
+			$ap = (int) $a['priority']; $bp = (int) $b['priority'];
+			if ( $ap !== $bp ) { return $ap <=> $bp; }
+			// Customer-Rules gewinnen bei gleicher Prio ueber Shared — User hat
+			// damit immer das letzte Wort fuer seine eigenen Rules.
+			$as = (string) ( $a['__source'] ?? 'customer' );
+			$bs = (string) ( $b['__source'] ?? 'customer' );
+			if ( $as !== $bs ) { return $as === 'customer' ? -1 : 1; }
+			return ( (int) $a['id'] ) <=> ( (int) $b['id'] );
+		} );
+		return $merged;
+	}
+
+	private static function record_hit_for( array $r ) : void {
+		if ( ( $r['__source'] ?? 'customer' ) === 'shared' ) {
+			SharedRule::record_hit( (int) $r['id'] );
+		} else {
+			PostboxRule::record_hit( (int) $r['id'] );
+		}
+	}
+
+	/**
 	 * Pre-Quarantine-Pass: nur delete-Actions auswerten, damit explizite
 	 * User-Rules ("diese Mails vernichten") vor der Scanner-Heuristik
 	 * (Auto-Quarantaene) greifen. Move/flag-Rules bleiben Post-Quarantine
@@ -104,9 +137,9 @@ final class PostboxRuleEngine {
 	 * @return array{deleted:bool, rule_id:?int}
 	 */
 	public static function apply_delete_only( int $customer_id, array $msg ) : array {
-		$rules = PostboxRule::list_enabled_for_customer( $customer_id );
+		$rules = self::merged_rules_for_customer( $customer_id );
 		if ( empty( $rules ) ) {
-			return [ 'deleted' => false, 'rule_id' => null ];
+			return [ 'deleted' => false, 'rule_id' => null, 'rule_type' => null ];
 		}
 		foreach ( $rules as $r ) {
 			$conditions = json_decode( (string) $r['conditions_json'], true );
@@ -124,12 +157,11 @@ final class PostboxRuleEngine {
 
 			$res = QuarantineService::purge_message( (int) $msg['id'], $customer_id );
 			if ( ! empty( $res['ok'] ) ) {
-				PostboxRule::record_hit( (int) $r['id'] );
-				return [ 'deleted' => true, 'rule_id' => (int) $r['id'] ];
+				self::record_hit_for( $r );
+				return [ 'deleted' => true, 'rule_id' => (int) $r['id'], 'rule_type' => (string) ( $r['__source'] ?? 'customer' ) ];
 			}
-			// Purge fehlgeschlagen -> naechste Regel probieren.
 		}
-		return [ 'deleted' => false, 'rule_id' => null ];
+		return [ 'deleted' => false, 'rule_id' => null, 'rule_type' => null ];
 	}
 
 	/**

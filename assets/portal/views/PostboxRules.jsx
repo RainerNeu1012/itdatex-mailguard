@@ -34,11 +34,14 @@ const emptyRule = () => ({
 
 export default function PostboxRules() {
   const [items, setItems]     = useState(null);
+  const [sharedItems, setSharedItems] = useState([]);
+  const [isOperator, setIsOperator]   = useState(false);
   const [err, setErr]         = useState(null);
   const [flash, setFlash]     = useState(null);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving]   = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [sharedBusy, setSharedBusy]     = useState({});
 
   const load = useCallback(async () => {
     setErr(null);
@@ -46,7 +49,24 @@ export default function PostboxRules() {
     if (r.status >= 400) { setErr('HTTP ' + r.status); return; }
     setItems(r.body?.items || []);
   }, []);
+  const loadShared = useCallback(async () => {
+    const r = await apiGet('shared-rules');
+    if (r.status < 400 && r.body?.ok) {
+      setSharedItems(r.body.items || []);
+      setIsOperator(!!r.body.is_operator);
+    }
+  }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadShared(); }, [loadShared]);
+
+  const toggleOptOut = async (r) => {
+    setSharedBusy((b) => ({ ...b, [r.id]: true }));
+    const path = `shared-rules/${r.id}/opt-out`;
+    const res = r.opted_out ? await apiDelete(path) : await apiPost(path, {});
+    setSharedBusy((b) => { const n = { ...b }; delete n[r.id]; return n; });
+    if (res.status < 400) { await loadShared(); }
+    else setErr(res.body?.error || ('HTTP ' + res.status));
+  };
 
   const save = async () => {
     setErr(null); setFlash(null);
@@ -69,29 +89,42 @@ export default function PostboxRules() {
       match_op: editing.match_op, stop_processing: editing.stop_processing,
       conditions: editing.conditions, actions: editing.actions,
     };
+    const shared = !!editing.__shared;
+    if (shared) { payload.description = editing.description || ''; }
+    const base = shared ? 'admin/shared-rules' : 'postbox-rules';
     const r = editing.id
-      ? await apiPut(`postbox-rules/${editing.id}`, payload)
-      : await apiPost('postbox-rules', payload);
+      ? await apiPut(`${base}/${editing.id}`, payload)
+      : await apiPost(base, payload);
     setSaving(false);
     if (r.status < 400 && r.body?.ok) {
       setFlash(editing.id ? 'Regel aktualisiert.' : 'Regel angelegt.');
       setEditing(null);
-      await load();
+      if (shared) { await loadShared(); } else { await load(); }
     } else {
       setErr(r.body?.message || r.body?.error || ('HTTP ' + r.status));
     }
   };
 
   const remove = async (r) => {
-    const res = await apiDelete(`postbox-rules/${r.id}`);
+    const shared = !!r.__shared;
+    const base = shared ? 'admin/shared-rules' : 'postbox-rules';
+    const res = await apiDelete(`${base}/${r.id}`);
     setDeleteTarget(null);
-    if (res.status < 400) { setFlash('Regel gelöscht.'); await load(); }
-    else setErr(res.body?.error || ('HTTP ' + res.status));
+    if (res.status < 400) {
+      setFlash('Regel gelöscht.');
+      if (shared) { await loadShared(); } else { await load(); }
+    } else setErr(res.body?.error || ('HTTP ' + res.status));
   };
 
   const toggleEnabled = async (r) => {
     await apiPut(`postbox-rules/${r.id}`, { ...r, enabled: !r.enabled });
     await load();
+  };
+
+  const toggleSharedEnabled = async (r) => {
+    const payload = { ...r, enabled: !r.enabled, description: r.description || '' };
+    await apiPut(`admin/shared-rules/${r.id}`, payload);
+    await loadShared();
   };
 
   return (
@@ -183,10 +216,118 @@ export default function PostboxRules() {
         </div>
       )}
 
+      <div className="mg-card" style={{ borderLeft: '3px solid var(--mg-accent, #666)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: '1.1rem' }}>🛡 Globale Spam-Regeln</h3>
+          <span style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--mg-border)', borderRadius: 999, color: 'var(--mg-muted)' }}>
+            {sharedItems.length} Regeln · verwaltet vom Betreiber
+          </span>
+          {isOperator && (
+            <button
+              className="mg-btn"
+              style={{ marginLeft: 'auto', fontSize: '0.85rem' }}
+              onClick={() => { setEditing({ ...emptyRule(), __shared: true, description: '' }); setFlash(null); setErr(null); }}
+            >
+              + Globale Regel anlegen
+            </button>
+          )}
+        </div>
+        <p className="mg-muted" style={{ margin: '0.25rem 0 0.75rem', fontSize: '0.85rem' }}>
+          Diese Regeln bauen eine Art Spam-DB auf: der Betreiber trägt bekannte Spam-Muster ein,
+          alle Konten profitieren automatisch. Falls eine Regel für dich eine legitime Mail trifft,
+          kannst du sie hier für dein Konto deaktivieren.
+        </p>
+        {sharedItems.length === 0 && (
+          <div className="mg-muted" style={{ textAlign: 'center', padding: '1rem', fontSize: '0.9rem' }}>
+            Noch keine globalen Regeln angelegt.
+          </div>
+        )}
+        {sharedItems.length > 0 && (
+          <div className="mg-stack">
+            {sharedItems.map((r) => (
+              <div key={r.id} className="mg-card" style={{ opacity: (r.enabled && !r.opted_out) ? 1 : 0.5, borderStyle: r.opted_out ? 'dashed' : 'solid' }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
+                  <strong style={{ fontSize: '1rem' }}>{r.name || '(ohne Name)'}</strong>
+                  <span style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--mg-border)', borderRadius: 999, color: 'var(--mg-muted)' }}>
+                    Priorität {r.priority}
+                  </span>
+                  {!r.enabled && (
+                    <span style={{ fontSize: 11, padding: '2px 8px', background: 'rgba(255,255,255,0.06)', borderRadius: 999, color: 'var(--mg-muted)' }}>
+                      global deaktiviert
+                    </span>
+                  )}
+                  {r.opted_out && (
+                    <span style={{ fontSize: 11, padding: '2px 8px', background: 'rgba(207,34,46,0.1)', borderRadius: 999, color: 'var(--mg-err)' }}>
+                      für dich deaktiviert
+                    </span>
+                  )}
+                  {r.hit_count > 0 && (
+                    <span style={{ fontSize: 11, color: 'var(--mg-muted)' }}>{r.hit_count}× global getroffen</span>
+                  )}
+                </div>
+                {r.description && (
+                  <div className="mg-muted" style={{ fontSize: '0.85rem', marginBottom: 6 }}>{r.description}</div>
+                )}
+                <div style={{ fontSize: '0.8rem', color: 'var(--mg-muted)', lineHeight: 1.6 }}>
+                  <span style={{ opacity: 0.6 }}>{r.match_op === 'AND' ? 'Alle' : 'Mind. eine'}:</span>{' '}
+                  {r.conditions.map((c, i) => (
+                    <span key={i}>
+                      {i > 0 && <em style={{ opacity: 0.5 }}> {r.match_op === 'AND' ? '+ ' : '| '}</em>}
+                      <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 4 }}>
+                        {FIELD_META[c.field]?.label || c.field}
+                      </code>
+                      {' '}{OP_LABELS[c.op] || c.op}{' '}
+                      <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 4 }}>
+                        {String(c.value)}
+                      </code>
+                    </span>
+                  ))}
+                  <br />
+                  <span style={{ opacity: 0.6 }}>Aktion:</span>{' '}
+                  {r.actions.map((a, i) => (
+                    <span key={i}>
+                      {i > 0 && ', '}
+                      <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 4 }}>
+                        {a.type === 'move' ? `→ ${a.folder}` : a.type === 'delete' ? 'vernichten' : `flag ${a.flag}`}
+                      </code>
+                    </span>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+                  <button
+                    className="mg-btn"
+                    disabled={sharedBusy[r.id]}
+                    onClick={() => toggleOptOut(r)}
+                    style={{ fontSize: '0.85rem' }}
+                  >
+                    {sharedBusy[r.id] ? '…' : (r.opted_out ? '✓ Für mich aktivieren' : '🚫 Für mich deaktivieren')}
+                  </button>
+                  {isOperator && (
+                    <>
+                      <button className="mg-btn" style={{ fontSize: '0.85rem' }} onClick={() => toggleSharedEnabled(r)}>
+                        {r.enabled ? 'Global deaktivieren' : 'Global aktivieren'}
+                      </button>
+                      <button className="mg-btn" style={{ fontSize: '0.85rem' }} onClick={() => { setEditing({ ...r, __shared: true }); setFlash(null); setErr(null); }}>
+                        Bearbeiten (global)
+                      </button>
+                      <button className="mg-btn" style={{ fontSize: '0.85rem', color: 'var(--mg-err)', borderColor: 'color-mix(in srgb, var(--mg-err) 40%, transparent)' }} onClick={() => setDeleteTarget({ ...r, __shared: true })}>
+                        Global löschen
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {editing && (
         <div className="mg-card">
           <h3 style={{ margin: '0 0 1.25rem', fontSize: '1.1rem' }}>
-            {editing.id ? 'Regel bearbeiten' : 'Neue Postfach-Regel'}
+            {editing.id
+              ? (editing.__shared ? 'Globale Regel bearbeiten' : 'Regel bearbeiten')
+              : (editing.__shared ? 'Neue globale Regel' : 'Neue Postfach-Regel')}
           </h3>
           <div className="mg-form">
             <label>
@@ -199,6 +340,17 @@ export default function PostboxRules() {
                 autoFocus
               />
             </label>
+            {editing.__shared && (
+              <label>
+                <span>Beschreibung (optional)</span>
+                <input
+                  type="text"
+                  value={editing.description || ''}
+                  onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+                  placeholder="Kurze Erklärung — wird den Kunden angezeigt"
+                />
+              </label>
+            )}
 
             <div className="mg-form__row" style={{ alignItems: 'flex-end', gap: 12 }}>
               <label style={{ flex: '0 0 120px' }}>

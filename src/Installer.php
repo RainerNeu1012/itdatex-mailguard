@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 27;
+	public const CURRENT_DB_VERSION = 28;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -37,6 +37,8 @@ final class Installer {
 	public const TABLE_BLOCKED_TLDS      = 'mg_blocked_tlds';
 	public const TABLE_CONTENT_BLOCKS    = 'mg_content_blocks';
 	public const TABLE_POSTBOX_RULES     = 'mg_postbox_rules';
+	public const TABLE_SHARED_RULES         = 'mg_shared_rules';
+	public const TABLE_SHARED_RULE_OPTOUTS  = 'mg_shared_rule_optouts';
 
 	public const CRON_UNDO_EXPIRY_HOOK = 'itdatex_mailguard_undo_expiry_check';
 
@@ -562,6 +564,39 @@ final class Installer {
 			KEY idx_enabled (enabled)
 		) {$charset};";
 
+		// Shared Rules (DB v28): Operator-managed globale Spam-Regeln die bei
+		// allen Kunden mitlaufen. Kunde kann einzelne via wp_mg_shared_rule_optouts
+		// deaktivieren. Spalten gleich wie postbox_rules (ohne customer_id), plus
+		// description fuer die UI-Anzeige.
+		$t_srules = $wpdb->prefix . self::TABLE_SHARED_RULES;
+		$sql_srules = "CREATE TABLE {$t_srules} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			name VARCHAR(190) NOT NULL DEFAULT '',
+			description VARCHAR(500) NOT NULL DEFAULT '',
+			priority INT UNSIGNED NOT NULL DEFAULT 100,
+			enabled TINYINT(1) NOT NULL DEFAULT 1,
+			match_op VARCHAR(4) NOT NULL DEFAULT 'AND',
+			conditions_json LONGTEXT NOT NULL,
+			actions_json LONGTEXT NOT NULL,
+			stop_processing TINYINT(1) NOT NULL DEFAULT 0,
+			hit_count INT UNSIGNED NOT NULL DEFAULT 0,
+			last_hit_at DATETIME NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			KEY idx_prio (priority),
+			KEY idx_enabled (enabled)
+		) {$charset};";
+
+		$t_sopts = $wpdb->prefix . self::TABLE_SHARED_RULE_OPTOUTS;
+		$sql_sopts = "CREATE TABLE {$t_sopts} (
+			customer_id BIGINT UNSIGNED NOT NULL,
+			shared_rule_id BIGINT UNSIGNED NOT NULL,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (customer_id, shared_rule_id),
+			KEY idx_rule (shared_rule_id)
+		) {$charset};";
+
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		dbDelta( $sql_customers );
 		dbDelta( $sql_imap );
@@ -581,6 +616,8 @@ final class Installer {
 		dbDelta( $sql_llmfb );
 		dbDelta( $sql_cblocks );
 		dbDelta( $sql_prules );
+		dbDelta( $sql_srules );
+		dbDelta( $sql_sopts );
 
 		// One-shot Migration: aus jedem bestehenden Account einen Folder-Eintrag
 		// erzeugen. Nur wenn die Folder-Tabelle leer ist UND mind. ein Account
@@ -757,6 +794,7 @@ final class Installer {
 			self::TABLE_ERADICATE_DOMAINS, self::TABLE_SENDER_TRUST,
 			self::TABLE_LLM_FEEDBACK, self::TABLE_BLOCKED_TLDS, self::TABLE_CONTENT_BLOCKS,
 			self::TABLE_POSTBOX_RULES,
+			self::TABLE_SHARED_RULES, self::TABLE_SHARED_RULE_OPTOUTS,
 		];
 		$missing = [];
 		foreach ( $expected_tables as $tbl ) {
