@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { apiGet, apiPost } from '../api.js';
+import { PageShell, Section, SectionHeader } from '../components/Section.jsx';
 
 const PLAN_LABELS = {
   free: { name: 'Free',  price: '0 €',         color: '#8b949e' },
@@ -47,10 +48,11 @@ export default function Plan({ me, reloadMe }) {
   };
 
   return (
-    <div className="mg-card">
-      <h2>Plan &amp; Abrechnung</h2>
-
-      <div style={{display:'flex',gap:'1.25rem',flexWrap:'wrap',margin:'1.5rem 0'}}>
+    <PageShell>
+      <Section>
+        <SectionHeader num="001" title="PLAN & ABRECHNUNG" counter={planInfo.name.toUpperCase()} />
+        <div className="mg-card">
+      <div style={{display:'flex',gap:'1.25rem',flexWrap:'wrap',margin:'0.5rem 0 1.5rem'}}>
         <div style={{background:'#0d1117',border:'1px solid #30363d',borderRadius:'8px',padding:'1.25rem 1.5rem',flex:'1 1 220px'}}>
           <p style={{margin:0,fontFamily:'ui-monospace,Menlo,monospace',fontSize:'1rem',color:'#6e7681',letterSpacing:'0.08em',textTransform:'uppercase'}}>// plan</p>
           <p style={{margin:'0.4rem 0 0',fontSize:'1.6rem',fontWeight:600,color:planInfo.color}}>{planInfo.name}</p>
@@ -125,5 +127,7 @@ export default function Plan({ me, reloadMe }) {
         zum Monatsende kündigen.
       </p>
     </div>
+      </Section>
+    </PageShell>
   );
 }

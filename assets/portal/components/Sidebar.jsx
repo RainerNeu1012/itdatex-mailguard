@@ -39,7 +39,7 @@ function saveCollapsed(v) {
   try { localStorage.setItem(COLLAPSED_KEY, v ? '1' : '0'); } catch { /* ignore */ }
 }
 
-export default function Sidebar({ route, me, onOpenPalette }) {
+export default function Sidebar({ route, me, onOpenPalette, onOpenHelp }) {
   const [collapsed, setCollapsed] = useState(loadCollapsed);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -128,15 +128,29 @@ export default function Sidebar({ route, me, onOpenPalette }) {
               >LOGOUT ↗</button>
             </div>
           )}
-          <button
-            type="button"
-            className="mg-sidebar__collapse-btn"
-            onClick={toggle}
-            title={collapsed ? 'Ausklappen' : 'Zusammenklappen'}
-            aria-label={collapsed ? 'Ausklappen' : 'Zusammenklappen'}
-          >
-            {collapsed ? '›' : '‹'}
-          </button>
+          <div className="mg-sidebar__foot-row">
+            {onOpenHelp && (
+              <button
+                type="button"
+                className="mg-sidebar__help-btn"
+                onClick={onOpenHelp}
+                title="Shortcut-Hilfe (?)"
+                aria-label="Hilfe"
+              >
+                <span>?</span>
+                {!collapsed && <span className="mg-sidebar__help-label mg-mono">SHORTCUTS</span>}
+              </button>
+            )}
+            <button
+              type="button"
+              className="mg-sidebar__collapse-btn"
+              onClick={toggle}
+              title={collapsed ? 'Ausklappen' : 'Zusammenklappen'}
+              aria-label={collapsed ? 'Ausklappen' : 'Zusammenklappen'}
+            >
+              {collapsed ? '›' : '‹'}
+            </button>
+          </div>
         </div>
       </aside>
 

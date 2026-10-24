@@ -12,6 +12,12 @@
   "categories": ["productivity", "security", "utilities"],
   "icons": [
     {
+      "src": "/wp-content/plugins/itdatex-mailguard/assets/img/pwa/icon-180-white.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
       "src": "/wp-content/plugins/itdatex-mailguard/assets/img/pwa/icon-192-white.png",
       "sizes": "192x192",
       "type": "image/png",

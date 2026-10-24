@@ -104,7 +104,7 @@ export default function Register() {
         <ol className="mg-auth__steps mg-mono">
           <li><span>01</span>Konto anlegen · E-Mail bestätigen</li>
           <li><span>02</span>Postfach verbinden · Microsoft/Gmail per OAuth oder IMAP mit Autoconfig</li>
-          <li><span>03</span>Scan läuft alle 15 Min · Pattern/Spam-DB/Phishing-Check automatisch</li>
+          <li><span>03</span>Scan läuft automatisch · Pattern · Spam-DB · Phishing + Google Safe Browsing</li>
         </ol>
 
         <label>E-Mail<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus autoComplete="email" placeholder="dein@mailpostfach.de" /></label>

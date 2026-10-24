@@ -97,17 +97,24 @@ final class Rewrite {
 		[ $js, $css ] = self::asset_paths();
 
 		echo '<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">';
-		echo '<meta name="viewport" content="width=device-width, initial-scale=1">';
 		echo '<title>MailGuard SaaS — Portal</title>';
 		echo '<meta name="robots" content="noindex, nofollow">';
 		echo '<meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)">';
 		echo '<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">';
+		// mobile-web-app-capable (W3C-Standard, Chrome/Edge).
+		echo '<meta name="mobile-web-app-capable" content="yes">';
+		// Legacy iOS Safari-Aliase — bleiben noetig fuer "Zum Home-Bildschirm".
 		echo '<meta name="apple-mobile-web-app-capable" content="yes">';
 		echo '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">';
 		echo '<meta name="apple-mobile-web-app-title" content="MailGuard">';
 		echo '<meta name="application-name" content="MailGuard">';
+		echo '<meta name="format-detection" content="telephone=no">';
+		echo '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">';
 		echo '<link rel="icon" type="image/svg+xml" href="' . esc_url( ITDATEX_MAILGUARD_URL . 'assets/img/mark.svg' ) . '">';
 		echo '<link rel="manifest" href="' . esc_url( $portal_url . 'manifest.webmanifest' ) . '">';
+		// Standard iOS apple-touch-icon ist 180x180. Safari ignoriert sizes="192"
+		// gelegentlich — 180 ist der Pixel-perfekte Match fuer iOS-Grid.
+		echo '<link rel="apple-touch-icon" sizes="180x180" href="' . esc_url( ITDATEX_MAILGUARD_URL . 'assets/img/pwa/icon-180-white.png' ) . '">';
 		echo '<link rel="apple-touch-icon" sizes="192x192" href="' . esc_url( ITDATEX_MAILGUARD_URL . 'assets/img/pwa/icon-192-white.png' ) . '">';
 		echo '<link rel="apple-touch-icon" sizes="512x512" href="' . esc_url( ITDATEX_MAILGUARD_URL . 'assets/img/pwa/icon-512-white.png' ) . '">';
 		// Webfonts — exakt der itdatex-Standard-Stack (Bebas Neue, IBM Plex Sans, JetBrains Mono).

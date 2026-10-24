@@ -26,6 +26,7 @@ import ThemeToggle from './components/ThemeToggle.jsx';
 import BrandMark from './components/BrandMark.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import CommandPalette from './components/CommandPalette.jsx';
+import ShortcutHelp from './components/ShortcutHelp.jsx';
 
 const ROUTE_TITLES = {
   dashboard: 'Dashboard',
@@ -75,6 +76,7 @@ export default function App() {
   const route = useRoute();
   const { me, loading, refresh } = useMe();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // Global Keyboard-Shortcuts
   useEffect(() => {
@@ -98,6 +100,12 @@ export default function App() {
       if (e.key === '/' && !e.altKey && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         setPaletteOpen(true);
+        return;
+      }
+      // ? zeigt die Shortcut-Hilfe
+      if (e.key === '?' && !e.altKey && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setHelpOpen(true);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -178,7 +186,7 @@ export default function App() {
 
   return (
     <div className="mg-shell mg-shell--app">
-      <Sidebar route={route} me={me} onOpenPalette={() => setPaletteOpen(true)} />
+      <Sidebar route={route} me={me} onOpenPalette={() => setPaletteOpen(true)} onOpenHelp={() => setHelpOpen(true)} />
 
       <div className="mg-shell__main">
         <header className="mg-topbar">
@@ -213,6 +221,7 @@ export default function App() {
       </div>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }
