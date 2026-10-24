@@ -53,52 +53,72 @@ export default function Register() {
     finally     { setLoading(false); }
   };
 
+  const pluginUrl = (window.itdatexMailguard || {}).pluginUrl || '';
   if (done === 'verify') {
     return (
-      <div className="mg-card">
-        <h2>Fast geschafft</h2>
-        <p>Wir haben dir gerade eine Bestätigungs-Mail an <strong>{email}</strong> geschickt.</p>
-        <p>Klicke den Link in der Mail, um dein Konto zu aktivieren.</p>
-        <p className="mg-muted">Keine Mail bekommen? Spam-Ordner checken, sonst Support kontaktieren.</p>
+      <div className="mg-auth">
+        <div className="mg-auth__card">
+          <div className="mg-auth__brand">
+            <img src={`${pluginUrl}assets/img/mark-white.svg`} alt="!tdatex" />
+            <div className="mg-auth__title">Fast geschafft</div>
+            <div className="mg-auth__sub">Verification-Mail unterwegs</div>
+          </div>
+          <p className="mg-muted" style={{ textAlign: 'center', fontSize: '0.9rem' }}>
+            Wir haben dir eine Bestätigungs-Mail an <strong className="mg-mono">{email}</strong> geschickt. Klick den Link um dein Konto zu aktivieren.
+          </p>
+          <p className="mg-muted mg-tiny" style={{ textAlign: 'center', marginTop: '1rem' }}>
+            Keine Mail? Spam-Ordner checken oder Support kontaktieren.
+          </p>
+        </div>
       </div>
     );
   }
   if (done === 'login') {
     return (
-      <div className="mg-card">
-        <h2>Konto angelegt</h2>
-        <p>Du kannst dich jetzt anmelden.</p>
-        <button className="mg-btn mg-btn--primary" onClick={() => navigate('login')}>Zur Anmeldung</button>
+      <div className="mg-auth">
+        <div className="mg-auth__card">
+          <div className="mg-auth__brand">
+            <img src={`${pluginUrl}assets/img/mark-white.svg`} alt="!tdatex" />
+            <div className="mg-auth__title">✓ Konto angelegt</div>
+          </div>
+          <p className="mg-muted" style={{ textAlign: 'center' }}>Du kannst dich jetzt anmelden.</p>
+          <button className="mg-btn mg-btn--primary mg-auth__submit" onClick={() => navigate('login')} style={{ marginTop: '1rem' }}>
+            Zur Anmeldung
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mg-stack">
-      <div className="mg-card">
-        <h2>Willkommen bei MailGuard</h2>
-        <p>Deine Inbox mit Phishing-Schutz und 1-Klick-Newsletter-Abmelden. Jede Mail wird automatisch auf Impersonation-Tricks geprüft (Brand-Spoofing, gestreckte Absender-Namen wie „E A S Y B A N K", verdächtige Links). Newsletter meldest du pro Absender ab statt pro Mail.</p>
-        <p className="mg-muted">In drei Schritten:</p>
-        <ol className="mg-muted" style={{ paddingLeft: '1.2rem', margin: 0 }}>
-          <li>Konto anlegen und E-Mail bestätigen.</li>
-          <li>Postfach verbinden — Microsoft/Gmail per 1-Klick-OAuth, alles andere per IMAP mit Autoconfig. Alle Ordner werden automatisch erkannt.</li>
-          <li>Inbox öffnen — chronologisch oder nach Absender gruppiert. Pull läuft alle 15 Minuten, „Jetzt abholen" holt sofort.</li>
+    <div className="mg-auth mg-auth--wide">
+      <form className="mg-auth__card mg-auth__card--wide mg-form" onSubmit={submit}>
+        <div className="mg-auth__brand">
+          <img src={`${pluginUrl}assets/img/mark-white.svg`} alt="!tdatex" />
+          <div className="mg-auth__title">
+            MAIL<span className="mg-auth__title-accent">GUARD</span>
+          </div>
+          <div className="mg-auth__sub">Konto anlegen · 2 Minuten</div>
+        </div>
+
+        <ol className="mg-auth__steps mg-mono">
+          <li><span>01</span>Konto anlegen · E-Mail bestätigen</li>
+          <li><span>02</span>Postfach verbinden · Microsoft/Gmail per OAuth oder IMAP mit Autoconfig</li>
+          <li><span>03</span>Scan läuft alle 15 Min · Pattern/Spam-DB/Phishing-Check automatisch</li>
         </ol>
-      </div>
-    <form className="mg-card mg-form" onSubmit={submit}>
-      <h2>Konto anlegen</h2>
-      <label>E-Mail<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus autoComplete="email" /></label>
-      <ProviderHint cfg={discover} email={email} />
-      <label>Passwort (min. 10 Zeichen)<input type="password" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" /></label>
-      <label>Passwort wiederholen<input type="password" required minLength={10} value={pass2} onChange={(e) => setPass2(e.target.value)} autoComplete="new-password" /></label>
-      {error && <div className="mg-error">{error}</div>}
-      <button type="submit" className="mg-btn mg-btn--primary" disabled={loading}>
-        {loading ? '…' : 'Registrieren'}
-      </button>
-      <div className="mg-form__links">
-        <a href="#" onClick={(e) => { e.preventDefault(); navigate('login'); }}>Bereits Konto? Anmelden</a>
-      </div>
-    </form>
+
+        <label>E-Mail<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus autoComplete="email" placeholder="dein@mailpostfach.de" /></label>
+        <ProviderHint cfg={discover} email={email} />
+        <label>Passwort <span className="mg-muted mg-tiny">(min. 10 Zeichen)</span><input type="password" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" placeholder="••••••••••" /></label>
+        <label>Passwort wiederholen<input type="password" required minLength={10} value={pass2} onChange={(e) => setPass2(e.target.value)} autoComplete="new-password" placeholder="••••••••••" /></label>
+        {error && <div className="mg-error">{error}</div>}
+        <button type="submit" className="mg-btn mg-btn--primary mg-auth__submit" disabled={loading}>
+          {loading ? '…' : 'Konto anlegen'}
+        </button>
+        <div className="mg-auth__links">
+          <a href="#" onClick={(e) => { e.preventDefault(); navigate('login'); }}>← Bereits Konto? Anmelden</a>
+        </div>
+      </form>
     </div>
   );
 }

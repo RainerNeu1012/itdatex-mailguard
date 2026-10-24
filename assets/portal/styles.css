@@ -1095,9 +1095,9 @@ a:hover { color: var(--mg-accent); }
   background: rgba(255,255,255,0.02);
   margin-bottom: 12px;
 }
-.mg-banner--ok    { border-color: #1f883d; background: rgba(31,136,61,0.08); }
-.mg-banner--info  { border-color: #2f81f7; background: rgba(47,129,247,0.08); }
-.mg-banner--err   { border-color: #cf222e; background: rgba(207,34,46,0.08); }
+.mg-banner--ok    { border-color: color-mix(in srgb, var(--mg-ok)   40%, var(--mg-border)); background: color-mix(in srgb, var(--mg-ok)   8%, transparent); }
+.mg-banner--info  { border-color: color-mix(in srgb, var(--mg-fg)   30%, var(--mg-border)); background: var(--mg-surface-2); }
+.mg-banner--err   { border-color: color-mix(in srgb, var(--mg-err)  40%, var(--mg-border)); background: color-mix(in srgb, var(--mg-err)  8%, transparent); }
 .mg-banner--muted { border-color: var(--mg-border); color: var(--mg-muted); }
 
 /* Folder-Sub-Section pro Account-Card */
@@ -1853,4 +1853,29 @@ body::before {
   0%, 20%  { opacity: 0.3; }
   50%      { opacity: 1; }
   80%, 100%{ opacity: 0.3; }
+}
+
+/* Auth-Wide-Variant (fuer Register mit extra Content) */
+.mg-auth--wide .mg-auth__card--wide { max-width: 480px; }
+.mg-auth__steps {
+  list-style: none;
+  margin: 0 0 1.25rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--mg-border);
+  border-bottom: 1px solid var(--mg-border);
+}
+.mg-auth__steps li {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.35rem 0;
+  font-size: 0.78rem;
+  color: var(--mg-muted);
+  letter-spacing: 0.04em;
+}
+.mg-auth__steps li span {
+  color: var(--mg-subtle);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  min-width: 1.75rem;
 }

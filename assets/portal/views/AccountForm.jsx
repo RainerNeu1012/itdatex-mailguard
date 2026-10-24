@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { apiGet, apiPost } from '../api.js';
 import { navigate } from '../router.js';
+import { PageShell, PageTopbar, Section, SectionHeader } from '../components/Section.jsx';
 
 const DEFAULTS = {
   label: '', host: '', port: 993, encryption: 'ssl',
@@ -21,7 +22,7 @@ const AUTO_Q_OPTIONS = [
 
 const EMAIL_RE = /^[^\s@]+@([^\s@]+\.[^\s@]+)$/;
 
-export default function AccountForm({ route }) {
+export default function AccountForm({ route, me }) {
   const id          = route.params.id ? parseInt(route.params.id, 10) : null;
   const mode        = id ? 'edit' : 'create';
   const presetEmail = (mode === 'create' && route.params.email) || '';
@@ -135,15 +136,23 @@ export default function AccountForm({ route }) {
     }
   };
 
-  if (loading) return <div className="mg-card">Lade …</div>;
+  if (loading) return (
+    <PageShell>
+      <PageTopbar kicker="MAILGUARD · POSTFACH" user={me?.email} />
+      <div className="mg-dash__loading">LADE</div>
+    </PageShell>
+  );
 
   const cfg = discover && !discover.none ? discover : null;
   const noImap   = cfg && cfg.no_imap;
   const wantsOauth = cfg && (cfg.oauth_provider === 'microsoft' || cfg.oauth_provider === 'google');
 
   return (
-    <form className="mg-card mg-form" onSubmit={submit}>
-      <h2>{mode === 'edit' ? 'Konto bearbeiten' : 'Neues IMAP-Konto'}</h2>
+    <PageShell>
+      <PageTopbar kicker="MAILGUARD · POSTFACH" user={me?.email} />
+      <Section>
+        <SectionHeader num="001" title={(mode === 'edit' ? 'KONTO BEARBEITEN' : 'NEUES IMAP-KONTO')} />
+        <form className="mg-card mg-form" onSubmit={submit}>
 
       {cfg && (
         <div className={'mg-banner ' + (noImap ? 'mg-banner--err' : (wantsOauth ? 'mg-banner--info' : 'mg-banner--ok'))}>
@@ -245,7 +254,9 @@ export default function AccountForm({ route }) {
           {saving ? '…' : (mode === 'edit' ? 'Speichern' : 'Anlegen')}
         </button>
       </div>
-    </form>
+        </form>
+      </Section>
+    </PageShell>
   );
 }
 

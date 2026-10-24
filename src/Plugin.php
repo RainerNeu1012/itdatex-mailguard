@@ -42,6 +42,18 @@ final class Plugin {
 		add_action( 'admin_menu',    [ Settings::class, 'add_menu' ] );
 		add_action( 'admin_init',    [ Customers::class, 'handle_actions' ] );
 		add_action( 'admin_post_itdatex_mg_clamav_ping', [ Settings::class, 'handle_clamav_ping' ] );
+		// Admin-Stylesheet nur auf MailGuard-Pages laden (Settings, Kunden-UI)
+		add_action( 'admin_enqueue_scripts', static function () {
+			$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+			if ( ! $screen ) { return; }
+			if ( strpos( (string) $screen->id, 'itdatex-mailguard' ) === false ) { return; }
+			wp_enqueue_style(
+				'itdatex-mailguard-admin',
+				plugins_url( 'assets/admin.css', ITDATEX_MAILGUARD_FILE ),
+				[],
+				ITDATEX_MAILGUARD_VERSION
+			);
+		} );
 
 		add_action( 'rest_api_init', [ RestController::class, 'register' ] );
 		add_action( 'rest_api_init', [ SaasWebhook::class, 'register' ] );

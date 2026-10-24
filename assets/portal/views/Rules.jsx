@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiPost } from '../api.js';
+import { PageShell, PageTopbar, Section, SectionHeader } from '../components/Section.jsx';
 
 const TYPE_LABEL = {
   from_addr:          'Absender (exakt)',
@@ -14,7 +15,7 @@ const ACTION_LABEL = {
   purge:      'Sofort vernichten',
 };
 
-export default function Rules() {
+export default function Rules({ me }) {
   const [items, setItems]   = useState(null);
   const [error, setError]   = useState(null);
   const [busy, setBusy]     = useState({});
@@ -65,13 +66,13 @@ export default function Rules() {
   const bl = (items || []).filter((i) => i.kind === 'blacklist');
 
   return (
-    <div className="mg-stack">
-      <div className="mg-card">
-        <h2 style={{ margin: '0 0 0.25rem' }}>Spam-Regeln</h2>
-        <p className="mg-muted" style={{ margin: 0 }}>
-          Eigene Regeln, die das automatische Verdict überschreiben. <strong>Blacklist gewinnt vor Whitelist.</strong> Wirken erst auf neue Scans — alte Mails bei Bedarf in der Inbox via „↻ Erneut scannen" auffrischen.
-        </p>
-      </div>
+    <PageShell>
+      <PageTopbar kicker="MAILGUARD · WHITELIST / BLACKLIST" user={me?.email} />
+      <Section>
+        <SectionHeader num="001" title="EIGENE SPAM-REGELN" counter={items ? `${(items || []).length} AKTIV` : null} />
+        <div className="mg-dash__shared-intro mg-mono">
+          BLACKLIST SCHLÄGT WHITELIST · ÜBERSCHREIBT AUTO-VERDICT · WIRKT NUR AUF NEUE SCANS
+        </div>
 
       <form className="mg-card mg-form" onSubmit={add}>
         <h3 style={{ margin: '0 0 0.5rem' }}>Neue Regel</h3>
@@ -125,7 +126,8 @@ export default function Rules() {
           <RuleList title="Blacklist" items={bl} busy={busy} onDelete={remove} emptyLabel="Keine Blacklist-Regeln." showAction={true} />
         </>
       )}
-    </div>
+      </Section>
+    </PageShell>
   );
 }
 
