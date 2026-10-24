@@ -2584,3 +2584,18 @@ body::before {
   .mg-sidebar__item-label,
   .mg-sidebar__item-kbd { display: inherit; }
 }
+
+/* Breadcrumb-Clamp fix für mobile */
+@media (max-width: 700px) {
+  .mg-topbar__crumbs {
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .mg-topbar__crumb--kicker {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+}
