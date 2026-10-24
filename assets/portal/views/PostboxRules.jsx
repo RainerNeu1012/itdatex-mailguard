@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiPost, apiDelete, apiPut } from '../api.js';
+import { PageShell, PageTopbar, Section, SectionHeader } from '../components/Section.jsx';
 
 const FIELD_META = {
   from_addr:       { label: 'Absender-Adresse', type: 'string',  placeholder: 'name@example.com' },
@@ -32,7 +33,7 @@ const emptyRule = () => ({
   actions:    [{ type: 'move', folder: 'INBOX/Newsletter' }],
 });
 
-export default function PostboxRules() {
+export default function PostboxRules({ me }) {
   const [items, setItems]     = useState(null);
   const [sharedItems, setSharedItems] = useState([]);
   const [isOperator, setIsOperator]   = useState(false);
@@ -128,17 +129,19 @@ export default function PostboxRules() {
   };
 
   return (
-    <div className="mg-stack">
-      <div className="mg-card">
-        <h2 style={{ margin: '0 0 0.4rem', fontSize: '1.25rem' }}>Postfach-Regeln</h2>
-        <p className="mg-muted" style={{ margin: '0 0 1rem', fontSize: '0.9rem' }}>
-          Multi-Condition-Filter, die nach dem Scan aber vor der Auto-Quarantäne greifen.
-          Gefährliche Mails umgehen die Regeln — Sicherheit hat Vorrang.
-        </p>
-        <button className="mg-btn mg-btn--primary" onClick={() => { setEditing(emptyRule()); setFlash(null); setErr(null); }}>
-          + Neue Regel
-        </button>
-      </div>
+    <PageShell>
+      <PageTopbar kicker="MAILGUARD · POSTFACH-REGELN" user={me?.email} />
+      <Section>
+        <SectionHeader
+          num="001"
+          title="EIGENE REGELN"
+          counter={items ? `${items.length} ANGELEGT` : null}
+          right={
+            <button className="mg-btn mg-btn--primary" style={{ fontSize: '0.75rem', letterSpacing: '0.08em' }} onClick={() => { setEditing(emptyRule()); setFlash(null); setErr(null); }}>
+              + NEUE REGEL
+            </button>
+          }
+        />
 
       {flash && (
         <div style={{ padding: '0.85rem 1rem', background: 'rgba(63,185,80,0.1)', border: '1px solid var(--mg-ok)', borderRadius: 6, color: 'var(--mg-ok)', fontSize: '0.95rem' }}>
@@ -216,27 +219,24 @@ export default function PostboxRules() {
         </div>
       )}
 
-      <div className="mg-card" style={{ borderLeft: '3px solid var(--mg-accent, #666)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
-          <h3 style={{ margin: 0, fontSize: '1.1rem' }}>🛡 Globale Spam-Regeln</h3>
-          <span style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--mg-border)', borderRadius: 999, color: 'var(--mg-muted)' }}>
-            {sharedItems.length} Regeln · verwaltet vom Betreiber
-          </span>
-          {isOperator && (
-            <button
-              className="mg-btn"
-              style={{ marginLeft: 'auto', fontSize: '0.85rem' }}
-              onClick={() => { setEditing({ ...emptyRule(), __shared: true, description: '' }); setFlash(null); setErr(null); }}
-            >
-              + Globale Regel anlegen
-            </button>
-          )}
-        </div>
-        <p className="mg-muted" style={{ margin: '0.25rem 0 0.75rem', fontSize: '0.85rem' }}>
-          Diese Regeln bauen eine Art Spam-DB auf: der Betreiber trägt bekannte Spam-Muster ein,
-          alle Konten profitieren automatisch. Falls eine Regel für dich eine legitime Mail trifft,
-          kannst du sie hier für dein Konto deaktivieren.
-        </p>
+      <SectionHeader
+        num="002"
+        title="SPAM-DB · GLOBALE REGELN"
+        counter={`${sharedItems.length} AKTIV`}
+        right={isOperator && (
+          <button
+            className="mg-btn"
+            style={{ fontSize: '0.75rem', letterSpacing: '0.08em' }}
+            onClick={() => { setEditing({ ...emptyRule(), __shared: true, description: '' }); setFlash(null); setErr(null); }}
+          >
+            + GLOBALE REGEL
+          </button>
+        )}
+      />
+      <div className="mg-dash__shared-intro mg-mono">
+        VOM BETREIBER GEPFLEGTE SPAM-DB · PRO REGEL OPT-OUT MÖGLICH
+      </div>
+      <div>
         {sharedItems.length === 0 && (
           <div className="mg-muted" style={{ textAlign: 'center', padding: '1rem', fontSize: '0.9rem' }}>
             Noch keine globalen Regeln angelegt.
@@ -473,7 +473,8 @@ export default function PostboxRules() {
           </div>
         </div>
       )}
-    </div>
+      </Section>
+    </PageShell>
   );
 }
 

@@ -1553,3 +1553,58 @@ body::before {
 }
 .mg-dash__row--click { text-decoration: none; color: inherit; cursor: pointer; }
 .mg-dash__row--click:hover { background: var(--mg-surface-2); }
+
+/* Monochrom-Tabs (ersetzen das alte .mg-account-tabs Card-Design) */
+.mg-tabs-mono {
+  display: inline-flex;
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--mg-border);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--mg-surface);
+  margin: 0 0 0.75rem;
+}
+.mg-tabs-mono__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+  border: 0;
+  color: var(--mg-muted);
+  padding: 0.5rem 0.9rem;
+  font-family: var(--mg-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  border-right: 1px solid var(--mg-border);
+}
+.mg-tabs-mono__btn:last-child { border-right: 0; }
+.mg-tabs-mono__btn:hover { background: var(--mg-surface-2); color: var(--mg-fg); }
+.mg-tabs-mono__btn--active {
+  background: var(--mg-surface-2);
+  color: var(--mg-fg);
+}
+.mg-tabs-mono__label { font-family: var(--mg-mono); }
+.mg-tabs-mono__state {
+  font-size: 0.6rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--mg-border);
+  border-radius: 3px;
+}
+
+/* Legacy .mg-account-tabs — Fallback-Styles, falls noch irgendwo direkt verwendet */
+.mg-account-tabs { display: none; }
+
+.mg-dash__shared-intro {
+  padding: 0.6rem 0.9rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  color: var(--mg-muted);
+  background: var(--mg-surface);
+  border: 1px solid var(--mg-border);
+  border-radius: 6px;
+  text-transform: uppercase;
+}

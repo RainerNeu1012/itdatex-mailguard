@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { apiGet, apiPost } from '../api.js';
 import { VerdictBadge, ReasonsList } from '../components/Verdict.jsx';
+import { PageShell, PageTopbar, Section, SectionHeader } from '../components/Section.jsx';
 
 const MODES = [
   { id: 'url',   label: 'URL' },
   { id: 'email', label: 'E-Mail' },
 ];
 
-export default function Scanner() {
+export default function Scanner({ me }) {
   const [mode, setMode]     = useState('url');
   const [url, setUrl]       = useState('');
   const [subject, setSubject]   = useState('');
@@ -60,14 +61,15 @@ export default function Scanner() {
   };
 
   return (
-    <div className="mg-stack">
-      <div className="mg-card">
-        <h2 style={{ margin: '0 0 0.25rem' }}>Scanner</h2>
-        <p className="mg-muted" style={{ margin: 0 }}>
-          URL oder Mail-Snippet prüfen, ohne sie zu öffnen.
-          {quota && <> · <strong>{quota.remaining}</strong> von {quota.limit} Scans heute übrig.</>}
-        </p>
-      </div>
+    <PageShell>
+      <PageTopbar
+        kicker="MAILGUARD · SCANNER"
+        user={me?.email}
+        right={quota && <span className="mg-dash__clock">{quota.remaining}/{quota.limit} HEUTE</span>}
+      />
+
+      <Section>
+        <SectionHeader num="001" title="MANUELLER CHECK — URL ODER MAIL-SNIPPET" />
 
       <form className="mg-card mg-form" onSubmit={submit}>
         <div className="mg-modes">
@@ -108,16 +110,19 @@ export default function Scanner() {
       </form>
 
       {result && (
-        <div className="mg-card">
-          <h3 style={{ margin: '0 0 0.5rem' }}>Ergebnis</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-            <VerdictBadge verdict={result.verdict} score={result.score} status="done" />
-            <span className="mg-muted mg-tiny">Score {result.score} / 100</span>
+        <>
+          <SectionHeader num="002" title="ERGEBNIS" counter={`SCORE ${result.score}/100`} />
+          <div className="mg-card">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <VerdictBadge verdict={result.verdict} score={result.score} status="done" />
+              <span className="mg-muted mg-tiny">Score {result.score} / 100</span>
+            </div>
+            <ReasonsList reasons={result.reasons} />
           </div>
-          <ReasonsList reasons={result.reasons} />
-        </div>
+        </>
       )}
-    </div>
+      </Section>
+    </PageShell>
   );
 }
 

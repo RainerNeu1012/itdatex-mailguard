@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiDelete } from '../api.js';
 import { portalUrl } from '../router.js';
+import { PageShell, PageTopbar, Section, SectionHeader } from '../components/Section.jsx';
 
-export default function Devices() {
+export default function Devices({ me }) {
   const [sessions, setSessions] = useState(null);
   const [tokens,   setTokens]   = useState(null);
   const [devices,  setDevices]  = useState(null);
@@ -61,13 +62,10 @@ export default function Devices() {
   };
 
   return (
-    <div className="mg-stack">
-      <div className="mg-card">
-        <h2 style={{ margin: '0 0 0.25rem' }}>Angemeldete Geräte</h2>
-        <p className="mg-muted" style={{ margin: 0 }}>
-          App-Anmeldungen mit Bearer-Token und Push-Registrierungen. Bei Verlust eines Geräts hier widerrufen.
-        </p>
-      </div>
+    <PageShell>
+      <PageTopbar kicker="MAILGUARD · GERÄTE" user={me?.email} />
+      <Section>
+        <SectionHeader num="001" title="ANGEMELDETE GERÄTE" />
 
       {error && <div className="mg-card mg-error">{error}</div>}
 
@@ -164,7 +162,8 @@ export default function Devices() {
           </table>
         )}
       </div>
-    </div>
+      </Section>
+    </PageShell>
   );
 }
 

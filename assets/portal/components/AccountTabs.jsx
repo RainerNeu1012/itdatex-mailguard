@@ -56,22 +56,24 @@ export function useCurrentAccount() {
 export default function AccountTabs({ accounts, activeId, onSwitch }) {
   if (!accounts || accounts.length < 2) return null;
   return (
-    <div className="mg-card mg-account-tabs" role="tablist" aria-label="Postfach auswählen">
-      {accounts.map((a) => (
-        <button
-          key={a.id}
-          className={'mg-account-tab' + (a.id === activeId ? ' mg-account-tab--active' : '')}
-          role="tab"
-          aria-selected={a.id === activeId}
-          title={a.username || a.label || a.host}
-          onClick={() => onSwitch(a.id)}
-        >
-          📬 {a.label || a.host}
-          {a.status !== 'active' && (
-            <span className="mg-pill mg-pill--muted mg-account-tab__status">{a.status}</span>
-          )}
-        </button>
-      ))}
+    <div className="mg-mono mg-tabs-mono" role="tablist" aria-label="Postfach auswählen">
+      {accounts.map((a) => {
+        const active = a.id === activeId;
+        return (
+          <button
+            key={a.id}
+            className={'mg-tabs-mono__btn' + (active ? ' mg-tabs-mono__btn--active' : '')}
+            role="tab"
+            aria-selected={active}
+            title={a.username || a.label || a.host}
+            onClick={() => onSwitch(a.id)}
+          >
+            <span className={'mg-dash__dot mg-dash__dot--' + (a.status === 'active' ? 'live' : 'muted')} aria-hidden />
+            <span className="mg-tabs-mono__label">{a.label || a.host}</span>
+            {a.status !== 'active' && <span className="mg-tabs-mono__state">{a.status.toUpperCase()}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }

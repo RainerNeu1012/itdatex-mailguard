@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPost } from '../api.js';
+import { PageShell, PageTopbar, Section, SectionHeader } from '../components/Section.jsx';
 
 // Batch-View fuer LLM-Bewertungen. Zeigt die letzten gescannten Mails mit
 // LLM-Reasoning, Filter unbewertet/👍/👎, ein Klick pro Zeile speichert
@@ -11,7 +12,7 @@ const FILTERS = [
   { key: 'down',    label: '👎 Daneben' },
 ];
 
-export default function LlmFeedback() {
+export default function LlmFeedback({ me }) {
   const [filter, setFilter] = useState('unrated');
   const [items, setItems]   = useState(null);
   const [busy, setBusy]     = useState({});
@@ -42,22 +43,27 @@ export default function LlmFeedback() {
   };
 
   return (
-    <div className="mg-view">
-      <h1>KI-Bewertungen</h1>
-      <p className="mg-muted">
-        Hier siehst du, wie das KI-Modell deine Mails eingeschaetzt hat. Ein 👍/👎-Klick pro Mail hilft uns,
-        das Modell besser zu machen — die Bewertungen fliessen anonymisiert in kuenftige Feintunings.
-      </p>
-
-      <div className="mg-row" style={{ gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        {FILTERS.map((f) => (
-          <button
-            key={f.key || 'all'}
-            className={'mg-btn' + (filter === f.key ? ' mg-btn--primary' : '')}
-            onClick={() => setFilter(f.key)}
-          >{f.label}</button>
-        ))}
-      </div>
+    <PageShell>
+      <PageTopbar kicker="MAILGUARD · KI-BEWERTUNGEN" user={me?.email} />
+      <Section>
+        <SectionHeader
+          num="001"
+          title="LLM-FEEDBACK"
+          right={
+            <div className="mg-tabs-mono" role="tablist">
+              {FILTERS.map((f) => (
+                <button key={f.key || 'all'}
+                        className={'mg-tabs-mono__btn' + (filter === f.key ? ' mg-tabs-mono__btn--active' : '')}
+                        onClick={() => setFilter(f.key)}>
+                  <span className="mg-tabs-mono__label">{(f.label || '').toUpperCase()}</span>
+                </button>
+              ))}
+            </div>
+          }
+        />
+        <div className="mg-dash__shared-intro mg-mono">
+          👍/👎 PRO MAIL HILFT DEM LLM — ANONYMISIERTES FEINTUNING
+        </div>
 
       {error && <div className="mg-card mg-error">{error}</div>}
       {items === null && <div className="mg-card">Lade …</div>}
@@ -71,7 +77,8 @@ export default function LlmFeedback() {
           {items.map((it) => <FeedbackRow key={it.id} it={it} busy={busy[it.id]} onRate={rate} />)}
         </div>
       )}
-    </div>
+      </Section>
+    </PageShell>
   );
 }
 

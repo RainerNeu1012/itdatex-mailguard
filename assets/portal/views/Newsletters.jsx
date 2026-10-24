@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiPost } from '../api.js';
 import AccountTabs, { useCurrentAccount } from '../components/AccountTabs.jsx';
 import PurgeConfirmDialog from '../components/PurgeConfirmDialog.jsx';
+import { PageShell, PageTopbar, Section, SectionHeader } from '../components/Section.jsx';
 
 const STATUS_TONE = {
   unsubscribed: { label: 'abgemeldet', cls: 'mg-pill--ok' },
@@ -12,41 +13,45 @@ const STATUS_TONE = {
   smtp_not_configured: { label: 'SMTP fehlt', cls: 'mg-pill--err' },
 };
 
-export default function Newsletters() {
+export default function Newsletters({ me }) {
   const [tab, setTab] = useState('subscriptions');
   const [accounts, accountId, switchAccount] = useCurrentAccount();
   const activeAccount = accounts.find((a) => a.id === accountId) || null;
+  const TABS = [
+    { id: 'subscriptions', label: 'ABOS' },
+    { id: 'campaigns',     label: 'KAMPAGNEN' },
+    { id: 'history',       label: 'HISTORIE' },
+  ];
   return (
-    <div className="mg-stack">
-      <div className="mg-card">
-        <h2 style={{ margin: '0 0 0.25rem' }}>Newsletter</h2>
-        <p className="mg-muted" style={{ margin: 0 }}>
-          {activeAccount
-            ? <>Newsletter aus <strong>{activeAccount.label || activeAccount.host}</strong>. Pro Absender abmelden statt pro Mail — einmal klicken reicht für alle aktuellen und künftigen Nachrichten dieses Senders.</>
-            : 'Pro Absender abmelden statt pro Mail — einmal klicken reicht für alle aktuellen und künftigen Nachrichten dieses Senders.'}
-        </p>
-        <div className="mg-form__row" style={{ marginTop: '0.75rem', gap: '0.4rem' }}>
-          <button
-            className={'mg-btn ' + (tab === 'subscriptions' ? 'mg-btn--primary' : '')}
-            onClick={() => setTab('subscriptions')}
-          >Abos</button>
-          <button
-            className={'mg-btn ' + (tab === 'campaigns' ? 'mg-btn--primary' : '')}
-            onClick={() => setTab('campaigns')}
-          >Kampagnen</button>
-          <button
-            className={'mg-btn ' + (tab === 'history' ? 'mg-btn--primary' : '')}
-            onClick={() => setTab('history')}
-          >Historie</button>
-        </div>
-      </div>
+    <PageShell>
+      <PageTopbar kicker="MAILGUARD · NEWSLETTER" user={me?.email} />
 
-      <AccountTabs accounts={accounts} activeId={accountId} onSwitch={switchAccount} />
+      <Section>
+        <SectionHeader
+          num="001"
+          title={activeAccount ? `NEWSLETTER · ${(activeAccount.label || activeAccount.host || '').toUpperCase()}` : 'NEWSLETTER · ALLE'}
+          right={
+            <div className="mg-tabs-mono" role="tablist" aria-label="Ansicht">
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  className={'mg-tabs-mono__btn' + (tab === t.id ? ' mg-tabs-mono__btn--active' : '')}
+                  onClick={() => setTab(t.id)}
+                  role="tab" aria-selected={tab === t.id}
+                >
+                  <span className="mg-tabs-mono__label">{t.label}</span>
+                </button>
+              ))}
+            </div>
+          }
+        />
+        <AccountTabs accounts={accounts} activeId={accountId} onSwitch={switchAccount} />
 
-      {tab === 'subscriptions' && <Subscriptions accountId={accountId} />}
-      {tab === 'campaigns'     && <Campaigns />}
-      {tab === 'history'       && <History accountId={accountId} />}
-    </div>
+        {tab === 'subscriptions' && <Subscriptions accountId={accountId} />}
+        {tab === 'campaigns'     && <Campaigns />}
+        {tab === 'history'       && <History accountId={accountId} />}
+      </Section>
+    </PageShell>
   );
 }
 

@@ -3,9 +3,9 @@ import { apiGet, apiPost } from '../api.js';
 
 const PLAN_LABELS = {
   free: { name: 'Free',  price: '0 €',         color: '#8b949e' },
-  solo: { name: 'Solo',  price: '5 € / Monat', color: '#58a6ff' },
-  plus: { name: 'Plus',  price: '15 € / Monat', color: '#58a6ff' },
-  pro:  { name: 'Pro',   price: '39 € / Monat', color: '#58a6ff' },
+  solo: { name: 'Solo',  price: '5 € / Monat', color: '#f0f6fc' },
+  plus: { name: 'Plus',  price: '15 € / Monat', color: '#f0f6fc' },
+  pro:  { name: 'Pro',   price: '39 € / Monat', color: '#f0f6fc' },
 };
 
 const STATUS_LABELS = {

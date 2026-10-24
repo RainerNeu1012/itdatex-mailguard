@@ -3,6 +3,7 @@ import { apiGet, apiPost, apiDelete } from '../api.js';
 import { VerdictBadge, ReasonsList } from '../components/Verdict.jsx';
 import AccountTabs, { loadStoredAccountId, saveStoredAccountId } from '../components/AccountTabs.jsx';
 import PurgeConfirmDialog from '../components/PurgeConfirmDialog.jsx';
+import { PageShell, PageTopbar, Section, SectionHeader } from '../components/Section.jsx';
 
 const TAB_STORAGE_KEY = 'mg_inbox_tab';
 
@@ -31,7 +32,7 @@ function initialFilterFromUrl() {
   return EMPTY_FILTER;
 }
 
-export default function Inbox() {
+export default function Inbox({ me }) {
   const [accounts, setAccounts]     = useState([]);
   const [filter, setFilter]         = useState(initialFilterFromUrl);
   const [tab, setTab]               = useState(loadTab);
@@ -113,22 +114,26 @@ export default function Inbox() {
   };
 
   return (
-    <div className="mg-stack">
-      <div className="mg-card mg-card--head">
-        <div className="mg-inbox__head">
-          <div>
-            <h2 style={{ margin: '0 0 0.25rem' }}>Inbox</h2>
-            <p className="mg-muted" style={{ margin: 0 }}>
-              {activeAccount
-                ? <>Eingehende Mails von <strong>{activeAccount.label || activeAccount.host}</strong>.</>
-                : 'Eingehende Mails der verbundenen Postfächer.'}
-            </p>
-          </div>
-          <button className="mg-btn mg-btn--primary" disabled={pulling || !filter.account_id} onClick={pullAll}>
-            {pulling ? '…' : '↓ Jetzt abholen'}
-          </button>
-        </div>
-      </div>
+    <PageShell>
+      <PageTopbar kicker="MAILGUARD · INBOX" user={me?.email} />
+
+      <Section>
+        <SectionHeader
+          num="001"
+          title={activeAccount ? `INBOX · ${(activeAccount.label || activeAccount.host || '').toUpperCase()}` : 'INBOX · ALLE'}
+          counter={stats ? `${(stats.total || 0).toLocaleString('de-DE')} MAILS` : null}
+          right={
+            <button
+              className="mg-btn mg-btn--primary"
+              style={{ fontSize: '0.75rem', letterSpacing: '0.08em' }}
+              disabled={pulling || !filter.account_id}
+              onClick={pullAll}
+            >
+              {pulling ? '…' : '↓ JETZT ABHOLEN'}
+            </button>
+          }
+        />
+      </Section>
 
       {pullFlash && (
         <div className={'mg-card' + (pullFlash.type === 'err' ? ' mg-error' : '')} style={{ padding: '10px 14px' }}>
@@ -236,7 +241,7 @@ export default function Inbox() {
       {tab === 'chrono'
         ? <ChronoList filter={filter} setFilter={setFilter} onReload={loadStats} />
         : <SenderList  filter={filter} setFilter={setFilter} onReload={loadStats} />}
-    </div>
+    </PageShell>
   );
 }
 

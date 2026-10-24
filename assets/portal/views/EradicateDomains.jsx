@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { PageShell, PageTopbar, Section, SectionHeader } from '../components/Section.jsx';
 import { apiGet, apiPost, apiDelete } from '../api.js';
 import PurgeConfirmDialog from '../components/PurgeConfirmDialog.jsx';
 
@@ -13,36 +14,39 @@ import PurgeConfirmDialog from '../components/PurgeConfirmDialog.jsx';
  *  2. Direkt hier, für Domains, die schon lange nerven, aber gerade keine
  *     aktuelle Mail zum Rechtsklicken haben.
  */
-export default function EradicateDomains() {
+export default function EradicateDomains({ me }) {
   const [tab, setTab] = useState('domains');
+  const TABS = [
+    { id: 'domains', label: 'DOMAINS' },
+    { id: 'tlds',    label: 'TLDS' },
+    { id: 'content', label: 'INHALT' },
+  ];
   return (
-    <div className="mg-stack">
-      <div className="mg-card">
-        <h2 style={{ margin: '0 0 0.25rem' }}>Auto-Vernichten</h2>
-        <p className="mg-muted" style={{ margin: 0 }}>
-          Filter die vor dem Ingest greifen — die Mail landet nie in deiner Inbox,
-          wird direkt am IMAP-Server verworfen. Drei Achsen: einzelne Absender-Domains,
-          ganze Top-Level-Endungen (Geo-/TLD-Block), oder Inhalts-Muster im Betreff/Body.
-        </p>
-        <div className="mg-form__row" style={{ marginTop: '0.75rem', gap: '0.4rem' }}>
-          <button
-            className={'mg-btn ' + (tab === 'domains' ? 'mg-btn--primary' : '')}
-            onClick={() => setTab('domains')}
-          >Absender-Domains</button>
-          <button
-            className={'mg-btn ' + (tab === 'tlds' ? 'mg-btn--primary' : '')}
-            onClick={() => setTab('tlds')}
-          >TLD-Sperre</button>
-          <button
-            className={'mg-btn ' + (tab === 'content' ? 'mg-btn--primary' : '')}
-            onClick={() => setTab('content')}
-          >Inhalts-Muster</button>
+    <PageShell>
+      <PageTopbar kicker="MAILGUARD · AUTO-VERNICHTEN" user={me?.email} />
+      <Section>
+        <SectionHeader
+          num="001"
+          title="PRE-INGEST FILTER"
+          right={
+            <div className="mg-tabs-mono" role="tablist">
+              {TABS.map((t) => (
+                <button key={t.id} className={'mg-tabs-mono__btn' + (tab === t.id ? ' mg-tabs-mono__btn--active' : '')}
+                        onClick={() => setTab(t.id)}>
+                  <span className="mg-tabs-mono__label">{t.label}</span>
+                </button>
+              ))}
+            </div>
+          }
+        />
+        <div className="mg-dash__shared-intro mg-mono">
+          GREIFT VOR DEM INGEST · MAIL LANDET NIE IN DER INBOX · IMAP-SERVER-SEITIG VERWORFEN
         </div>
-      </div>
-      {tab === 'domains' && <DomainsList />}
-      {tab === 'tlds'    && <TldsList />}
-      {tab === 'content' && <><PatternSuggestionsCard /><ContentBlocksList /></>}
-    </div>
+        {tab === 'domains' && <DomainsList />}
+        {tab === 'tlds'    && <TldsList />}
+        {tab === 'content' && <><PatternSuggestionsCard /><ContentBlocksList /></>}
+      </Section>
+    </PageShell>
   );
 }
 

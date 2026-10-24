@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiGet, apiPost } from '../api.js';
 import { navigate } from '../router.js';
+import { PageShell, PageTopbar, Section, SectionHeader } from '../components/Section.jsx';
 
 const SYSFOLDER_TIP = 'Systemordner (Gesendet, Entwuerfe, Papierkorb, Archiv, Notizen ...) werden nicht gescannt, damit MailGuard keine eigenen oder geloeschten Mails quarantaenisiert. Klick "Aktivieren", wenn du das trotzdem willst.';
 
-export default function Accounts() {
+export default function Accounts({ me }) {
   const [items, setItems]     = useState(null);
   const [error, setError]     = useState(null);
   const [busy, setBusy]       = useState({});
@@ -91,32 +92,41 @@ export default function Accounts() {
   };
 
   return (
-    <div className="mg-stack">
-      <div className="mg-card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-          <h2 style={{ margin: 0 }}>IMAP-Postfächer</h2>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button
-              className="mg-btn"
-              disabled={busy['new-microsoft'] === 'oauth'}
-              onClick={() => startMicrosoftConnect()}
-              title="Outlook.com, Office 365, Microsoft 365 Family mit eigener Domain"
-            >
-              {busy['new-microsoft'] === 'oauth' ? '…' : '🔑 Mit Microsoft verbinden'}
-            </button>
-            <button
-              className="mg-btn"
-              disabled={busy['new-google'] === 'oauth'}
-              onClick={() => startGoogleConnect()}
-              title="Gmail, Google Workspace"
-            >
-              {busy['new-google'] === 'oauth' ? '…' : '🔑 Mit Google verbinden'}
-            </button>
-            <button className="mg-btn mg-btn--primary" onClick={() => navigate('accounts/new')}>+ IMAP manuell</button>
-          </div>
-        </div>
-        <p className="mg-muted">Hier verbindest du deine Mail-Postfächer. Wir holen die Header per IMAP ab und scannen sie auf Phishing/Spam — die Mails bleiben in deinem Postfach.</p>
-      </div>
+    <PageShell>
+      <PageTopbar kicker="MAILGUARD · POSTFÄCHER" user={me?.email} />
+      <Section>
+        <SectionHeader
+          num="001"
+          title="IMAP-POSTFÄCHER"
+          counter={items ? `${items.length} VERBUNDEN` : null}
+          right={
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button
+                className="mg-btn"
+                style={{ fontSize: '0.7rem', letterSpacing: '0.08em' }}
+                disabled={busy['new-microsoft'] === 'oauth'}
+                onClick={() => startMicrosoftConnect()}
+                title="Outlook.com, Office 365"
+              >
+                {busy['new-microsoft'] === 'oauth' ? '…' : 'MICROSOFT'}
+              </button>
+              <button
+                className="mg-btn"
+                style={{ fontSize: '0.7rem', letterSpacing: '0.08em' }}
+                disabled={busy['new-google'] === 'oauth'}
+                onClick={() => startGoogleConnect()}
+                title="Gmail, Google Workspace"
+              >
+                {busy['new-google'] === 'oauth' ? '…' : 'GOOGLE'}
+              </button>
+              <button
+                className="mg-btn mg-btn--primary"
+                style={{ fontSize: '0.7rem', letterSpacing: '0.08em' }}
+                onClick={() => navigate('accounts/new')}
+              >+ IMAP MANUELL</button>
+            </div>
+          }
+        />
 
       {error && <div className="mg-card mg-error">{error}</div>}
 
@@ -183,7 +193,8 @@ export default function Accounts() {
           })}
         </div>
       )}
-    </div>
+      </Section>
+    </PageShell>
   );
 }
 
