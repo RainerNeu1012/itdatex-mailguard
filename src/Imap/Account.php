@@ -112,7 +112,9 @@ final class Account {
 			'oauth_token_expires_at' => null,
 			'oauth_scope'            => '',
 			'quarantine_folder'      => '',
-			'auto_quarantine_min_score' => null,
+			// Default: schon ab mittlerem Score (30) in Quarantäne verschieben —
+			// null würde Phishing-Mails mit Score 30-49 in der INBOX lassen.
+			'auto_quarantine_min_score' => 30,
 			'imap_namespace_prefix'  => null,
 			'imap_delimiter'         => null,
 		];

@@ -6,18 +6,18 @@ import { PageShell, PageTopbar, Section, SectionHeader } from '../components/Sec
 const DEFAULTS = {
   label: '', host: '', port: 993, encryption: 'ssl',
   username: '', password: '', folder: 'INBOX', status: 'active',
-  auto_quarantine_min_score: null,
+  auto_quarantine_min_score: 30,
 };
 
-// Auswahlwerte für Auto-Quarantäne. Feinere Stufen: 50 (aggressiv, faengt
-// auch verdaechtige mit ab), 70 (Standard, alles 'gefaehrlich'), 85 (streng,
-// nur eindeutige Phishing-Muster), 100 (nur bei Score exakt 100).
+// Auto-Quarantäne-Schwellwert. Die Scanner-Heuristik + LLM-Rescoring
+// gibt klaren Phishing-Mails typisch Score 30–60 (SCHUFA-Fake, Prime-
+// Kündigung, Coinbase-Panik usw.). 70+ ist RARE. Daher Default 30.
 const AUTO_Q_OPTIONS = [
-  { value: '',    label: 'aus (nur manuell)' },
-  { value: '50',  label: 'Aggressiv — ab Score 50 (auch verdächtige)' },
-  { value: '70',  label: 'Standard — ab Score 70 (alle „gefährlich") — empfohlen' },
-  { value: '85',  label: 'Streng — ab Score 85 (nur klare Phishing-Muster)' },
+  { value: '30',  label: 'Empfohlen — ab Score 30 (fängt die meisten Phishing/Scam-Mails)' },
+  { value: '50',  label: 'Konservativ — ab Score 50 (nur klare Treffer)' },
+  { value: '70',  label: 'Streng — ab Score 70 (nur eindeutige „gefährlich")' },
   { value: '100', label: 'Nur eindeutig — nur bei Score 100' },
+  { value: '',    label: 'Aus (nur manuell in Quarantäne verschieben)' },
 ];
 
 const EMAIL_RE = /^[^\s@]+@([^\s@]+\.[^\s@]+)$/;
@@ -237,7 +237,7 @@ export default function AccountForm({ route, me }) {
       )}
 
       <div className="mg-form__section-label">Quarantäne</div>
-      <label>Auto-Quarantäne <span className="mg-muted mg-tiny">— gefährliche Mails automatisch in den Quarantäne-Ordner verschieben (Undo bleibt 7 Tage möglich)</span>
+      <label>Auto-Quarantäne <span className="mg-muted mg-tiny">— verdächtige Mails ab dem gewählten Score automatisch in den Quarantäne-Ordner verschieben, 7-Tage-Undo bleibt möglich</span>
         <select
           value={form.auto_quarantine_min_score == null ? '' : String(form.auto_quarantine_min_score)}
           onChange={(e) => setForm({ ...form, auto_quarantine_min_score: e.target.value === '' ? null : parseInt(e.target.value, 10) })}
@@ -245,6 +245,11 @@ export default function AccountForm({ route, me }) {
           {AUTO_Q_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </label>
+      <p className="mg-muted mg-tiny" style={{ margin: '0.35rem 0 0.75rem' }}>
+        Richtwerte unseres Scanners: <strong>Score 30–45</strong> fängt die meisten Phishing/Spam-Klassiker (SCHUFA-Fake,
+        falsche Kündigungs-Mails, Krypto-Panik, Bank-Trojaner). <strong>50+</strong> ist bereits deutliches Phishing.
+        <strong>70+</strong> sind seltene Treffer mit mehreren Red-Flags gleichzeitig.
+      </p>
 
       {error && <div className="mg-error">{error}</div>}
 
