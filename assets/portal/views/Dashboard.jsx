@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { apiGet } from '../api.js';
 import { navigate } from '../router.js';
+import { PageShell, PageTopbar, Section, SectionHeader, HairlineList, HairlineRow } from '../components/Section.jsx';
 
 // Precision Monochrome Security — monumentale Numerals, mono labels,
 // hairline dividers, live-pulse. Zero cards, pure information hierarchy.
@@ -220,18 +221,6 @@ function HeroStat({ value, label, detail, tone }) {
       <div className="mg-dash__hero-num">{display}</div>
       <div className="mg-dash__hero-label mg-mono">{label}</div>
       {detail && <div className="mg-dash__hero-detail mg-mono">{detail}</div>}
-    </div>
-  );
-}
-
-function SectionHeader({ num, title, right, counter }) {
-  return (
-    <div className="mg-dash__section-head">
-      <span className="mg-dash__section-num mg-mono">{num}</span>
-      <h2 className="mg-dash__section-title mg-mono">{title}</h2>
-      {counter && <span className="mg-dash__section-count mg-mono">{counter}</span>}
-      <div className="mg-dash__section-rule" aria-hidden />
-      {right}
     </div>
   );
 }

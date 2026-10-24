@@ -1271,11 +1271,17 @@ body::before {
 }
 .mg-dash__hero-num {
   font-family: var(--mg-display);
-  font-size: clamp(3.2rem, 6vw, 5rem);
+  font-size: clamp(2.6rem, 5.5vw, 4.4rem);
   line-height: 0.9;
   letter-spacing: -0.01em;
   color: var(--mg-fg);
   font-weight: 400;
+  /* Globaler overflow-wrap:anywhere wuerde "14.894" an jeder Ziffer brechen —
+     fuer monumentale Zahlen deaktivieren. */
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  min-width: 0;
 }
 .mg-dash__hero-stat--ok   .mg-dash__hero-num { color: var(--mg-ok); }
 .mg-dash__hero-stat--warn .mg-dash__hero-num { color: var(--mg-err); }
@@ -1357,14 +1363,20 @@ body::before {
   padding: 0;
 }
 .mg-dash__row {
-  display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 0.9rem 0.25rem;
+  padding: 0.9rem 0.5rem;
   border-bottom: 1px solid var(--mg-border);
   transition: background 0.15s ease;
 }
+.mg-dash__row > .mg-dash__row-label { flex: 1 1 auto; min-width: 0; }
+.mg-dash__row > .mg-dash__row-sub   { flex: 0 1 auto; min-width: 0; max-width: 40%; }
+.mg-dash__row > .mg-dash__row-val,
+.mg-dash__row > .mg-dash__row-tag,
+.mg-dash__row > .mg-dash__row-num,
+.mg-dash__row > .mg-dash__row-time,
+.mg-dash__row > .mg-dash__action-tag { flex: 0 0 auto; }
 .mg-dash__row:hover {
   background: linear-gradient(90deg, rgba(255,255,255,0.015), rgba(255,255,255,0));
 }
@@ -1415,10 +1427,7 @@ body::before {
 
 /* ------- Activity-Log-Row ------- */
 .mg-dash__list--log { font-size: 0.85rem; }
-.mg-dash__row--log {
-  grid-template-columns: 70px auto 1fr auto auto;
-  gap: 0.75rem;
-}
+.mg-dash__row--log  { gap: 0.75rem; }
 .mg-dash__row-time {
   color: var(--mg-subtle);
   font-size: 0.72rem;
@@ -1520,3 +1529,27 @@ body::before {
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
+
+/* Zusatz-Klassen fuer Section-Pattern in anderen Views */
+.mg-dash__notice {
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--mg-border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--mg-warn) 10%, transparent);
+  color: var(--mg-warn);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.mg-dash__pager {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  color: var(--mg-muted);
+}
+.mg-dash__row--click { text-decoration: none; color: inherit; cursor: pointer; }
+.mg-dash__row--click:hover { background: var(--mg-surface-2); }
