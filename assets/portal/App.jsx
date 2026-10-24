@@ -27,6 +27,38 @@ import BrandMark from './components/BrandMark.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import CommandPalette from './components/CommandPalette.jsx';
 
+const ROUTE_TITLES = {
+  dashboard: 'Dashboard',
+  inbox: 'Inbox',
+  newsletters: 'Newsletter',
+  scanner: 'Scanner',
+  rules: 'Spam-Regeln',
+  'postbox-rules': 'Postfach-Regeln',
+  'eradicate-domains': 'Auto-Vernichten',
+  actions: 'Aktionen',
+  'llm-feedback': 'KI-Bewertungen',
+  accounts: 'Postfächer',
+  'account-new': 'Postfach anlegen',
+  'account-edit': 'Postfach bearbeiten',
+  plan: 'Plan & Lizenz',
+  devices: 'Geräte',
+};
+function routeTitle(route) {
+  return ROUTE_TITLES[route?.name] || (route?.name || '').replace(/-/g, ' ');
+}
+
+function LiveClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const h = String(now.getUTCHours()).padStart(2, '0');
+  const m = String(now.getUTCMinutes()).padStart(2, '0');
+  const s = String(now.getUTCSeconds()).padStart(2, '0');
+  return <span className="mg-topbar__clock mg-mono">{h}:{m}:{s} UTC</span>;
+}
+
 const KBD_ROUTES = {
   '1': 'dashboard',
   '2': 'inbox',
@@ -150,12 +182,16 @@ export default function App() {
 
       <div className="mg-shell__main">
         <header className="mg-topbar">
-          <div className="mg-topbar__crumbs mg-mono">
-            <span className="mg-topbar__crumb">MAILGUARD</span>
-            <span className="mg-topbar__crumb-sep">/</span>
-            <span className="mg-topbar__crumb mg-topbar__crumb--active">{(route.name || '').toUpperCase()}</span>
+          <div className="mg-topbar__crumbs">
+            <span className="mg-topbar__crumb mg-topbar__crumb--kicker mg-mono">MAILGUARD</span>
+            <span className="mg-topbar__crumb-sep" aria-hidden="true">›</span>
+            <span className="mg-topbar__crumb mg-topbar__crumb--active">{routeTitle(route)}</span>
           </div>
-          <div className="mg-topbar__spacer" />
+          <div className="mg-topbar__status">
+            <LiveClock />
+            <span className="mg-dash__dot mg-dash__dot--live" aria-hidden="true" />
+            <span className="mg-topbar__status-label mg-mono">LIVE</span>
+          </div>
           <button
             type="button"
             className="mg-topbar__search"

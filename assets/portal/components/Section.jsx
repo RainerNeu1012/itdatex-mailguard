@@ -49,30 +49,7 @@ export function PageShell({ children }) {
   return <div className="mg-dash">{children}</div>;
 }
 
-export function PageTopbar({ kicker, user, right, status = 'LIVE' }) {
-  const [now, setNow] = React.useState(() => new Date());
-  React.useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
-  const h = String(now.getUTCHours()).padStart(2, '0');
-  const m = String(now.getUTCMinutes()).padStart(2, '0');
-  const s = String(now.getUTCSeconds()).padStart(2, '0');
-  return (
-    <header className="mg-dash__topbar">
-      <div className="mg-dash__topbar-left">
-        <span className="mg-dash__kicker">{kicker}</span>
-        {user && <>
-          <span className="mg-dash__sep" aria-hidden>/</span>
-          <span className="mg-dash__user">{user}</span>
-        </>}
-      </div>
-      <div className="mg-dash__topbar-right">
-        {right}
-        <span className="mg-dash__clock">{h}:{m}:{s} UTC</span>
-        <span className="mg-dash__dot mg-dash__dot--live" aria-hidden />
-        <span className="mg-dash__status">{status}</span>
-      </div>
-    </header>
-  );
-}
+// PageTopbar ist seit v0.66 ein No-op — die globale App-Topbar
+// zeigt Breadcrumb + Clock + LIVE. Views duerfen weiter `<PageTopbar/>`
+// mounten, damit alte Imports nicht brechen; es wird nichts gerendert.
+export function PageTopbar() { return null; }

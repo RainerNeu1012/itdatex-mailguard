@@ -37,20 +37,6 @@ export default function Dashboard({ me }) {
   const s = data?.stats || {};
   return (
     <div className="mg-dash">
-      {/* STATUS-BAR */}
-      <header className="mg-dash__topbar">
-        <div className="mg-dash__topbar-left">
-          <span className="mg-dash__kicker">MAILGUARD · DASHBOARD</span>
-          <span className="mg-dash__sep" aria-hidden>/</span>
-          <span className="mg-dash__user">{me?.email}</span>
-        </div>
-        <div className="mg-dash__topbar-right">
-          <span className="mg-dash__clock">{fmtClock(now)}</span>
-          <span className="mg-dash__dot mg-dash__dot--live" aria-hidden />
-          <span className="mg-dash__status">LIVE</span>
-        </div>
-      </header>
-
       {/* HERO METRICS — monumentale Numerals */}
       <section className="mg-dash__hero">
         <HeroStat
