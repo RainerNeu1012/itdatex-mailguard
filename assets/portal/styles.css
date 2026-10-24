@@ -859,15 +859,19 @@ a:hover { color: var(--mg-accent); }
   min-width: 0;
 }
 .mg-sender__count {
-  display: inline-block;
-  padding: 0.2rem 0.65rem;
-  border-radius: 999px;
-  font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.55rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
   font-family: var(--mg-mono);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  background: rgba(47, 129, 247, 0.15);
-  color: var(--mg-accent-hover);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  background: var(--mg-surface-2);
+  border: 1px solid var(--mg-border);
+  color: var(--mg-fg);
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 .mg-sender__chevron {
   color: var(--mg-subtle);
@@ -895,6 +899,20 @@ a:hover { color: var(--mg-accent); }
 @media (max-width: 640px) {
   .mg-shell { padding: 0 1rem 3rem; }
   .mg-header { margin: 0 -1rem 1rem; padding: 0.7rem 1rem; }
+
+  /* Sender-Head: 3-col-Grid auf Mobile zu 2-col mit Meta auf eigene Zeile */
+  .mg-sender__head {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "from chevron"
+      "subject chevron"
+      "meta meta";
+    gap: 0.4rem 0.75rem;
+  }
+  .mg-sender__from    { grid-area: from; }
+  .mg-sender__subject { grid-area: subject; white-space: normal; }
+  .mg-sender__meta    { grid-area: meta; justify-content: flex-start; }
+  .mg-sender__chevron { grid-area: chevron; align-self: start; }
 
   .mg-mail__head { grid-template-columns: 1fr; padding: 0.5rem 0; min-height: 44px; }
   .mg-mail__meta { gap: 0.35rem; }
@@ -1061,26 +1079,26 @@ a:hover { color: var(--mg-accent); }
   border-style: dashed;
 }
 .mg-btn--danger {
-  background: var(--mg-err);
-  border-color: var(--mg-err);
-  color: #fff;
+  background: transparent;
+  border-color: color-mix(in srgb, var(--mg-err) 50%, var(--mg-border));
+  color: var(--mg-err);
   font-weight: 600;
 }
 .mg-btn--danger:hover {
-  background: #d63a31;
-  border-color: #d63a31;
-  color: #fff;
+  background: color-mix(in srgb, var(--mg-err) 10%, transparent);
+  border-color: var(--mg-err);
+  color: var(--mg-err);
 }
 .mg-btn--warn {
-  background: var(--mg-warn);
-  border-color: var(--mg-warn);
-  color: #1a1a1a;
+  background: transparent;
+  border-color: color-mix(in srgb, var(--mg-warn) 50%, var(--mg-border));
+  color: var(--mg-warn);
   font-weight: 600;
 }
 .mg-btn--warn:hover {
-  background: #b8811b;
-  border-color: #b8811b;
-  color: #fff;
+  background: color-mix(in srgb, var(--mg-warn) 10%, transparent);
+  border-color: var(--mg-warn);
+  color: var(--mg-warn);
 }
 
 .mg-stat--ok      .mg-stat__value { color: var(--mg-ok); }
