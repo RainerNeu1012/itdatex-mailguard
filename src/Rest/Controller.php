@@ -400,6 +400,12 @@ final class Controller {
 			],
 		] );
 
+		register_rest_route( self::NAMESPACE, '/dashboard', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'dashboard_summary' ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/inbox/messages/(?P<id>\d+)', [
 			[
 				'methods'             => 'GET',
@@ -1115,6 +1121,117 @@ final class Controller {
 		if ( is_wp_error( $cid ) ) { return $cid; }
 		$aid = (int) $req->get_param( 'account_id' );
 		return new WP_REST_Response( [ 'ok' => true, 'stats' => ImapMessage::stats_for_customer( $cid, $aid ) ], 200 );
+	}
+
+	/**
+	 * Dashboard-Summary: alles was die Dashboard-View in einem Request braucht.
+	 * Separater Endpoint damit die View nicht 5 Requests feuert.
+	 */
+	public static function dashboard_summary( WP_REST_Request $req ) {
+		global $wpdb;
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+
+		$stats = ImapMessage::stats_for_customer( $cid, 0 );
+
+		$t_msg = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_MESSAGES;
+		$t_act = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_ACTIONS;
+		$t_imap = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_IMAP_ACCOUNTS;
+		$t_rules = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_POSTBOX_RULES;
+		$t_shared = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_SHARED_RULES;
+
+		$today_count = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$t_msg} WHERE customer_id = %d AND fetched_at >= UTC_DATE()",
+			$cid
+		) );
+		$last_24h = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$t_msg} WHERE customer_id = %d AND fetched_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)",
+			$cid
+		) );
+		$purges_24h = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$t_act} WHERE customer_id = %d AND action = 'purge' AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)",
+			$cid
+		) );
+		$quarantined_open = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$t_act} WHERE customer_id = %d AND action = 'quarantine' AND status = 'done' AND undo_until IS NOT NULL AND undo_until > UTC_TIMESTAMP()",
+			$cid
+		) );
+
+		$accounts = $wpdb->get_results( $wpdb->prepare(
+			"SELECT a.id, a.label, a.username, a.status, a.last_test_ok, a.last_test_at,
+			 (SELECT COUNT(*) FROM {$t_msg} m WHERE m.account_id = a.id AND m.customer_id = %d) AS mail_count
+			 FROM {$t_imap} a
+			 WHERE a.customer_id = %d
+			 ORDER BY a.id ASC",
+			$cid, $cid
+		), ARRAY_A ) ?: [];
+
+		$recent_actions = $wpdb->get_results( $wpdb->prepare(
+			"SELECT action, from_addr_snap, subject_snap, verdict_snap, verdict_score_snap, source_folder, created_at
+			 FROM {$t_act}
+			 WHERE customer_id = %d
+			 ORDER BY id DESC
+			 LIMIT 12",
+			$cid
+		), ARRAY_A ) ?: [];
+
+		$customer_rules_total = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$t_rules} WHERE customer_id = %d AND enabled = 1",
+			$cid
+		) );
+		$shared_rules_total = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$t_shared} WHERE enabled = 1" );
+		$shared_rules_top = $wpdb->get_results(
+			"SELECT id, name, priority, hit_count, last_hit_at FROM {$t_shared} WHERE enabled = 1 ORDER BY priority ASC, id ASC LIMIT 8",
+			ARRAY_A
+		) ?: [];
+
+		$operators = (array) \Itdatex\Mailguard\Admin\Settings::get( 'operator_customer_ids', [] );
+		$is_operator = in_array( (int) $cid, array_map( 'intval', $operators ), true );
+
+		return new WP_REST_Response( [
+			'ok'              => true,
+			'stats'           => $stats,
+			'today'           => $today_count,
+			'last_24h'        => $last_24h,
+			'purges_24h'      => $purges_24h,
+			'quarantined_open'=> $quarantined_open,
+			'accounts'        => array_map( static function ( $a ) {
+				return [
+					'id'            => (int) $a['id'],
+					'label'         => (string) ( $a['label'] ?: $a['username'] ),
+					'username'      => (string) $a['username'],
+					'status'        => (string) $a['status'],
+					'last_test_ok'  => $a['last_test_ok'] === null ? null : (int) $a['last_test_ok'] === 1,
+					'last_test_at'  => $a['last_test_at'],
+					'mail_count'    => (int) $a['mail_count'],
+				];
+			}, $accounts ),
+			'recent_actions'  => array_map( static function ( $a ) {
+				return [
+					'action'      => (string) $a['action'],
+					'from_addr'   => (string) $a['from_addr_snap'],
+					'subject'     => (string) $a['subject_snap'],
+					'verdict'     => (string) $a['verdict_snap'],
+					'score'       => $a['verdict_score_snap'] === null ? null : (int) $a['verdict_score_snap'],
+					'folder'      => (string) $a['source_folder'],
+					'created_at'  => (string) $a['created_at'],
+				];
+			}, $recent_actions ),
+			'rules'           => [
+				'customer_active' => $customer_rules_total,
+				'shared_active'   => $shared_rules_total,
+				'shared_top'      => array_map( static function ( $r ) {
+					return [
+						'id'          => (int) $r['id'],
+						'name'        => (string) $r['name'],
+						'priority'    => (int) $r['priority'],
+						'hit_count'   => (int) $r['hit_count'],
+						'last_hit_at' => $r['last_hit_at'],
+					];
+				}, $shared_rules_top ),
+			],
+			'is_operator'     => $is_operator,
+		], 200 );
 	}
 
 	public static function inbox_get( WP_REST_Request $req ) {
