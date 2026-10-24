@@ -24,14 +24,53 @@ import LlmFeedback    from './views/LlmFeedback.jsx';
 import NotificationsBell from './components/NotificationsBell.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import BrandMark from './components/BrandMark.jsx';
+import Sidebar from './components/Sidebar.jsx';
+import CommandPalette from './components/CommandPalette.jsx';
+
+const KBD_ROUTES = {
+  '1': 'dashboard',
+  '2': 'inbox',
+  '3': 'newsletters',
+  '4': 'scanner',
+  '5': 'postbox-rules',
+  '6': 'eradicate-domains',
+  '7': 'actions',
+  '8': 'llm-feedback',
+  '9': 'accounts',
+};
 
 export default function App() {
   const route = useRoute();
   const { me, loading, refresh } = useMe();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
-  // Menu schließt sich automatisch nach Route-Wechsel.
-  useEffect(() => { setMenuOpen(false); }, [route.name]);
+  // Global Keyboard-Shortcuts
+  useEffect(() => {
+    const onKey = (e) => {
+      const t = e.target;
+      const isInput = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+      // ⌘K / Ctrl+K oeffnet Palette (auch in Inputs)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen(true);
+        return;
+      }
+      if (isInput) return;
+      // Alt+1..9 wechselt Views
+      if (e.altKey && KBD_ROUTES[e.key]) {
+        e.preventDefault();
+        navigate(KBD_ROUTES[e.key]);
+        return;
+      }
+      // / oeffnet Palette als Spotlight-Shortcut
+      if (e.key === '/' && !e.altKey && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Home → automatisches Routing je nach Auth-State.
   useEffect(() => {
@@ -67,20 +106,17 @@ export default function App() {
   // /saas-onboard/*. Post-Login = klassischer App-Shell mit Tab-Nav.
   const isMarketing = !me;
 
-  return (
-    <div className={isMarketing ? 'mg-shell mg-shell--marketing' : 'mg-shell'}>
-      <header className="mg-header">
-        <a href={isMarketing ? 'https://guard.itdatex.support/' : portalUrl()}
-           className="mg-brand"
-           onClick={(e) => { if (!isMarketing) { e.preventDefault(); navigate('dashboard'); } }}>
-          <BrandMark className="mg-brand__logo" size={28} />
-          <span className="mg-brand__txt">
-            <span className="mg-brand__name">MAIL<span className="mg-brand__accent">GUARD</span></span>
-            <span className="mg-brand__sub">// {isMarketing ? 'saas' : 'portal'}</span>
-          </span>
-        </a>
-
-        {isMarketing ? (
+  if (isMarketing) {
+    return (
+      <div className="mg-shell mg-shell--marketing">
+        <header className="mg-header">
+          <a href="https://guard.itdatex.support/" className="mg-brand">
+            <BrandMark className="mg-brand__logo" size={28} />
+            <span className="mg-brand__txt">
+              <span className="mg-brand__name">MAIL<span className="mg-brand__accent">GUARD</span></span>
+              <span className="mg-brand__sub">// saas</span>
+            </span>
+          </a>
           <nav className="mg-nav mg-nav--marketing">
             <a href="https://guard.itdatex.support/#plans">Pläne</a>
             <a href="https://guard.itdatex.support/#features">Features</a>
@@ -90,58 +126,10 @@ export default function App() {
             )}
             <ThemeToggle />
           </nav>
-        ) : (
-          <>
-            <button
-              type="button"
-              className="mg-burger"
-              aria-label="Menü"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((v) => !v)}
-            >
-              <span></span><span></span><span></span>
-            </button>
-            <nav className={menuOpen ? 'mg-nav mg-nav--open' : 'mg-nav'}>
-              {[
-                { r: 'dashboard',         label: 'DASH',       kbd: '01' },
-                { r: 'inbox',             label: 'INBOX',      kbd: '02' },
-                { r: 'newsletters',       label: 'NEWSLETTER', kbd: '03' },
-                { r: 'scanner',           label: 'SCANNER',    kbd: '04' },
-                { r: 'postbox-rules',     label: 'REGELN',     kbd: '05' },
-                { r: 'eradicate-domains', label: 'AUTO-PURGE', kbd: '06' },
-                { r: 'actions',           label: 'AKTIONEN',   kbd: '07' },
-                { r: 'llm-feedback',      label: 'LLM',        kbd: '08' },
-                { r: 'accounts',          label: 'POSTFÄCHER', kbd: '09' },
-                { r: 'plan',              label: 'PLAN',       kbd: '10' },
-                { r: 'devices',           label: 'GERÄTE',     kbd: '11' },
-              ].map(({ r, label, kbd }) => (
-                <button
-                  key={r}
-                  className={'mg-nav__btn' + (route.name === r ? ' mg-nav__btn--active' : '')}
-                  onClick={() => navigate(r)}
-                  title={label}
-                >
-                  <span className="mg-nav__kbd" aria-hidden="true">{kbd}</span>
-                  <span className="mg-nav__label">{label}</span>
-                </button>
-              ))}
-              <NotificationsBell />
-              <ThemeToggle />
-              <span className="mg-nav__email">{me.email}</span>
-              <button className="mg-nav__btn mg-nav__btn--out" onClick={() => navigate('logout')} title="Logout">
-                <span className="mg-nav__label">LOGOUT ↗</span>
-              </button>
-            </nav>
-          </>
-        )}
-      </header>
-
-      <main className="mg-main">
-        <Page route={route} me={me} reloadMe={refresh} />
-        {me && me.cloud_consent_required && <CloudConsentModal onDone={refresh} />}
-      </main>
-
-      {isMarketing ? (
+        </header>
+        <main className="mg-main">
+          <Page route={route} me={me} reloadMe={refresh} />
+        </main>
         <footer className="mg-footer mg-footer--marketing">
           <span>© !tdatex 2026 · <a href="https://itdatex.support/">itdatex.support</a></span>
           <span>
@@ -152,14 +140,47 @@ export default function App() {
             <a href="https://wp.itdatex.support/kuendigen/">Kündigen</a>
           </span>
         </footer>
-      ) : (
-        <footer className="mg-footer">
-          <span>itdatex MailGuard · v{(window.itdatexMailguard || {}).version || '?'}</span>
-        </footer>
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mg-shell mg-shell--app">
+      <Sidebar route={route} me={me} onOpenPalette={() => setPaletteOpen(true)} />
+
+      <div className="mg-shell__main">
+        <header className="mg-topbar">
+          <div className="mg-topbar__crumbs mg-mono">
+            <span className="mg-topbar__crumb">MAILGUARD</span>
+            <span className="mg-topbar__crumb-sep">/</span>
+            <span className="mg-topbar__crumb mg-topbar__crumb--active">{(route.name || '').toUpperCase()}</span>
+          </div>
+          <div className="mg-topbar__spacer" />
+          <button
+            type="button"
+            className="mg-topbar__search"
+            onClick={() => setPaletteOpen(true)}
+            title="Suche (⌘K)"
+          >
+            <span className="mg-topbar__search-icon" aria-hidden="true">⌕</span>
+            <span className="mg-topbar__search-label">Suche</span>
+            <span className="mg-topbar__search-kbd mg-mono">⌘K</span>
+          </button>
+          <NotificationsBell />
+          <ThemeToggle />
+        </header>
+
+        <main className="mg-main">
+          <Page route={route} me={me} reloadMe={refresh} />
+          {me && me.cloud_consent_required && <CloudConsentModal onDone={refresh} />}
+        </main>
+      </div>
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }
+
 
 function pickView(name) {
   switch (name) {
