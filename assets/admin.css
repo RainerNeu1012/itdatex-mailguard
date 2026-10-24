@@ -8,6 +8,9 @@
 /* Base: Dark-Theme-Overlay fuer die Content-Area */
 body.toplevel_page_itdatex-mailguard,
 body[class*="mailguard"] #wpbody-content {
+  /* DARK (WP-Admin bevorzugt Light-Mode, aber MailGuard-Pages koennen
+     ueber den WP-Admin-Dark-Scheme vererbt werden). Default = Dark fuer
+     Konsistenz mit dem Portal. */
   --mg-bg:       #0d1117;
   --mg-surface:  #161b22;
   --mg-surf-2:   #21262d;
@@ -22,6 +25,26 @@ body[class*="mailguard"] #wpbody-content {
   --mg-err:      #f85149;
   --mg-mono:     'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --mg-display:  'Bebas Neue', 'Arial Narrow', Impact, sans-serif;
+}
+
+/* LIGHT fuer WP-Admin — gleicher Trigger wie Portal:
+   prefers-color-scheme:light + nicht explizit dark. */
+@media (prefers-color-scheme: light) {
+  body.toplevel_page_itdatex-mailguard:not([data-theme="dark"]),
+  body[class*="mailguard"]:not([data-theme="dark"]) #wpbody-content {
+    --mg-bg:       #ffffff;
+    --mg-surface:  #ffffff;
+    --mg-surf-2:   #f6f8fa;
+    --mg-border:   #d0d7de;
+    --mg-fg:       #1f2328;
+    --mg-muted:    #656d76;
+    --mg-subtle:   #8c959f;
+    --mg-accent:   #1f2328;
+    --mg-accent-fg:#ffffff;
+    --mg-ok:       #1a7f37;
+    --mg-warn:     #9a6700;
+    --mg-err:      #cf222e;
+  }
 }
 
 body[class*="mailguard"] #wpbody-content {

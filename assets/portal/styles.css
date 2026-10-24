@@ -4,7 +4,8 @@
  * ============================================================================ */
 
 :root {
-  color-scheme: dark;
+  color-scheme: dark light;
+  /* DARK (Default) — "Deep Space" Monochrom */
   --mg-bg:         #0d1117;
   --mg-surface:    #161b22;
   --mg-surface-2:  #21262d;
@@ -12,8 +13,6 @@
   --mg-fg:         #e6edf3;
   --mg-muted:      #8b949e;
   --mg-subtle:     #6e7681;
-  /* Monochrom-Accent (itdatex-Brand): im Dark-Mode = Weiss als Highlight,
-     im Light-Mode = Schwarz. Siehe .mg-btn--primary fuer die Invers-Logik. */
   --mg-accent:       #f0f6fc;
   --mg-accent-hover: #ffffff;
   --mg-accent-fg:    #0d1117;
@@ -21,9 +20,73 @@
   --mg-ok:         #3fb950;
   --mg-warn:       #d29922;
   --mg-err:        #f85149;
+  --mg-shadow-strong: 0 20px 60px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --mg-shadow-soft:   0 1px 2px rgba(0,0,0,0.25);
+  --mg-hero-gradient: linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 60%);
+  --mg-hover-tint:    linear-gradient(90deg, rgba(255,255,255,0.015), rgba(255,255,255,0));
+  --mg-row-hover:     rgba(255,255,255,0.03);
+  --mg-grain-opacity: 0.025;
+  --mg-grain-blend:   overlay;
   --mg-display:    'Bebas Neue', 'Arial Narrow', Impact, sans-serif;
   --mg-mono:       'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --mg-sans:       'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+}
+
+/* LIGHT — "Paper White" Monochrom. Aktiv per prefers-color-scheme (ausser
+   wenn der User explizit dark gewaehlt hat), oder explizit via
+   <html data-theme="light">. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --mg-bg:         #ffffff;
+    --mg-surface:    #ffffff;
+    --mg-surface-2:  #f6f8fa;
+    --mg-border:     #d0d7de;
+    --mg-fg:         #1f2328;
+    --mg-muted:      #656d76;
+    --mg-subtle:     #8c959f;
+    --mg-accent:       #1f2328;
+    --mg-accent-hover: #000000;
+    --mg-accent-fg:    #ffffff;
+    --mg-focus-ring:   rgba(31,35,40,0.28);
+    --mg-ok:         #1a7f37;
+    --mg-warn:       #9a6700;
+    --mg-err:        #cf222e;
+    --mg-shadow-strong: 0 24px 50px rgba(31,35,40,0.12), 0 2px 6px rgba(31,35,40,0.06);
+    --mg-shadow-soft:   0 1px 2px rgba(31,35,40,0.08);
+    --mg-hero-gradient: linear-gradient(180deg, rgba(31,35,40,0.025) 0%, rgba(31,35,40,0) 60%);
+    --mg-hover-tint:    linear-gradient(90deg, rgba(31,35,40,0.03), rgba(31,35,40,0));
+    --mg-row-hover:     rgba(31,35,40,0.03);
+    --mg-grain-opacity: 0.015;
+    --mg-grain-blend:   multiply;
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --mg-bg:         #ffffff;
+  --mg-surface:    #ffffff;
+  --mg-surface-2:  #f6f8fa;
+  --mg-border:     #d0d7de;
+  --mg-fg:         #1f2328;
+  --mg-muted:      #656d76;
+  --mg-subtle:     #8c959f;
+  --mg-accent:       #1f2328;
+  --mg-accent-hover: #000000;
+  --mg-accent-fg:    #ffffff;
+  --mg-focus-ring:   rgba(31,35,40,0.28);
+  --mg-ok:         #1a7f37;
+  --mg-warn:       #9a6700;
+  --mg-err:        #cf222e;
+  --mg-shadow-strong: 0 24px 50px rgba(31,35,40,0.12), 0 2px 6px rgba(31,35,40,0.06);
+  --mg-shadow-soft:   0 1px 2px rgba(31,35,40,0.08);
+  --mg-hero-gradient: linear-gradient(180deg, rgba(31,35,40,0.025) 0%, rgba(31,35,40,0) 60%);
+  --mg-hover-tint:    linear-gradient(90deg, rgba(31,35,40,0.03), rgba(31,35,40,0));
+  --mg-row-hover:     rgba(31,35,40,0.03);
+  --mg-grain-opacity: 0.015;
+  --mg-grain-blend:   multiply;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -38,10 +101,8 @@ html, body {
   font-size: 1rem;
   /* Verhindert horizontales Scrollen, wenn eine Zelle doch mal rausrutscht. */
   overflow-x: hidden;
-  color-scheme: dark;
 }
-/* Native form controls (select-Dropdown-Liste etc.) im Dark-Theme halten */
-select, input, textarea { color-scheme: dark; }
+/* Native controls folgen dem Root-Scheme automatisch */
 /* Alle Text-Container: lange Woerter/URLs innerhalb umbrechen statt Container sprengen. */
 p, li, dd, dt, td, th, div, span, strong, em, code, a {
   overflow-wrap: anywhere;
@@ -82,7 +143,7 @@ a:hover { color: var(--mg-accent); }
   gap: 1rem;
   margin: 0 -1.5rem 1.5rem;
   padding: 0.85rem 1.5rem;
-  background: rgba(13, 17, 23, 0.88);
+  background: color-mix(in srgb, var(--mg-bg) 88%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--mg-border);
@@ -287,7 +348,7 @@ a:hover { color: var(--mg-accent); }
   padding: 2.2rem 2rem 1.75rem;
   width: 100%;
   max-width: 400px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--mg-shadow-strong);
 }
 .mg-auth__brand {
   text-align: center;
@@ -352,7 +413,6 @@ a:hover { color: var(--mg-accent); }
   padding: 0.65rem 0.85rem;
   border: 1px solid var(--mg-border);
   border-radius: 7px;
-  color-scheme: dark;
   font: inherit;
   font-family: var(--mg-sans);
   font-size: 0.95rem;
@@ -570,7 +630,7 @@ a:hover { color: var(--mg-accent); }
   gap: 0.4rem;
   align-items: center;
   flex-wrap: wrap;
-  background: rgba(255, 255, 255, 0.025);
+  background: color-mix(in srgb, var(--mg-fg) 3%, transparent);
   border: 1px solid var(--mg-border);
   border-radius: 10px;
   padding: 0.45rem 0.6rem;
@@ -620,7 +680,7 @@ a:hover { color: var(--mg-accent); }
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   white-space: nowrap;
 }
-.mg-filter-pill:hover { background: rgba(255, 255, 255, 0.04); color: var(--mg-fg); }
+.mg-filter-pill:hover { background: color-mix(in srgb, var(--mg-fg) 5%, transparent); color: var(--mg-fg); }
 .mg-filter-pill--active {
   background: rgba(99, 102, 241, 0.15);
   border-color: rgba(99, 102, 241, 0.5);
@@ -645,7 +705,7 @@ a:hover { color: var(--mg-accent); }
   cursor: pointer;
   border-radius: 7px;
 }
-.mg-filter-bar__reset:hover { background: rgba(255, 255, 255, 0.04); color: var(--mg-fg); }
+.mg-filter-bar__reset:hover { background: color-mix(in srgb, var(--mg-fg) 5%, transparent); color: var(--mg-fg); }
 
 .mg-btn--ghost {
   background: transparent;
@@ -659,7 +719,7 @@ a:hover { color: var(--mg-accent); }
   align-items: center;
   gap: 0.4rem;
   padding: 0.4rem 0.75rem;
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--mg-fg) 5%, transparent);
   border: 1px solid var(--mg-border);
   border-radius: 999px;
   color: var(--mg-muted);
@@ -669,7 +729,7 @@ a:hover { color: var(--mg-accent); }
   line-height: 1.3;
   max-width: 100%;
 }
-.mg-purge-pill:hover { background: rgba(255, 255, 255, 0.07); color: var(--mg-fg); }
+.mg-purge-pill:hover { background: color-mix(in srgb, var(--mg-fg) 8%, transparent); color: var(--mg-fg); }
 .mg-purge-pill--active {
   background: rgba(239, 68, 68, 0.14);
   border-color: rgba(239, 68, 68, 0.55);
@@ -690,7 +750,7 @@ a:hover { color: var(--mg-accent); }
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--mg-fg) 10%, transparent);
   color: var(--mg-fg);
   flex-shrink: 0;
 }
@@ -1092,7 +1152,7 @@ a:hover { color: var(--mg-accent); }
   padding: 12px 14px;
   border-radius: 6px;
   border: 1px solid var(--mg-border);
-  background: rgba(255,255,255,0.02);
+  background: var(--mg-surface-2);
   margin-bottom: 12px;
 }
 .mg-banner--ok    { border-color: color-mix(in srgb, var(--mg-ok)   40%, var(--mg-border)); background: color-mix(in srgb, var(--mg-ok)   8%, transparent); }
@@ -1122,7 +1182,7 @@ a:hover { color: var(--mg-accent); }
   align-items: center;
   gap: 0.6rem;
   padding: 0.3rem 0;
-  border-top: 1px solid rgba(255,255,255,0.04);
+  border-top: 1px solid var(--mg-border);
 }
 .mg-folder-row:first-of-type { border-top: 0; }
 .mg-folder-name {
@@ -1166,7 +1226,7 @@ a:hover { color: var(--mg-accent); }
   border-radius: 4px;
   cursor: pointer;
 }
-.mg-folder-pick:hover { background: rgba(255,255,255,0.04); }
+.mg-folder-pick:hover { background: var(--mg-surface-2); }
 .mg-folder-pick--done { opacity: 0.6; cursor: not-allowed; }
 .mg-folder-pick span:first-of-type { flex: 1; font-family: var(--mg-mono); }
 
@@ -1207,8 +1267,8 @@ body::before {
   inset: 0;
   pointer-events: none;
   z-index: 9999;
-  opacity: 0.025;
-  mix-blend-mode: overlay;
+  opacity: var(--mg-grain-opacity);
+  mix-blend-mode: var(--mg-grain-blend);
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>");
   background-size: 200px 200px;
 }
@@ -1277,7 +1337,7 @@ body::before {
   border: 1px solid var(--mg-border);
   border-radius: 10px;
   overflow: hidden;
-  background: linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 60%);
+  background: var(--mg-hero-gradient);
 }
 .mg-dash__hero-stat {
   padding: 2.2rem 1.6rem 2rem;
@@ -1398,7 +1458,7 @@ body::before {
 .mg-dash__row > .mg-dash__row-time,
 .mg-dash__row > .mg-dash__action-tag { flex: 0 0 auto; }
 .mg-dash__row:hover {
-  background: linear-gradient(90deg, rgba(255,255,255,0.015), rgba(255,255,255,0));
+  background: var(--mg-hover-tint);
 }
 .mg-dash__row:last-child { border-bottom: 0; }
 
@@ -1685,7 +1745,7 @@ body::before {
   border-bottom: 1px solid var(--mg-border);
   transition: background 0.12s ease;
 }
-.mg-rules-row:hover { background: linear-gradient(90deg, rgba(255,255,255,0.015), transparent); }
+.mg-rules-row:hover { background: var(--mg-hover-tint); }
 .mg-rules-row--dimmed { opacity: 0.5; }
 .mg-rules-row__head {
   display: flex;
@@ -1787,7 +1847,7 @@ body::before {
   border-bottom: 1px solid var(--mg-border);
   transition: background 0.12s ease;
 }
-.mg-sublist__row:hover { background: linear-gradient(90deg, rgba(255,255,255,0.015), transparent); }
+.mg-sublist__row:hover { background: var(--mg-hover-tint); }
 .mg-sublist__head {
   display: flex;
   justify-content: space-between;

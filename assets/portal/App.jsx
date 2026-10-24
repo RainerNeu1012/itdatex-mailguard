@@ -22,6 +22,7 @@ import Actions        from './views/Actions.jsx';
 import Devices        from './views/Devices.jsx';
 import LlmFeedback    from './views/LlmFeedback.jsx';
 import NotificationsBell from './components/NotificationsBell.jsx';
+import ThemeToggle from './components/ThemeToggle.jsx';
 
 export default function App() {
   const route = useRoute();
@@ -86,6 +87,7 @@ export default function App() {
             {route.name !== 'login' && (
               <a href="#" onClick={(e) => { e.preventDefault(); navigate('login'); }}>Login</a>
             )}
+            <ThemeToggle />
           </nav>
         ) : (
           <>
@@ -123,6 +125,7 @@ export default function App() {
                 </button>
               ))}
               <NotificationsBell />
+              <ThemeToggle />
               <span className="mg-nav__email">{me.email}</span>
               <button className="mg-nav__btn mg-nav__btn--out" onClick={() => navigate('logout')} title="Logout">
                 <span className="mg-nav__label">LOGOUT ↗</span>
