@@ -69,16 +69,16 @@ export default function NotificationsBell() {
 
       {open && (
         <div className="mg-card" style={dropdownStyle}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-            <strong>Benachrichtigungen</strong>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', paddingBottom: '0.5rem', borderBottom: '1px solid var(--mg-border)' }}>
+            <strong style={{ fontSize: '1rem' }}>Benachrichtigungen</strong>
             {unreadCount > 0 && (
-              <button className="mg-btn mg-btn--ghost mg-tiny" onClick={markSeen}>
+              <button className="mg-btn mg-btn--ghost" style={{ fontSize: '0.85rem', padding: '0.2rem 0.6rem' }} onClick={markSeen}>
                 Alle gelesen
               </button>
             )}
           </div>
           {items.length === 0 && (
-            <p className="mg-muted mg-tiny" style={{ margin: 0 }}>Keine Benachrichtigungen.</p>
+            <p className="mg-muted" style={{ margin: 0, fontSize: '0.9rem' }}>Keine Benachrichtigungen.</p>
           )}
           {items.slice(0, 10).map((n) => (
             <button
@@ -86,9 +86,17 @@ export default function NotificationsBell() {
               onClick={() => handleClick(n)}
               style={itemStyle(!!n.read_at)}
             >
-              <div style={{ fontWeight: n.read_at ? 400 : 600, fontSize: '0.85rem' }}>{n.title}</div>
-              {n.body && <div className="mg-muted mg-tiny" style={{ marginTop: '0.15rem' }}>{n.body}</div>}
-              <div className="mg-muted mg-tiny" style={{ marginTop: '0.15rem' }}>{fmtDate(n.created_at)}</div>
+              <div style={{ fontWeight: n.read_at ? 500 : 700, fontSize: '0.95rem', color: 'var(--mg-fg)', lineHeight: 1.35 }}>
+                {n.title}
+              </div>
+              {n.body && (
+                <div style={{ marginTop: '0.3rem', fontSize: '0.9rem', color: 'var(--mg-fg)', opacity: 0.85, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {n.body}
+                </div>
+              )}
+              <div style={{ marginTop: '0.35rem', fontSize: '0.75rem', color: 'var(--mg-muted)' }}>
+                {fmtDate(n.created_at)}
+              </div>
             </button>
           ))}
         </div>
@@ -101,13 +109,13 @@ const dropdownStyle = {
   position: 'absolute',
   right: 0,
   top: 'calc(100% + 0.35rem)',
-  minWidth: 320,
-  maxWidth: 400,
+  minWidth: 360,
+  maxWidth: 460,
   maxHeight: '70vh',
   overflowY: 'auto',
   zIndex: 200,
-  padding: '0.75rem',
-  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+  padding: '0.9rem 1rem',
+  boxShadow: 'var(--mg-shadow-2, 0 8px 24px rgba(0,0,0,0.5))',
 };
 
 const itemStyle = (isRead) => ({
@@ -116,11 +124,11 @@ const itemStyle = (isRead) => ({
   textAlign: 'left',
   background: 'transparent',
   border: 0,
-  borderTop: '1px solid rgba(255,255,255,0.08)',
-  padding: '0.5rem 0.25rem',
+  borderTop: '1px solid var(--mg-border)',
+  padding: '0.7rem 0.25rem',
   cursor: 'pointer',
   color: 'inherit',
-  opacity: isRead ? 0.7 : 1,
+  opacity: isRead ? 0.85 : 1,
 });
 
 function fmtDate(s) {
