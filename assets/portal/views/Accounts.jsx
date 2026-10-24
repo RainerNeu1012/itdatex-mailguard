@@ -153,13 +153,15 @@ export default function Accounts({ me }) {
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {isOauth && (
-                    <span className="mg-pill mg-pill--ok" title={it.oauth_provider}>
-                      {it.oauth_provider === 'microsoft' ? 'Microsoft OAuth'
-                        : it.oauth_provider === 'google' ? 'Google OAuth'
-                        : (it.oauth_provider + ' OAuth')}
+                    <span className="mg-verdict mg-verdict--clean" title={it.oauth_provider}>
+                      {it.oauth_provider === 'microsoft' ? 'MS OAUTH'
+                        : it.oauth_provider === 'google' ? 'GOOGLE OAUTH'
+                        : (it.oauth_provider + ' OAUTH').toUpperCase()}
                     </span>
                   )}
-                  <span className={'mg-pill mg-pill--' + (it.status === 'active' ? 'ok' : 'muted')}>{it.status}</span>
+                  <span className={'mg-verdict mg-verdict--' + (it.status === 'active' ? 'clean' : 'pending')}>
+                    {it.status.toUpperCase()}
+                  </span>
                 </div>
               </div>
               <div className="mg-account__test">

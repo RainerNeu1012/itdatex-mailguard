@@ -161,62 +161,17 @@ export default function PostboxRules({ me }) {
       )}
 
       {items !== null && items.length > 0 && (
-        <div className="mg-stack">
+        <ul className="mg-rules-list">
           {items.map((r) => (
-            <div key={r.id} className="mg-card" style={{ opacity: r.enabled ? 1 : 0.5 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
-                <strong style={{ fontSize: '1rem' }}>{r.name || '(ohne Name)'}</strong>
-                <span style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--mg-border)', borderRadius: 999, color: 'var(--mg-muted)' }}>
-                  Priorität {r.priority}
-                </span>
-                {!r.enabled && (
-                  <span style={{ fontSize: 11, padding: '2px 8px', background: 'rgba(255,255,255,0.06)', borderRadius: 999, color: 'var(--mg-muted)' }}>
-                    deaktiviert
-                  </span>
-                )}
-                {r.hit_count > 0 && (
-                  <span style={{ fontSize: 11, color: 'var(--mg-muted)' }}>{r.hit_count}× getroffen</span>
-                )}
-              </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--mg-muted)', lineHeight: 1.6 }}>
-                <span style={{ opacity: 0.6 }}>{r.match_op === 'AND' ? 'Alle' : 'Mind. eine'} Bedingung:</span>{' '}
-                {r.conditions.map((c, i) => (
-                  <span key={i}>
-                    {i > 0 && <em style={{ opacity: 0.5 }}> {r.match_op === 'AND' ? '+ ' : '| '}</em>}
-                    <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 4 }}>
-                      {FIELD_META[c.field]?.label || c.field}
-                    </code>
-                    {' '}{OP_LABELS[c.op] || c.op}{' '}
-                    <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 4 }}>
-                      {String(c.value)}
-                    </code>
-                  </span>
-                ))}
-                <br />
-                <span style={{ opacity: 0.6 }}>Aktion:</span>{' '}
-                {r.actions.map((a, i) => (
-                  <span key={i}>
-                    {i > 0 && ', '}
-                    <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 4 }}>
-                      {a.type === 'move' ? `→ ${a.folder}` : a.type === 'delete' ? 'vernichten' : `flag ${a.flag}`}
-                    </code>
-                  </span>
-                ))}
-              </div>
-              <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-                <button className="mg-btn" onClick={() => toggleEnabled(r)} style={{ fontSize: '0.85rem' }}>
-                  {r.enabled ? 'Deaktivieren' : 'Aktivieren'}
-                </button>
-                <button className="mg-btn" onClick={() => { setEditing({ ...r }); setFlash(null); setErr(null); }} style={{ fontSize: '0.85rem' }}>
-                  Bearbeiten
-                </button>
-                <button className="mg-btn" onClick={() => setDeleteTarget(r)} style={{ fontSize: '0.85rem', color: 'var(--mg-err)', borderColor: 'color-mix(in srgb, var(--mg-err) 40%, transparent)' }}>
-                  Löschen
-                </button>
-              </div>
-            </div>
+            <RuleRow
+              key={r.id}
+              r={r}
+              onToggle={() => toggleEnabled(r)}
+              onEdit={() => { setEditing({ ...r }); setFlash(null); setErr(null); }}
+              onDelete={() => setDeleteTarget(r)}
+            />
           ))}
-        </div>
+        </ul>
       )}
 
       <SectionHeader
@@ -243,82 +198,21 @@ export default function PostboxRules({ me }) {
           </div>
         )}
         {sharedItems.length > 0 && (
-          <div className="mg-stack">
+          <ul className="mg-rules-list">
             {sharedItems.map((r) => (
-              <div key={r.id} className="mg-card" style={{ opacity: (r.enabled && !r.opted_out) ? 1 : 0.5, borderStyle: r.opted_out ? 'dashed' : 'solid' }}>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
-                  <strong style={{ fontSize: '1rem' }}>{r.name || '(ohne Name)'}</strong>
-                  <span style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--mg-border)', borderRadius: 999, color: 'var(--mg-muted)' }}>
-                    Priorität {r.priority}
-                  </span>
-                  {!r.enabled && (
-                    <span style={{ fontSize: 11, padding: '2px 8px', background: 'rgba(255,255,255,0.06)', borderRadius: 999, color: 'var(--mg-muted)' }}>
-                      global deaktiviert
-                    </span>
-                  )}
-                  {r.opted_out && (
-                    <span style={{ fontSize: 11, padding: '2px 8px', background: 'rgba(207,34,46,0.1)', borderRadius: 999, color: 'var(--mg-err)' }}>
-                      für dich deaktiviert
-                    </span>
-                  )}
-                  {r.hit_count > 0 && (
-                    <span style={{ fontSize: 11, color: 'var(--mg-muted)' }}>{r.hit_count}× global getroffen</span>
-                  )}
-                </div>
-                {r.description && (
-                  <div className="mg-muted" style={{ fontSize: '0.85rem', marginBottom: 6 }}>{r.description}</div>
-                )}
-                <div style={{ fontSize: '0.8rem', color: 'var(--mg-muted)', lineHeight: 1.6 }}>
-                  <span style={{ opacity: 0.6 }}>{r.match_op === 'AND' ? 'Alle' : 'Mind. eine'}:</span>{' '}
-                  {r.conditions.map((c, i) => (
-                    <span key={i}>
-                      {i > 0 && <em style={{ opacity: 0.5 }}> {r.match_op === 'AND' ? '+ ' : '| '}</em>}
-                      <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 4 }}>
-                        {FIELD_META[c.field]?.label || c.field}
-                      </code>
-                      {' '}{OP_LABELS[c.op] || c.op}{' '}
-                      <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 4 }}>
-                        {String(c.value)}
-                      </code>
-                    </span>
-                  ))}
-                  <br />
-                  <span style={{ opacity: 0.6 }}>Aktion:</span>{' '}
-                  {r.actions.map((a, i) => (
-                    <span key={i}>
-                      {i > 0 && ', '}
-                      <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 4 }}>
-                        {a.type === 'move' ? `→ ${a.folder}` : a.type === 'delete' ? 'vernichten' : `flag ${a.flag}`}
-                      </code>
-                    </span>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-                  <button
-                    className="mg-btn"
-                    disabled={sharedBusy[r.id]}
-                    onClick={() => toggleOptOut(r)}
-                    style={{ fontSize: '0.85rem' }}
-                  >
-                    {sharedBusy[r.id] ? '…' : (r.opted_out ? '✓ Für mich aktivieren' : '🚫 Für mich deaktivieren')}
-                  </button>
-                  {isOperator && (
-                    <>
-                      <button className="mg-btn" style={{ fontSize: '0.85rem' }} onClick={() => toggleSharedEnabled(r)}>
-                        {r.enabled ? 'Global deaktivieren' : 'Global aktivieren'}
-                      </button>
-                      <button className="mg-btn" style={{ fontSize: '0.85rem' }} onClick={() => { setEditing({ ...r, __shared: true }); setFlash(null); setErr(null); }}>
-                        Bearbeiten (global)
-                      </button>
-                      <button className="mg-btn" style={{ fontSize: '0.85rem', color: 'var(--mg-err)', borderColor: 'color-mix(in srgb, var(--mg-err) 40%, transparent)' }} onClick={() => setDeleteTarget({ ...r, __shared: true })}>
-                        Global löschen
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
+              <RuleRow
+                key={r.id}
+                r={r}
+                shared
+                isOperator={isOperator}
+                busy={sharedBusy[r.id]}
+                onOptOut={() => toggleOptOut(r)}
+                onToggle={() => toggleSharedEnabled(r)}
+                onEdit={() => { setEditing({ ...r, __shared: true }); setFlash(null); setErr(null); }}
+                onDelete={() => setDeleteTarget({ ...r, __shared: true })}
+              />
             ))}
-          </div>
+          </ul>
         )}
       </div>
 
@@ -562,4 +456,73 @@ function ActionRow({ a, canRemove, onChange, onRemove }) {
       <button className="mg-btn" onClick={onRemove} disabled={!canRemove} style={{ fontSize: '1rem', padding: '0.5rem 0.85rem' }}>−</button>
     </div>
   );
+}
+
+function RuleRow({ r, shared, isOperator, busy, onToggle, onEdit, onDelete, onOptOut }) {
+  const dimmed = (!r.enabled) || (shared && r.opted_out);
+  return (
+    <li className={'mg-rules-row' + (dimmed ? ' mg-rules-row--dimmed' : '')}>
+      <div className="mg-rules-row__head">
+        <strong className="mg-rules-row__name">{r.name || '(ohne Name)'}</strong>
+        <span className="mg-rules-row__prio mg-mono">P{String(r.priority).padStart(3, '0')}</span>
+        {!r.enabled && <span className="mg-rules-row__flag mg-mono">OFF</span>}
+        {shared && r.opted_out && <span className="mg-rules-row__flag mg-rules-row__flag--err mg-mono">OPT-OUT</span>}
+        <span className="mg-rules-row__hits mg-mono">
+          {r.hit_count}× HIT{r.last_hit_at && ` · ${fmtRel(r.last_hit_at)}`}
+        </span>
+      </div>
+      {shared && r.description && <div className="mg-rules-row__desc">{r.description}</div>}
+      <div className="mg-rules-row__body mg-mono">
+        <span className="mg-rules-row__op">{r.match_op}</span>
+        {' '}
+        {r.conditions.map((c, i) => (
+          <span key={i} className="mg-rules-row__cond">
+            {i > 0 && <span className="mg-rules-row__sep">{r.match_op === 'AND' ? '∧' : '∨'}</span>}
+            <code>{FIELD_META[c.field]?.label || c.field}</code>
+            <span className="mg-rules-row__opc">{OP_LABELS[c.op] || c.op}</span>
+            <code>{String(c.value)}</code>
+          </span>
+        ))}
+        <span className="mg-rules-row__arrow">⇒</span>
+        {r.actions.map((a, i) => (
+          <code key={i} className={'mg-rules-row__action' + (a.type === 'delete' ? ' mg-rules-row__action--danger' : '')}>
+            {a.type === 'move' ? `MOVE → ${a.folder}` : a.type === 'delete' ? 'DELETE' : `FLAG ${a.flag}`}
+          </code>
+        ))}
+      </div>
+      <div className="mg-rules-row__actions">
+        {shared ? (
+          <>
+            <button className="mg-btn" disabled={busy} onClick={onOptOut} style={{ fontSize: '0.7rem', letterSpacing: '0.08em' }}>
+              {busy ? '…' : (r.opted_out ? '✓ FÜR MICH AN' : '🚫 FÜR MICH AUS')}
+            </button>
+            {isOperator && (
+              <>
+                <button className="mg-btn" onClick={onToggle} style={{ fontSize: '0.7rem', letterSpacing: '0.08em' }}>{r.enabled ? 'GLOBAL AUS' : 'GLOBAL AN'}</button>
+                <button className="mg-btn" onClick={onEdit} style={{ fontSize: '0.7rem', letterSpacing: '0.08em' }}>EDIT</button>
+                <button className="mg-btn mg-btn--danger-ghost" onClick={onDelete} style={{ fontSize: '0.7rem', letterSpacing: '0.08em' }}>DEL</button>
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <button className="mg-btn" onClick={onToggle} style={{ fontSize: '0.7rem', letterSpacing: '0.08em' }}>{r.enabled ? 'DEAKTIVIEREN' : 'AKTIVIEREN'}</button>
+            <button className="mg-btn" onClick={onEdit} style={{ fontSize: '0.7rem', letterSpacing: '0.08em' }}>EDIT</button>
+            <button className="mg-btn mg-btn--danger-ghost" onClick={onDelete} style={{ fontSize: '0.7rem', letterSpacing: '0.08em' }}>DEL</button>
+          </>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function fmtRel(s) {
+  if (!s) return 'IDLE';
+  const d = new Date(s.replace(' ', 'T') + 'Z');
+  if (isNaN(d)) return s;
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return 'EBEN';
+  if (diff < 3600) return Math.floor(diff / 60) + 'MIN';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'H';
+  return Math.floor(diff / 86400) + 'D';
 }

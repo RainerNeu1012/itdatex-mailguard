@@ -144,13 +144,13 @@ export default function Inbox({ me }) {
       <AccountTabs accounts={accounts} activeId={filter.account_id} onSwitch={switchAccount} />
 
       {stats && (
-        <div className="mg-card mg-stats">
-          <Stat label="Mails"          value={stats.total} />
-          <Stat label="Newsletter"     value={stats.has_unsub} />
-          <Stat label="Sauber"         value={stats.clean}      tone="ok" />
-          <Stat label="Verdächtig"     value={stats.suspicious} tone="susp" />
-          <Stat label="Gefährlich"     value={stats.dangerous}  tone="danger" />
-          <Stat label="Scan offen"     value={stats.pending_scan} tone="muted" />
+        <div className="mg-dash__hero mg-dash__hero--compact">
+          <HeroStat value={stats.total}       label="MAILS GESAMT" />
+          <HeroStat value={stats.has_unsub}   label="NEWSLETTER" />
+          <HeroStat value={stats.clean}       label="CLEAN"       tone="ok" />
+          <HeroStat value={stats.suspicious}  label="SUSPICIOUS"  tone="warn" />
+          <HeroStat value={stats.dangerous}   label="DANGEROUS"   tone="warn" />
+          <HeroStat value={stats.pending_scan} label="SCAN PENDING" />
         </div>
       )}
 
@@ -172,23 +172,30 @@ export default function Inbox({ me }) {
       )}
 
       <div className="mg-card mg-toolbar">
-        <div className="mg-tabs" role="tablist">
+        <div className="mg-inbox__toolbar" role="tablist">
+          <div className="mg-tabs-mono" role="group" aria-label="Ansicht">
+            <button
+              className={'mg-tabs-mono__btn' + (tab === 'chrono' ? ' mg-tabs-mono__btn--active' : '')}
+              role="tab" aria-selected={tab === 'chrono'}
+              onClick={() => switchTab('chrono')}
+            >
+              <span className="mg-tabs-mono__label">CHRONO</span>
+            </button>
+            <button
+              className={'mg-tabs-mono__btn' + (tab === 'senders' ? ' mg-tabs-mono__btn--active' : '')}
+              role="tab" aria-selected={tab === 'senders'}
+              onClick={() => switchTab('senders')}
+            >
+              <span className="mg-tabs-mono__label">ABSENDER</span>
+            </button>
+          </div>
           <button
-            className={'mg-tab' + (tab === 'chrono' ? ' mg-tab--active' : '')}
-            role="tab" aria-selected={tab === 'chrono'}
-            onClick={() => switchTab('chrono')}
-          >Chronologisch</button>
-          <button
-            className={'mg-tab' + (tab === 'senders' ? ' mg-tab--active' : '')}
-            role="tab" aria-selected={tab === 'senders'}
-            onClick={() => switchTab('senders')}
-          >Nach Absender</button>
-          <button
-            className="mg-btn mg-filter-toggle"
+            className={'mg-btn mg-inbox__filter-btn' + (filtersOpen ? ' mg-inbox__filter-btn--active' : '')}
             aria-expanded={filtersOpen}
             onClick={() => setFiltersOpen((v) => !v)}
+            style={{ fontSize: '0.72rem', letterSpacing: '0.1em' }}
           >
-            🔍 Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+            ⌕ FILTER{activeFilterCount > 0 ? ` · ${activeFilterCount}` : ''}
           </button>
         </div>
 
@@ -1407,6 +1414,16 @@ function useMsgPurgeDialog(afterPurge, showFlash) {
   );
 
   return { dialogElement, requestPurge };
+}
+
+function HeroStat({ value, label, tone }) {
+  const display = value == null ? '—' : Number(value).toLocaleString('de-DE');
+  return (
+    <div className={'mg-dash__hero-stat' + (tone ? ' mg-dash__hero-stat--' + tone : '')}>
+      <div className="mg-dash__hero-num">{display}</div>
+      <div className="mg-dash__hero-label mg-mono">{label}</div>
+    </div>
+  );
 }
 
 function Stat({ label, value, tone }) {

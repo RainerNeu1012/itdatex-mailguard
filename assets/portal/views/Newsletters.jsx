@@ -244,7 +244,7 @@ function Subscriptions({ accountId }) {
 
   return (
     <>
-    <div className="mg-stack">
+    <ul className="mg-sublist">
       {items.map((s) => {
         const lu = s.last_unsub;
         const apiPill = lu ? (STATUS_TONE[lu.api_status] || { label: lu.api_status || '—', cls: 'mg-pill--muted' }) : null;
@@ -253,87 +253,48 @@ function Subscriptions({ accountId }) {
         const needsManual  = lu && lu.api_status === 'needs_manual' && lu.manual_url;
         const lastFailed   = lu && lu.api_status === 'failed';
         return (
-          <div key={s.from_addr} className="mg-card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
+          <li key={s.from_addr} className="mg-sublist__row">
+            <div className="mg-sublist__head">
+              <div className="mg-sublist__name">
                 <strong>{s.from_name || s.from_addr}</strong>
-                <div className="mg-muted mg-tiny">{s.from_addr}</div>
-                <div className="mg-muted mg-tiny" style={{ marginTop: '0.25rem' }}>
-                  {s.msg_count} Mail{s.msg_count === 1 ? '' : 's'} · letzte: {fmtDate(s.latest_at)}
-                </div>
+                <span className="mg-sublist__from mg-mono">{s.from_addr}</span>
               </div>
-              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                {apiPill && <span className={'mg-pill ' + apiPill.cls}>{apiPill.label}</span>}
-                {dsnPill && <span className={'mg-pill ' + dsnPill.cls}>DSN: {dsnPill.label}</span>}
+              <div className="mg-sublist__meta mg-mono">
+                <span>{s.msg_count} MAILS</span>
+                <span className="mg-sublist__dot">·</span>
+                <span>LAST {fmtDate(s.latest_at)}</span>
+                {apiPill && <span className={'mg-verdict mg-verdict--' + (apiPill.cls.includes('ok') ? 'clean' : apiPill.cls.includes('warn') ? 'susp' : apiPill.cls.includes('err') ? 'danger' : 'pending')}>{(apiPill.label || '').toUpperCase()}</span>}
+                {dsnPill && <span className="mg-verdict mg-verdict--pending">DSN · {(dsnPill.label || '').toUpperCase()}</span>}
               </div>
             </div>
-            <div className="mg-account__actions" style={{ marginTop: '0.5rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+            <div className="mg-sublist__actions">
               {unsubscribed ? (
-                <button className="mg-btn" disabled>✔ Bereits abgemeldet</button>
+                <button className="mg-btn" disabled style={{ fontSize: '0.72rem', letterSpacing: '0.08em' }}>✔ ABGEMELDET</button>
               ) : needsManual ? (
-                <a
-                  className="mg-btn mg-btn--primary"
-                  href={lu.manual_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Anbieter akzeptiert keine 1-Klick-Abmeldung — Formular im Browser abschließen."
-                >
-                  ↗ Abmelde-Seite öffnen
+                <a className="mg-btn mg-btn--primary" href={lu.manual_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.72rem', letterSpacing: '0.08em' }}>
+                  ↗ ABMELDE-SEITE
                 </a>
               ) : (
-                <button
-                  className="mg-btn mg-btn--primary"
-                  disabled={!!busy[s.from_addr]}
-                  onClick={() => unsub(s.from_addr)}
-                >
-                  {busy[s.from_addr] === 'unsub' ? '…' : '✉ Vom Newsletter abmelden'}
+                <button className="mg-btn mg-btn--primary" disabled={!!busy[s.from_addr]} onClick={() => unsub(s.from_addr)} style={{ fontSize: '0.72rem', letterSpacing: '0.08em' }}>
+                  {busy[s.from_addr] === 'unsub' ? '…' : '✉ ABMELDEN'}
                 </button>
               )}
-              <button
-                className="mg-btn mg-btn--warn"
-                disabled={!!busy[s.from_addr]}
-                onClick={() => block(s.from_addr)}
-                title="Blacklist-Regel anlegen — künftige Mails dieses Absenders werden als gefährlich markiert und ggf. automatisch quarantänisiert"
-              >
-                {busy[s.from_addr] === 'block' ? '…' : '⛔ Sender blockieren'}
+              <button className="mg-btn" disabled={!!busy[s.from_addr]} onClick={() => block(s.from_addr)} style={{ fontSize: '0.72rem', letterSpacing: '0.08em' }} title="Sender blockieren">
+                {busy[s.from_addr] === 'block' ? '…' : '⛔ SENDER'}
               </button>
-              <button
-                className="mg-btn mg-btn--warn"
-                disabled={!!busy[s.from_addr]}
-                onClick={() => blockDomain(s.from_addr)}
-                title="Ganze Absender-Domain in Blacklist — faengt auch andere Absender unter dieser Domain ab"
-              >
-                {busy[s.from_addr] === 'bl_domain' ? '…' : '⛔ Domain blockieren'}
+              <button className="mg-btn" disabled={!!busy[s.from_addr]} onClick={() => blockDomain(s.from_addr)} style={{ fontSize: '0.72rem', letterSpacing: '0.08em' }} title="Domain blockieren">
+                {busy[s.from_addr] === 'bl_domain' ? '…' : '⛔ DOMAIN'}
               </button>
-              {unsubscribed && s.msg_count > 0 && (
-                <button
-                  className="mg-btn"
-                  disabled={!!busy[s.from_addr]}
-                  onClick={() => purge(s.from_addr, s.msg_count)}
-                  title="Alle Mails dieses Absenders in den Papierkorb verschieben und künftige automatisch aussortieren"
-                >
-                  {busy[s.from_addr] === 'purge'
-                    ? '…'
-                    : `🗑 ${s.msg_count} aufräumen + blockieren`}
-                </button>
-              )}
               {s.msg_count > 0 && (
-                <button
-                  className="mg-btn mg-btn--danger"
-                  disabled={!!busy[s.from_addr]}
-                  onClick={() => openEradicateDialog(s.from_addr, s.msg_count)}
-                  title="Best-effort abmelden + Sender blockieren + ALLE bestehenden Mails ENDGÜLTIG löschen (kein Undo)"
-                >
-                  {busy[s.from_addr] === 'eradicate'
-                    ? '…'
-                    : `💥 Sender vernichten (${s.msg_count})`}
+                <button className="mg-btn mg-btn--danger-ghost" disabled={!!busy[s.from_addr]} onClick={() => openEradicateDialog(s.from_addr, s.msg_count)} style={{ fontSize: '0.72rem', letterSpacing: '0.08em' }} title="Alles vernichten">
+                  {busy[s.from_addr] === 'eradicate' ? '…' : `💥 VERNICHTEN · ${s.msg_count}`}
                 </button>
               )}
             </div>
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ul>
     <PurgeConfirmDialog
       open={!!purgeTarget}
       title={purgeTarget ? `Absender ${purgeTarget.from_addr} vernichten?` : ''}

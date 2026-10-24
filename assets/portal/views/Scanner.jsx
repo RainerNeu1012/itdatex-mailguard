@@ -72,12 +72,14 @@ export default function Scanner({ me }) {
         <SectionHeader num="001" title="MANUELLER CHECK — URL ODER MAIL-SNIPPET" />
 
       <form className="mg-card mg-form" onSubmit={submit}>
-        <div className="mg-modes">
+        <div className="mg-tabs-mono" role="group" aria-label="Scan-Modus">
           {MODES.map((m) => (
-            <label key={m.id} className={'mg-mode' + (mode === m.id ? ' is-active' : '')}>
-              <input type="radio" name="scan-mode" value={m.id} checked={mode === m.id} onChange={() => { setMode(m.id); reset(); }} />
-              {m.label}
-            </label>
+            <button key={m.id} type="button"
+              className={'mg-tabs-mono__btn' + (mode === m.id ? ' mg-tabs-mono__btn--active' : '')}
+              onClick={() => { setMode(m.id); reset(); }}
+            >
+              <span className="mg-tabs-mono__label">{m.label.toUpperCase()}</span>
+            </button>
           ))}
         </div>
 

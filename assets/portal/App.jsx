@@ -100,34 +100,32 @@ export default function App() {
             </button>
             <nav className={menuOpen ? 'mg-nav mg-nav--open' : 'mg-nav'}>
               {[
-                { r: 'dashboard',        label: 'Dashboard',       icon: '⌂' },
-                { r: 'inbox',            label: 'Inbox',           icon: '📥' },
-                { r: 'newsletters',      label: 'Newsletter',      icon: '📧' },
-                { r: 'scanner',          label: 'Scanner',         icon: '🔍' },
-                { r: 'rules',            label: 'Regeln',          icon: '⚖' },
-                { r: 'postbox-rules',    label: 'Postfach',        icon: '📂' },
-                { r: 'eradicate-domains', label: 'Auto-Vernichten', icon: '🔥' },
-                { r: 'actions',          label: 'Aktionen',        icon: '⚡' },
-                { r: 'llm-feedback',     label: 'KI-Bewertungen',  icon: '🤖' },
-                { r: 'accounts',         label: 'Postfächer',      icon: '🔗' },
-                { r: 'plan',             label: 'Plan',            icon: '★' },
-                { r: 'devices',          label: 'Geräte',          icon: '💻' },
-              ].map(({ r, label, icon }) => (
+                { r: 'dashboard',         label: 'DASH',       kbd: '01' },
+                { r: 'inbox',             label: 'INBOX',      kbd: '02' },
+                { r: 'newsletters',       label: 'NEWSLETTER', kbd: '03' },
+                { r: 'scanner',           label: 'SCANNER',    kbd: '04' },
+                { r: 'postbox-rules',     label: 'REGELN',     kbd: '05' },
+                { r: 'eradicate-domains', label: 'AUTO-PURGE', kbd: '06' },
+                { r: 'actions',           label: 'AKTIONEN',   kbd: '07' },
+                { r: 'llm-feedback',      label: 'LLM',        kbd: '08' },
+                { r: 'accounts',          label: 'POSTFÄCHER', kbd: '09' },
+                { r: 'plan',              label: 'PLAN',       kbd: '10' },
+                { r: 'devices',           label: 'GERÄTE',     kbd: '11' },
+              ].map(({ r, label, kbd }) => (
                 <button
                   key={r}
                   className={'mg-nav__btn' + (route.name === r ? ' mg-nav__btn--active' : '')}
                   onClick={() => navigate(r)}
                   title={label}
                 >
-                  <span className="mg-nav__icon" aria-hidden="true">{icon}</span>
+                  <span className="mg-nav__kbd" aria-hidden="true">{kbd}</span>
                   <span className="mg-nav__label">{label}</span>
                 </button>
               ))}
               <NotificationsBell />
               <span className="mg-nav__email">{me.email}</span>
-              <button className="mg-nav__btn" onClick={() => navigate('logout')} title="Logout">
-                <span className="mg-nav__icon" aria-hidden="true">⎋</span>
-                <span className="mg-nav__label">Logout</span>
+              <button className="mg-nav__btn mg-nav__btn--out" onClick={() => navigate('logout')} title="Logout">
+                <span className="mg-nav__label">LOGOUT ↗</span>
               </button>
             </nav>
           </>

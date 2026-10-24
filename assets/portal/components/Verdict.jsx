@@ -1,17 +1,17 @@
 import React from 'react';
 
 const META = {
-  clean:      { label: 'sauber',      cls: 'mg-verdict--clean' },
-  suspicious: { label: 'verdächtig',  cls: 'mg-verdict--susp'  },
-  dangerous:  { label: 'gefährlich',  cls: 'mg-verdict--danger'},
+  clean:      { label: 'CLEAN',      cls: 'mg-verdict--clean' },
+  suspicious: { label: 'SUSPICIOUS', cls: 'mg-verdict--susp'  },
+  dangerous:  { label: 'DANGEROUS',  cls: 'mg-verdict--danger'},
 };
 
 export function VerdictBadge({ verdict, score, status }) {
   if (status === 'pending' || status === 'scanning') {
-    return <span className="mg-verdict mg-verdict--pending">scan …</span>;
+    return <span className="mg-verdict mg-verdict--pending">PENDING</span>;
   }
   if (status === 'error') {
-    return <span className="mg-verdict mg-verdict--err" title="Scan-Fehler">scan ✘</span>;
+    return <span className="mg-verdict mg-verdict--err" title="Scan-Fehler">SCAN ERR</span>;
   }
   const meta = META[verdict];
   if (!meta) return null;
