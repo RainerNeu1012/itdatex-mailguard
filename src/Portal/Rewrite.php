@@ -15,6 +15,20 @@ final class Rewrite {
 
 	public const QUERY_VAR = 'itdatex_mg_portal';
 
+	/**
+	 * WP's redirect_canonical fuegt bei /portal/sw.js und
+	 * /portal/manifest.webmanifest einen trailing-slash per 301 an, weil
+	 * WP die Rewrite-Rule als "pretty permalink ohne Dateiendung" einstuft.
+	 * Fuer Service-Worker ist das kaputt (Scope-Vererbung mag keine
+	 * Redirects). Diesen einen Filter ausfiltern.
+	 */
+	public static function suppress_canonical_redirect( $redirect_url, $requested_url ) {
+		if ( preg_match( '#/' . self::slug() . '/(sw\.js|manifest\.webmanifest)$#', (string) $requested_url ) ) {
+			return false;
+		}
+		return $redirect_url;
+	}
+
 	public static function register_rules() : void {
 		$slug = self::slug();
 		if ( $slug === '' ) {

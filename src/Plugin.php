@@ -33,6 +33,7 @@ final class Plugin {
 		add_action( 'init',          [ Rewrite::class, 'register_rules' ] );
 		add_filter( 'query_vars',    [ Rewrite::class, 'register_query_vars' ] );
 		add_action( 'template_redirect', [ Rewrite::class, 'maybe_render' ] );
+		add_filter( 'redirect_canonical', [ Rewrite::class, 'suppress_canonical_redirect' ], 10, 2 );
 
 		add_action( 'init',          [ SaasOnboard::class, 'register_rules' ] );
 		add_filter( 'query_vars',    [ SaasOnboard::class, 'register_query_var' ] );
