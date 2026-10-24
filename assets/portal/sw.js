@@ -1,22 +1,19 @@
 // MailGuard Service-Worker — macht das Portal zu einer installierbaren PWA.
 //
 // Strategie:
-//  - App-Shell (HTML/CSS/JS/Fonts/Icons): cache-first mit Fallback auf network,
-//    damit die PWA auch bei kurzer Offline-Phase startet.
-//  - API-Requests (/wp-json/itdatex-mailguard/*): network-first, kein Cache —
-//    Mail-Daten sollen immer frisch sein.
-//  - Alles andere: network passthrough.
+//  - HTML-Shell (/portal/): network-first mit Cache-Fallback — frische Asset-Hashes,
+//    aber im Offline-Fall die letzte bekannte Seite.
+//  - Build-Assets (/portal/portal-*.css|js, Fonts, Icons): cache-first mit lazy fill,
+//    da sie content-hashed sind und sich nie ändern.
+//  - API-Requests (/wp-json/*): network-only, nie cachen.
+//  - sw.js + manifest.webmanifest: NIE cachen, sonst kann sich der SW nicht updaten.
 //
-// Version anheben, wenn sich sw.js oder manifest.webmanifest aendert — dann
-// invalidiert der Browser den Cache.
+// Version anheben, wenn sich sw.js aendert — invalidiert alle alten Shell-Caches.
 
-const SW_VERSION = 'mg-sw-v1';
+const SW_VERSION = 'mg-sw-v2';
 const SHELL_CACHE = 'mg-shell-' + SW_VERSION;
 
-// Minimal-Shell: Portal-Root plus Mark-Icons. Build-Assets (vite-hashed)
-// werden lazy gecacht beim ersten Besuch.
 const SHELL_URLS = [
-  '/portal/',
   '/wp-content/plugins/itdatex-mailguard/assets/img/pwa/icon-192-white.png',
   '/wp-content/plugins/itdatex-mailguard/assets/img/pwa/icon-512-white.png',
 ];
@@ -39,18 +36,38 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  // Nur GET-Requests cachen — POST/PUT/DELETE immer live.
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // API-Calls: network-first, kein Cache.
+  // SW und Manifest nie cachen — sonst self-lock.
+  if (url.pathname === '/portal/sw.js' || url.pathname === '/portal/manifest.webmanifest') {
+    return;
+  }
+
+  // API-Calls: network-only.
   if (url.pathname.startsWith('/wp-json/') || url.pathname.startsWith('/wp-admin/admin-ajax')) {
     return;
   }
 
-  // Portal-Shell + Assets: cache-first.
-  if (url.pathname.startsWith('/portal') || url.pathname.includes('/itdatex-mailguard/assets/')) {
+  // HTML-Shell: network-first, Cache nur als Offline-Fallback.
+  const isPortalHtml = url.pathname === '/portal' || url.pathname === '/portal/' || url.pathname.match(/^\/portal\/[^.]*$/);
+  if (isPortalHtml) {
+    event.respondWith(
+      fetch(req).then((res) => {
+        if (res && res.status === 200 && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(SHELL_CACHE).then((cache) => cache.put('/portal/', copy));
+        }
+        return res;
+      }).catch(() => caches.match('/portal/'))
+    );
+    return;
+  }
+
+  // Content-hashed Assets: cache-first mit lazy fill.
+  const isHashedAsset = url.pathname.startsWith('/portal/') || url.pathname.includes('/itdatex-mailguard/assets/');
+  if (isHashedAsset) {
     event.respondWith(
       caches.match(req).then((hit) => hit || fetch(req).then((res) => {
         if (res && res.status === 200 && res.type === 'basic') {
@@ -58,7 +75,7 @@ self.addEventListener('fetch', (event) => {
           caches.open(SHELL_CACHE).then((cache) => cache.put(req, copy));
         }
         return res;
-      }).catch(() => caches.match('/portal/')))
+      }))
     );
   }
 });
