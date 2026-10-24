@@ -24,34 +24,52 @@ export default function ResetPassword({ route }) {
     finally     { setLoading(false); }
   };
 
+  const pluginUrl = (window.itdatexMailguard || {}).pluginUrl || '';
   if (!token) {
     return (
-      <div className="mg-card">
-        <h2>✘ Kein Token</h2>
-        <p>Der Reset-Link ist unvollständig. Bitte erneut anfordern.</p>
-        <button className="mg-btn" onClick={() => navigate('forgot-password')}>Neuen Link anfordern</button>
+      <div className="mg-auth">
+        <div className="mg-auth__card">
+          <div className="mg-auth__brand">
+            <img src={`${pluginUrl}assets/img/mark-white.svg`} alt="!tdatex" />
+            <div className="mg-auth__title">Kein Token</div>
+          </div>
+          <p className="mg-muted" style={{ textAlign: 'center' }}>Der Reset-Link ist unvollständig. Bitte erneut anfordern.</p>
+          <button className="mg-btn mg-btn--primary mg-auth__submit" onClick={() => navigate('forgot-password')} style={{ marginTop: '1rem' }}>Neuen Link anfordern</button>
+        </div>
       </div>
     );
   }
 
   if (done) {
     return (
-      <div className="mg-card">
-        <h2>✔ Passwort gesetzt</h2>
-        <p>Du kannst dich jetzt mit dem neuen Passwort anmelden.</p>
-        <button className="mg-btn mg-btn--primary" onClick={() => navigate('login')}>Zur Anmeldung</button>
+      <div className="mg-auth">
+        <div className="mg-auth__card">
+          <div className="mg-auth__brand">
+            <img src={`${pluginUrl}assets/img/mark-white.svg`} alt="!tdatex" />
+            <div className="mg-auth__title">✔ Erledigt</div>
+            <div className="mg-auth__sub">Passwort gesetzt</div>
+          </div>
+          <p className="mg-muted" style={{ textAlign: 'center' }}>Du kannst dich jetzt mit dem neuen Passwort anmelden.</p>
+          <button className="mg-btn mg-btn--primary mg-auth__submit" onClick={() => navigate('login')} style={{ marginTop: '1rem' }}>Zur Anmeldung</button>
+        </div>
       </div>
     );
   }
 
   return (
-    <form className="mg-card mg-form" onSubmit={submit}>
-      <h2>Neues Passwort setzen</h2>
-      <label>Neues Passwort (min. 10 Zeichen)<input type="password" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} autoFocus autoComplete="new-password" /></label>
-      <label>Passwort wiederholen<input type="password" required minLength={10} value={pass2} onChange={(e) => setPass2(e.target.value)} autoComplete="new-password" /></label>
-      {error && <div className="mg-error">{error}</div>}
-      <button type="submit" className="mg-btn mg-btn--primary" disabled={loading}>{loading ? '…' : 'Passwort speichern'}</button>
-    </form>
+    <div className="mg-auth">
+      <form className="mg-auth__card mg-form" onSubmit={submit}>
+        <div className="mg-auth__brand">
+          <img src={`${pluginUrl}assets/img/mark-white.svg`} alt="!tdatex" />
+          <div className="mg-auth__title">Neues Passwort</div>
+          <div className="mg-auth__sub">min. 10 Zeichen</div>
+        </div>
+        <label>Neues Passwort<input type="password" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} autoFocus autoComplete="new-password" placeholder="••••••••••" /></label>
+        <label>Passwort wiederholen<input type="password" required minLength={10} value={pass2} onChange={(e) => setPass2(e.target.value)} autoComplete="new-password" placeholder="••••••••••" /></label>
+        {error && <div className="mg-error">{error}</div>}
+        <button type="submit" className="mg-btn mg-btn--primary mg-auth__submit" disabled={loading}>{loading ? '…' : 'Passwort speichern'}</button>
+      </form>
+    </div>
   );
 }
 

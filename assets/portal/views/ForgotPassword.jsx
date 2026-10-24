@@ -19,27 +19,38 @@ export default function ForgotPassword() {
     finally     { setLoading(false); }
   };
 
+  const pluginUrl = (window.itdatexMailguard || {}).pluginUrl || '';
   if (done) {
     return (
-      <div className="mg-card">
-        <h2>Mail unterwegs</h2>
-        <p>Falls die Adresse <strong>{email}</strong> bei uns registriert ist, haben wir gerade einen Reset-Link an dich geschickt (gültig 60 Minuten).</p>
-        <button className="mg-btn" onClick={() => navigate('login')}>Zur Anmeldung</button>
+      <div className="mg-auth">
+        <div className="mg-auth__card">
+          <div className="mg-auth__brand">
+            <img src={`${pluginUrl}assets/img/mark-white.svg`} alt="!tdatex" />
+            <div className="mg-auth__title">Mail unterwegs</div>
+          </div>
+          <p className="mg-muted" style={{ textAlign: 'center' }}>Falls die Adresse <strong>{email}</strong> bei uns registriert ist, haben wir gerade einen Reset-Link an dich geschickt (gültig 60 Minuten).</p>
+          <button className="mg-btn mg-btn--primary mg-auth__submit" onClick={() => navigate('login')} style={{ marginTop: '1rem' }}>Zur Anmeldung</button>
+        </div>
       </div>
     );
   }
 
   return (
-    <form className="mg-card mg-form" onSubmit={submit}>
-      <h2>Passwort vergessen?</h2>
-      <p className="mg-muted">Trag deine E-Mail-Adresse ein, wir schicken dir einen Reset-Link.</p>
-      <label>E-Mail<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus autoComplete="email" /></label>
-      {error && <div className="mg-error">{error}</div>}
-      <button type="submit" className="mg-btn mg-btn--primary" disabled={loading}>{loading ? '…' : 'Reset-Link anfordern'}</button>
-      <div className="mg-form__links">
-        <a href="#" onClick={(e) => { e.preventDefault(); navigate('login'); }}>Zurück zur Anmeldung</a>
-      </div>
-    </form>
+    <div className="mg-auth">
+      <form className="mg-auth__card mg-form" onSubmit={submit}>
+        <div className="mg-auth__brand">
+          <img src={`${pluginUrl}assets/img/mark-white.svg`} alt="!tdatex" />
+          <div className="mg-auth__title">Passwort reset</div>
+          <div className="mg-auth__sub">E-Mail-Adresse eingeben</div>
+        </div>
+        <label>E-Mail<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus autoComplete="email" placeholder="dein@mailpostfach.de" /></label>
+        {error && <div className="mg-error">{error}</div>}
+        <button type="submit" className="mg-btn mg-btn--primary mg-auth__submit" disabled={loading}>{loading ? '…' : 'Reset-Link anfordern'}</button>
+        <div className="mg-auth__links">
+          <a href="#" onClick={(e) => { e.preventDefault(); navigate('login'); }}>← Zurück zur Anmeldung</a>
+        </div>
+      </form>
+    </div>
   );
 }
 

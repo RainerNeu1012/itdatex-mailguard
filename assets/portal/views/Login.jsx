@@ -31,20 +31,30 @@ export default function Login({ route }) {
     finally     { setLoading(false); }
   };
 
+  const pluginUrl = (window.itdatexMailguard || {}).pluginUrl || '';
   return (
-    <form className="mg-card mg-form" onSubmit={submit}>
-      <h2>Anmelden</h2>
-      <label>E-Mail<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus autoComplete="email" /></label>
-      <label>Passwort<input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" /></label>
-      {error && <div className="mg-error">{error}</div>}
-      <button type="submit" className="mg-btn mg-btn--primary" disabled={loading}>
-        {loading ? '…' : 'Anmelden'}
-      </button>
-      <div className="mg-form__links">
-        <a href="#" onClick={(e) => { e.preventDefault(); navigate('forgot-password'); }}>Passwort vergessen?</a>
-        <a href="#" onClick={(e) => { e.preventDefault(); navigate('register'); }}>Neu hier? Registrieren</a>
-      </div>
-    </form>
+    <div className="mg-auth">
+      <form className="mg-auth__card mg-form" onSubmit={submit}>
+        <div className="mg-auth__brand">
+          <img src={`${pluginUrl}assets/img/mark-white.svg`} alt="!tdatex" />
+          <div className="mg-auth__title">
+            MAIL<span className="mg-auth__title-accent">GUARD</span>
+          </div>
+          <div className="mg-auth__sub">Anti-Phishing · Multi-Mailbox · Monochrom</div>
+        </div>
+        <label>E-Mail<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus autoComplete="email" placeholder="dein@mailpostfach.de" /></label>
+        <label>Passwort<input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" placeholder="••••••••" /></label>
+        {error && <div className="mg-error">{error}</div>}
+        <button type="submit" className="mg-btn mg-btn--primary mg-auth__submit" disabled={loading}>
+          {loading ? '…' : 'Anmelden'}
+        </button>
+        <div className="mg-auth__links">
+          <a href="#" onClick={(e) => { e.preventDefault(); navigate('forgot-password'); }}>Passwort vergessen?</a>
+          <span className="mg-auth__dot" aria-hidden="true">·</span>
+          <a href="#" onClick={(e) => { e.preventDefault(); navigate('register'); }}>Neu hier? Registrieren</a>
+        </div>
+      </form>
+    </div>
   );
 }
 
