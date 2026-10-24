@@ -12,8 +12,12 @@
   --mg-fg:         #e6edf3;
   --mg-muted:      #8b949e;
   --mg-subtle:     #6e7681;
-  --mg-accent:     #2f81f7;
-  --mg-accent-hover: #58a6ff;
+  /* Monochrom-Accent (itdatex-Brand): im Dark-Mode = Weiss als Highlight,
+     im Light-Mode = Schwarz. Siehe .mg-btn--primary fuer die Invers-Logik. */
+  --mg-accent:       #f0f6fc;
+  --mg-accent-hover: #ffffff;
+  --mg-accent-fg:    #0d1117;
+  --mg-focus-ring:   rgba(240,246,252,0.28);
   --mg-ok:         #3fb950;
   --mg-warn:       #d29922;
   --mg-err:        #f85149;
@@ -293,35 +297,50 @@ a:hover { color: var(--mg-accent); }
 .mg-form__row > label { flex: 1; min-width: 140px; }
 
 .mg-btn {
-  display: inline-block;
-  padding: 0.7rem 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.9rem;
   border: 1px solid var(--mg-border);
-  border-radius: 6px;
-  background: var(--mg-surface-2);
+  border-radius: 7px;
+  background: var(--mg-surface);
   color: var(--mg-fg);
   cursor: pointer;
   font: inherit;
   font-family: var(--mg-sans);
-  font-size: 1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   text-decoration: none;
-  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.08s ease, box-shadow 0.12s ease;
 }
 .mg-btn:hover {
-  background: var(--mg-border);
-  color: var(--mg-fg);
+  background: var(--mg-surface-2);
+  border-color: var(--mg-fg);
 }
-.mg-btn:disabled { opacity: 0.6; cursor: progress; }
+.mg-btn:active { transform: translateY(1px); }
+.mg-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--mg-focus-ring);
+  border-color: var(--mg-fg);
+}
+.mg-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .mg-btn--primary {
   background: var(--mg-accent);
   border-color: var(--mg-accent);
-  color: #fff;
+  color: var(--mg-accent-fg);
   font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.25);
 }
 .mg-btn--primary:hover {
   background: var(--mg-accent-hover);
   border-color: var(--mg-accent-hover);
-  color: #fff;
+  color: var(--mg-accent-fg);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
 }
+.mg-btn--primary:disabled { background: var(--mg-accent); border-color: var(--mg-accent); }
 
 .mg-error {
   padding: 0.85rem 1rem;
