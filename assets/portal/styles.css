@@ -981,21 +981,8 @@ a:hover { color: var(--mg-accent); }
   .mg-form__row { flex-direction: column; align-items: stretch; }
   .mg-form__row label { flex: 1 !important; }
 
-  /* Sender-Card auf Mobile 1-spaltig, Meta unten */
-  .mg-sender__head {
-    grid-template-columns: 1fr;
-    gap: 0.5rem;
-  }
-  .mg-sender__subject {
-    white-space: normal;
-    overflow: visible;
-    text-overflow: unset;
-    overflow-wrap: anywhere;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-  }
-  .mg-sender__meta { justify-content: flex-start; }
+  /* Sender-Card auf Mobile — alter 1-col-Layout entfernt, Grid-Areas aus
+     oberem Block gewinnen (from/subject/meta). */
 
   /* Row-Actions: unter 480px stacken, dazwischen wrappen */
   .mg-mail__actions .mg-btn { min-height: 44px; }
