@@ -7,9 +7,12 @@ import React from 'react';
  */
 export default function BrandMark({ className = '', size = 28, alt = '!tdatex' }) {
   const pluginUrl = (window.itdatexMailguard || {}).pluginUrl || '';
-  const style = { width: size, height: 'auto', display: 'block', flexShrink: 0 };
+  // display wird AUSSCHLIESSLICH aus CSS kontrolliert (Theme-Toggle via
+  // :root[data-theme] + prefers-color-scheme). Inline-style würde das
+  // display:none der versteckten Variante überschreiben → beide Marks sichtbar.
+  const style = { width: size, height: 'auto', flexShrink: 0 };
   return (
-    <span className={'mg-brand-mark ' + className} style={{ display: 'inline-block', lineHeight: 0 }}>
+    <span className={'mg-brand-mark ' + className} style={{ lineHeight: 0 }}>
       <img
         src={`${pluginUrl}assets/img/mark-white.svg`}
         alt={alt}
