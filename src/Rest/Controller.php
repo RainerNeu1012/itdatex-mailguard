@@ -821,6 +821,39 @@ final class Controller {
 		return (int) $me['customer_id'];
 	}
 
+	/**
+	 * In-process Rate-Limiter fuer Auth-Endpoints (login/forgot/reset/mobile_login/
+	 * mobile_refresh/verify_email). Zaehlt Versuche pro IP in einem rolling window
+	 * via WP-Transients und blockt bei Ueberschreitung mit HTTP 429 + Retry-After.
+	 *
+	 * Fail2ban deckt /wp-login.php ab, aber nicht REST — ohne Rate-Limit koennten
+	 * Angreifer /wp-json/itdatex-mailguard/v1/login beliebig brute-forcen.
+	 *
+	 * $bucket: freier Bezeichner (login, forgot, …) — eigene Zaehler pro Endpoint,
+	 *          damit ein stabiler Login nicht die Forgot-Retries verbraucht.
+	 * $limit:  max. Versuche in $window Sekunden pro IP.
+	 *
+	 * @return WP_Error|null null wenn OK, WP_Error mit status=429 wenn geblockt.
+	 */
+	private static function throttle_auth( string $bucket, int $limit = 10, int $window = 300 ) {
+		$ip = isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : 'unknown';
+		// Normalisieren damit IPv4-mapped IPv6 nicht als separater Bucket zaehlt.
+		$ip  = preg_replace( '/^::ffff:/', '', $ip );
+		$key = 'mg_auth_rl_' . $bucket . '_' . md5( $ip );
+		$now = time();
+		$ts  = (array) get_transient( $key );
+		$ts  = array_values( array_filter( $ts, static fn( $t ) => is_int( $t ) && ( $now - $t ) < $window ) );
+		if ( count( $ts ) >= $limit ) {
+			$oldest = (int) $ts[0];
+			$retry  = max( 1, $window - ( $now - $oldest ) );
+			$resp   = new WP_Error( 'rate_limited', __( 'Zu viele Versuche. Bitte spaeter erneut probieren.', 'itdatex-mailguard' ), [ 'status' => 429, 'retry_after' => $retry ] );
+			return $resp;
+		}
+		$ts[] = $now;
+		set_transient( $key, $ts, $window );
+		return null;
+	}
+
 	public static function accounts_list( WP_REST_Request $req ) {
 		$cid = self::require_customer();
 		if ( is_wp_error( $cid ) ) { return $cid; }
@@ -2625,6 +2658,8 @@ final class Controller {
 	}
 
 	public static function register_customer( WP_REST_Request $req ) {
+		// Register ist teurer (DB-Write + Email). Striktere Limitierung als Login.
+		if ( $err = self::throttle_auth( 'register', 5, 900 ) ) { return $err; }
 		$json     = (array) $req->get_json_params();
 		$email    = (string) ( $json['email'] ?? '' );
 		$password = (string) ( $json['password'] ?? '' );
@@ -2633,6 +2668,7 @@ final class Controller {
 	}
 
 	public static function login( WP_REST_Request $req ) {
+		if ( $err = self::throttle_auth( 'login', 10, 300 ) ) { return $err; }
 		$json     = (array) $req->get_json_params();
 		$email    = (string) ( $json['email'] ?? '' );
 		$password = (string) ( $json['password'] ?? '' );
@@ -2645,6 +2681,7 @@ final class Controller {
 	}
 
 	public static function verify_email( WP_REST_Request $req ) {
+		if ( $err = self::throttle_auth( 'verify', 20, 600 ) ) { return $err; }
 		$json     = (array) $req->get_json_params();
 		$token    = (string) ( $json['token'] ?? '' );
 		$platform = trim( (string) ( $json['platform'] ?? '' ) );
@@ -2680,12 +2717,14 @@ final class Controller {
 	}
 
 	public static function forgot_password( WP_REST_Request $req ) {
+		if ( $err = self::throttle_auth( 'forgot', 5, 600 ) ) { return $err; }
 		$json  = (array) $req->get_json_params();
 		$email = (string) ( $json['email'] ?? '' );
 		return self::respond( Auth::forgot_password( $email ) );
 	}
 
 	public static function reset_password( WP_REST_Request $req ) {
+		if ( $err = self::throttle_auth( 'reset', 20, 600 ) ) { return $err; }
 		$json     = (array) $req->get_json_params();
 		$token    = (string) ( $json['token'] ?? '' );
 		$password = (string) ( $json['password'] ?? '' );
@@ -2707,6 +2746,7 @@ final class Controller {
 	 * ausgegeben. Client speichert die Tokens in Preferences/Keychain.
 	 */
 	public static function mobile_login( WP_REST_Request $req ) {
+		if ( $err = self::throttle_auth( 'mobile_login', 10, 300 ) ) { return $err; }
 		$json     = (array) $req->get_json_params();
 		$email    = (string) ( $json['email'] ?? '' );
 		$password = (string) ( $json['password'] ?? '' );
@@ -2733,6 +2773,9 @@ final class Controller {
 	}
 
 	public static function mobile_refresh( WP_REST_Request $req ) {
+		// Grosszuegig damit normal rotierende Clients nicht blockiert werden,
+		// aber trotzdem Schutz gegen Enum von refresh_token.
+		if ( $err = self::throttle_auth( 'mobile_refresh', 60, 300 ) ) { return $err; }
 		$json  = (array) $req->get_json_params();
 		$token = (string) ( $json['refresh_token'] ?? '' );
 		if ( $token === '' ) {
