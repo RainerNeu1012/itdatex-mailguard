@@ -6,17 +6,19 @@ import { PageShell, PageTopbar, Section, SectionHeader } from '../components/Sec
 const DEFAULTS = {
   label: '', host: '', port: 993, encryption: 'ssl',
   username: '', password: '', folder: 'INBOX', status: 'active',
-  auto_quarantine_min_score: 30,
+  auto_quarantine_min_score: 50,
 };
 
-// Auto-Quarantäne-Schwellwert. Die Scanner-Heuristik + LLM-Rescoring
-// gibt klaren Phishing-Mails typisch Score 30–60 (SCHUFA-Fake, Prime-
-// Kündigung, Coinbase-Panik usw.). 70+ ist RARE. Daher Default 30.
+// Auto-Quarantäne-Schwellwert.
+// Erfahrungswerte aus Live-Backfill (10/2026): Score 30-49 trifft bei legitimen
+// Transaktional-Mails (PayPal, Apple, LinkedIn, DHL, Picnic, Doctolib, Amazon,
+// Sparkasse, Vodafone, Microsoft-Security) regelmässig falsch. Ab Score 50
+// greift die Heuristik + LLM präzise. Daher Default 50.
 const AUTO_Q_OPTIONS = [
-  { value: '30',  label: 'Empfohlen — ab Score 30 (fängt die meisten Phishing/Scam-Mails)' },
-  { value: '50',  label: 'Konservativ — ab Score 50 (nur klare Treffer)' },
-  { value: '70',  label: 'Streng — ab Score 70 (nur eindeutige „gefährlich")' },
-  { value: '100', label: 'Nur eindeutig — nur bei Score 100' },
+  { value: '50',  label: 'Empfohlen — ab Score 50 (präzise, kaum False-Positives)' },
+  { value: '70',  label: 'Konservativ — ab Score 70 (nur „gefährlich")' },
+  { value: '100', label: 'Nur eindeutig — nur bei Score 100 (Blacklist-Treffer)' },
+  { value: '30',  label: 'Aggressiv — ab Score 30 (viele Transaktional-Mails landen in Quarantäne)' },
   { value: '',    label: 'Aus (nur manuell in Quarantäne verschieben)' },
 ];
 
@@ -246,9 +248,10 @@ export default function AccountForm({ route, me }) {
         </select>
       </label>
       <p className="mg-muted mg-tiny" style={{ margin: '0.35rem 0 0.75rem' }}>
-        Richtwerte unseres Scanners: <strong>Score 30–45</strong> fängt die meisten Phishing/Spam-Klassiker (SCHUFA-Fake,
-        falsche Kündigungs-Mails, Krypto-Panik, Bank-Trojaner). <strong>50+</strong> ist bereits deutliches Phishing.
-        <strong>70+</strong> sind seltene Treffer mit mehreren Red-Flags gleichzeitig.
+        Scanner-Scoring: <strong>50+</strong> = deutliches Phishing (mehrere Red-Flags oder LLM-Treffer).
+        <strong>70+</strong> = seltene Hard-Hits. <strong>100</strong> = Blacklist-Regel.
+        Score 30-49 trifft bei legitimer Transaktional-Mail (PayPal/Apple/DHL) regelmässig falsch —
+        nur wählen wenn du bewusst mehr blockierst und False-Positives per Undo zurückholst.
       </p>
 
       {error && <div className="mg-error">{error}</div>}

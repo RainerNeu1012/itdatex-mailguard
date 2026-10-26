@@ -87,11 +87,24 @@ final class Rule {
 		}
 
 		global $wpdb;
+		$pattern_cut = mb_substr( $pattern, 0, 500 );
+		// Idempotent: existiert bereits eine identische Regel (uniq_customer_rule),
+		// geben wir deren ID zurueck statt zu crashen. Dedupe-UNIQUE-Index verhindert
+		// Dubletten die vor DB_VERSION 29 moeglich waren (siehe LinkedIn-Vorfall).
+		$existing_id = (int) $wpdb->get_var( $wpdb->prepare(
+			'SELECT id FROM ' . self::table() . '
+			 WHERE customer_id = %d AND kind = %s AND match_type = %s AND LOWER(pattern) = %s
+			 LIMIT 1',
+			$customer_id, $kind, $type, strtolower( $pattern_cut )
+		) );
+		if ( $existing_id ) {
+			return [ 'ok' => true, 'id' => $existing_id, 'duplicate' => true ];
+		}
 		$ok = $wpdb->insert( self::table(), [
 			'customer_id' => $customer_id,
 			'kind'        => $kind,
 			'match_type'  => $type,
-			'pattern'     => mb_substr( $pattern, 0, 500 ),
+			'pattern'     => $pattern_cut,
 			'note'        => sanitize_text_field( (string) ( $data['note'] ?? '' ) ),
 			'action'      => $action,
 			'created_at'  => current_time( 'mysql', true ),

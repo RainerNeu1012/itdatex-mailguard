@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 28;
+	public const CURRENT_DB_VERSION = 29;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -275,6 +275,7 @@ final class Installer {
 			action VARCHAR(20) NOT NULL DEFAULT 'quarantine',
 			created_at DATETIME NOT NULL,
 			PRIMARY KEY (id),
+			UNIQUE KEY uniq_customer_rule (customer_id, kind, match_type, pattern(190)),
 			KEY idx_customer_kind (customer_id, kind)
 		) {$charset};";
 

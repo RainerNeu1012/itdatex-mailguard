@@ -112,9 +112,12 @@ final class Account {
 			'oauth_token_expires_at' => null,
 			'oauth_scope'            => '',
 			'quarantine_folder'      => '',
-			// Default: schon ab mittlerem Score (30) in Quarantäne verschieben —
-			// null würde Phishing-Mails mit Score 30-49 in der INBOX lassen.
-			'auto_quarantine_min_score' => 30,
+			// Default 50: fängt klares Phishing (Blacklist-Hit → immer Score 100,
+			// LLM-Rescoring + Red-Flag-Kombination ≥ 50). Schwelle 30 wurde
+			// getestet und produziert zu viele False-Positives bei Transaktional-
+			// Mails (PayPal/Apple/LinkedIn/DHL werden mit "Zahlung/Konto"-Keywords
+			// auf Score 30-49 geratet).
+			'auto_quarantine_min_score' => 50,
 			'imap_namespace_prefix'  => null,
 			'imap_delimiter'         => null,
 		];
