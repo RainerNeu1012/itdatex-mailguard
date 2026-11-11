@@ -290,6 +290,26 @@ final class ScanService {
 			}
 		}
 
+		// Quishing-Suspicion: QR-Code-Verweis in Login/Auth-Kontext
+		if ( ! $blacklist_hit ) {
+			$qr = Signals\QrCodeSuspicion::check(
+				(string) ( $row['subject'] ?? '' ),
+				(string) ( $row['body_preview'] ?? '' ),
+				(int) ( $row['has_attachments'] ?? 0 ) === 1
+			);
+			if ( $qr ) {
+				$reasons[] = $qr;
+				$score += (int) $qr['score'];
+			}
+		}
+
+		// Bayesian-Light: User-Feedback-History kann Score pushen oder dampfen
+		$ufb = Signals\UserFeedbackTrust::check( $customer_id, (string) ( $row['from_addr'] ?? '' ) );
+		if ( $ufb ) {
+			$reasons[] = $ufb;
+			$score += (int) $ufb['score'];
+		}
+
 		// Attachment-Heuristik einweben: pro Anhang aus mg_attachments die
 		// gespeicherten suspicion_reasons in scan_reasons mergen und den
 		// hoechsten Attachment-Score dazuaddieren. Wir addieren NUR den max

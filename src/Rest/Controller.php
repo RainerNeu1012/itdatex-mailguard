@@ -95,6 +95,12 @@ final class Controller {
 			'callback'            => [ __CLASS__, 'me_cloud_consent' ],
 		] );
 
+		register_rest_route( self::NAMESPACE, '/me/digest', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_digest' ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/mobile/login', [
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
@@ -3265,5 +3271,25 @@ HTML;
 			Auth::ERR_BAD_INPUT, 'registration_disabled', 'create_failed' => 400,
 			default                                        => 500,
 		};
+	}
+
+	/**
+	 * Digest-Email-Frequenz setzen. Body: {frequency: 'off'|'daily'|'weekly'}
+	 */
+	public static function me_digest( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json = (array) $req->get_json_params();
+		$freq = (string) ( $json['frequency'] ?? 'off' );
+		if ( ! in_array( $freq, [ 'off', 'daily', 'weekly' ], true ) ) {
+			return new WP_Error( 'bad_frequency', 'frequency muss off/daily/weekly sein', [ 'status' => 400 ] );
+		}
+		global $wpdb;
+		$wpdb->update(
+			$wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_CUSTOMERS,
+			[ 'digest_frequency' => $freq ],
+			[ 'id' => $cid ]
+		);
+		return new WP_REST_Response( [ 'ok' => true, 'digest_frequency' => $freq ], 200 );
 	}
 }

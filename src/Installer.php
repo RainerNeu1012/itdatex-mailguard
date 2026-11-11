@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 31;
+	public const CURRENT_DB_VERSION = 32;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -166,6 +166,8 @@ final class Installer {
 			plan_grace_until DATETIME NULL,
 			cloud_consent_at DATETIME NULL,
 			cloud_consent_text_version VARCHAR(20) NULL,
+			digest_frequency VARCHAR(10) NOT NULL DEFAULT 'off',
+			digest_last_sent_at DATETIME NULL,
 			PRIMARY KEY (id),
 			UNIQUE KEY uniq_email (email),
 			KEY idx_status (status),

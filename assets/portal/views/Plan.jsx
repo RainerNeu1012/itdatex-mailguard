@@ -115,6 +115,26 @@ export default function Plan({ me, reloadMe }) {
         )}
       </div>
 
+      <div style={{background:'#0d1117',border:'1px solid #30363d',borderRadius:'8px',padding:'1.25rem 1.5rem',margin:'1.25rem 0 0'}}>
+        <p style={{margin:'0 0 0.5rem',fontWeight:600}}>Zusammenfassungs-Report per E-Mail</p>
+        <p style={{margin:'0 0 0.8rem',color:'#8b949e',fontSize:'0.95rem'}}>
+          Regelmäßiger Report an {me.email}: wie viele Phishing-Mails wurden abgefangen, wie viele Newsletter aussortiert, Top-Absender.
+        </p>
+        <select
+          value={me.digest_frequency || 'off'}
+          onChange={async (e) => {
+            const freq = e.target.value;
+            await apiPost('me/digest', { frequency: freq });
+            if (reloadMe) await reloadMe();
+          }}
+          style={{padding:'0.4rem 0.6rem',borderRadius:'4px',background:'#0d1117',border:'1px solid #30363d',color:'#f0f6fc'}}
+        >
+          <option value="off">Aus</option>
+          <option value="daily">Täglich</option>
+          <option value="weekly">Wöchentlich</option>
+        </select>
+      </div>
+
       {error && (
         <div style={{marginTop:'1rem',padding:'0.85rem 1rem',background:'rgba(218,54,51,0.08)',border:'1px solid #da3633',borderRadius:'6px',color:'#ff7b72'}}>
           {error}

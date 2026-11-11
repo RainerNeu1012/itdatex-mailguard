@@ -174,6 +174,7 @@ final class Auth {
 			'plan_grace_until' => $row['plan_grace_until'] ? (string) $row['plan_grace_until'] : null,
 			'cloud_consent_at' => $consent_at,
 			'cloud_consent_required' => $consent_needed,
+			'digest_frequency' => (string) ( $row['digest_frequency'] ?? 'off' ),
 		];
 	}
 

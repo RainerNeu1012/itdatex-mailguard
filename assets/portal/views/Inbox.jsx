@@ -3,6 +3,7 @@ import { apiGet, apiPost, apiDelete } from '../api.js';
 import { VerdictBadge, ReasonsList } from '../components/Verdict.jsx';
 import AccountTabs, { loadStoredAccountId, saveStoredAccountId } from '../components/AccountTabs.jsx';
 import PurgeConfirmDialog from '../components/PurgeConfirmDialog.jsx';
+import { stripTrackingPixels } from '../mailBodySanitizer.js';
 import { PageShell, PageTopbar, Section, SectionHeader } from '../components/Section.jsx';
 
 const TAB_STORAGE_KEY = 'mg_inbox_tab';
@@ -1878,15 +1879,23 @@ function MessageBody({ messageId, preview, fromAddr, subject }) {
     ? "default-src 'none'; img-src http: https: data:; style-src 'unsafe-inline'; font-src data:;"
     : "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:;";
 
+  // Anti-Tracking-Pixel-Filter: entfernt 1x1-Pixel und bekannte Marketing-
+  // Tracker (Mailchimp/HubSpot/Pardot etc.) bevor das HTML gerendert wird.
+  // Side-effect: beim Anzeigen wird NICHT mehr an Mailchimp etc. 'opened'
+  // zurueckgemeldet.
+  const sanitized = body ? stripTrackingPixels(body) : { html: body || '', removed: 0 };
+  const sanitizedBody = sanitized.html;
+  const trackersRemoved = sanitized.removed;
+
   // Click-Protection: href="http(s)..." → /portal/go?u=encoded&m=<msgId>
   // Clicks fliegen durch unseren Safe-Browsing + URLhaus + DNS + TLD-Block.
   // target="_top" damit der Click im sandbox-iframe die Top-Navigation triggert.
   // sandbox darunter muss 'allow-top-navigation-by-user-activation' haben.
-  const guardedBody = body
-    ? body.replace(/href\s*=\s*(["'])(https?:\/\/[^"'<>]+)\1/gi, (m, q, url) =>
+  const guardedBody = sanitizedBody
+    ? sanitizedBody.replace(/href\s*=\s*(["'])(https?:\/\/[^"'<>]+)\1/gi, (m, q, url) =>
         `href=${q}/portal/go?u=${encodeURIComponent(url)}&m=${messageId}${q} target="_top" rel="noopener nofollow"`
       )
-    : body;
+    : sanitizedBody;
 
   const iframeDoc = guardedBody ? `<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="${csp}"><style>body{margin:0;padding:12px;font-family:system-ui,sans-serif;font-size:14px;line-height:1.5;color:#111;word-wrap:break-word;overflow-wrap:break-word}img{max-width:100%;height:auto}a{color:#2563eb}</style></head><body>${guardedBody}</body></html>` : '';
 
@@ -1900,6 +1909,11 @@ function MessageBody({ messageId, preview, fromAddr, subject }) {
           <button className="mg-btn" onClick={(e) => { e.stopPropagation(); setLoadImages((v) => !v); }}>
             {loadImages ? '✓ Bilder' : 'Bilder laden'}
           </button>
+        )}
+        {format === 'html' && trackersRemoved > 0 && (
+          <span className="mg-pill mg-pill--ok" title="Mail-Marketing-Tracker (1×1-Pixel / Open-Tracking) wurden entfernt — Absender wird nicht benachrichtigt dass du geoeffnet hast">
+            🛡 {trackersRemoved} Tracker entfernt
+          </span>
         )}
       </div>
       {err && <p className="mg-tiny" style={{ color: 'var(--mg-err)', margin: 0 }}>{err}</p>}
