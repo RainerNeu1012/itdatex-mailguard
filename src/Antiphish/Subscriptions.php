@@ -30,16 +30,27 @@ final class Subscriptions {
 		$scope   = $account_id > 0 ? ' AND account_id = %d' : '';
 		$total_args = $account_id > 0 ? [ $customer_id, $account_id ] : [ $customer_id ];
 
-		// Nur Mails zeigen, die noch in INBOX liegen — quarantinierte (im MG-Quarantaene-
-		// Folder) und bereits gepurgte (scan_status='gone') gehoeren nicht in die
-		// Newsletter-UEbersicht. Vorher wirkte es als "laesst sich nicht loeschen",
-		// weil quarantinierte Mails im View blieben auch wenn sie physisch im
-		// Quarantine-Folder lagen.
-		$live_filter = " AND quarantine_action_id IS NULL AND scan_status != 'gone'";
+		// Aus User-Sicht "erledigte" Mails/Sender ausblenden:
+		//  1. Mails die quarantiniert oder schon gepurgt sind (physisch nicht mehr in INBOX)
+		//  2. Sender die bereits eine Blacklist-Regel haben (quarantine ODER purge) —
+		//     auch wenn noch Alt-Mails in INBOX liegen, hat der User den Sender
+		//     geblockt und erwartet dass der aus der Newsletter-UEbersicht verschwindet.
+		//     Ohne diesen Filter wirkte "Auto-Vernichten" als wuerde nichts passieren,
+		//     weil die Rule nur kuenftige Mails betrifft und die alten noch sichtbar blieben.
+		$r = $wpdb->prefix . Installer::TABLE_RULES;
+		$live_filter = " AND quarantine_action_id IS NULL AND scan_status != 'gone'
+			AND NOT EXISTS (
+				SELECT 1 FROM {$r} r
+				WHERE r.customer_id = %d
+				  AND r.kind = 'blacklist'
+				  AND r.match_type = 'from_addr'
+				  AND LOWER(r.pattern) = LOWER({$m}.from_addr)
+			)";
 
+		$total_args_live = array_merge( $total_args, [ $customer_id ] );
 		$total = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(DISTINCT from_addr) FROM {$m} WHERE customer_id = %d AND has_unsub = 1 AND from_addr != ''" . $scope . $live_filter,
-			$total_args
+			$total_args_live
 		) );
 		if ( $total === 0 ) {
 			return [ 'items' => [], 'total' => 0 ];
@@ -48,8 +59,8 @@ final class Subscriptions {
 		$offset = max( 0, ( max( 1, $page ) - 1 ) * max( 1, $per_page ) );
 
 		$rows_args = $account_id > 0
-			? [ $customer_id, $account_id, $per_page, $offset ]
-			: [ $customer_id, $per_page, $offset ];
+			? [ $customer_id, $account_id, $customer_id, $per_page, $offset ]
+			: [ $customer_id, $customer_id, $per_page, $offset ];
 
 		// Aggregat: pro from_addr ein Eintrag mit Count + neuester Mail-ID.
 		// Last-Unsub-Status haengen wir nachtraeglich an (1 Subquery pro Row,
