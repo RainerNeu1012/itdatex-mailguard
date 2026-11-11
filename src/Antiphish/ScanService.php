@@ -10,6 +10,7 @@ use Itdatex\Mailguard\Imap\Action as ImapAction;
 use Itdatex\Mailguard\Imap\Attachment as ImapAttachment;
 use Itdatex\Mailguard\Imap\ClientFactory as ImapClientFactory;
 use Itdatex\Mailguard\Imap\QuarantineService;
+use Itdatex\Mailguard\Antiphish\Signals;
 use Itdatex\Mailguard\Rules\Engine as RulesEngine;
 
 /**
@@ -235,6 +236,49 @@ final class ScanService {
 				];
 				$score += $trust['score'];
 			}
+		}
+
+		// === Zusatz-Signals (v0.71): Display-Name-Spoof, Homograph, Auth-Headers, URLhaus ===
+		// Werden hinter Rules-Override + DNS + Safe-Browsing gelegt, damit Blacklist-
+		// Hits zuerst gewinnen und wir die Signals nicht doppelt gegen bereits
+		// blockierte Sender laufen lassen.
+
+		// Display-Name-Spoofing: "PayPal <scam@xyz.ru>"
+		if ( ! $blacklist_hit ) {
+			$spoof = Signals\DisplayNameSpoof::check(
+				(string) ( $row['from_name'] ?? '' ),
+				(string) ( $row['from_addr'] ?? '' )
+			);
+			if ( $spoof ) {
+				$reasons[] = $spoof;
+				$score += (int) $spoof['score'];
+			}
+		}
+
+		// Homograph / IDN-Spoofing in from-Domain
+		if ( ! $blacklist_hit ) {
+			$homo = Signals\HomographDomain::check( (string) ( $row['from_addr'] ?? '' ) );
+			if ( $homo ) {
+				$reasons[] = $homo;
+				$score += (int) $homo['score'];
+			}
+		}
+
+		// SPF/DKIM/DMARC + Reply-To-Mismatch
+		$auth_reasons = Signals\AuthHeaders::check(
+			(string) ( $row['auth_headers'] ?? '' ),
+			(string) ( $row['from_addr'] ?? '' )
+		);
+		foreach ( $auth_reasons as $r ) {
+			$reasons[] = $r;
+			$score += (int) ( $r['score'] ?? 0 );
+		}
+
+		// URLhaus (abuse.ch) — komplementaer zu Google Safe Browsing
+		$urlhaus_reasons = Signals\UrlhausCheck::reasons_for_body( (string) ( $row['body_preview'] ?? '' ) );
+		foreach ( $urlhaus_reasons as $r ) {
+			$reasons[] = $r;
+			$score += (int) ( $r['score'] ?? 0 );
 		}
 
 		// Attachment-Heuristik einweben: pro Anhang aus mg_attachments die

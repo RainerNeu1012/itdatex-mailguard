@@ -149,6 +149,10 @@ final class Message {
 				(string) ( $msg['subject']   ?? '' ),
 				(string) ( $msg['body_preview'] ?? '' )
 			),
+			// Fuer AuthHeaders-Signal: SPF/DKIM/DMARC-Ergebnisse + Reply-To extrahieren.
+			// Reine Strings aus den parsed headers — Scanner wertet sie spaeter aus.
+			// LEER wenn der Mailserver keine Authentication-Results setzt (seltener Fall).
+			'auth_headers'     => self::extract_auth_headers_json( (array) ( $msg['headers'] ?? [] ) ),
 		];
 		$res = $wpdb->insert( self::table(), $payload );
 		if ( ! $res ) {
@@ -160,6 +164,31 @@ final class Message {
 			Attachment::insert_batch( $customer_id, $message_id, $attachments );
 		}
 		return 'inserted';
+	}
+
+	/**
+	 * Extrahiert die relevanten Auth-Header (SPF/DKIM/DMARC-Ergebnis +
+	 * Reply-To) aus einem parsed headers-Array und gibt sie als kompakten
+	 * JSON-Blob zurueck. Scanner wertet das spaeter aus — Rohdaten bleiben
+	 * in der DB fuer Audit/Debugging.
+	 *
+	 * @return string JSON, oder leer-String wenn keine relevanten Header da sind
+	 */
+	private static function extract_auth_headers_json( array $headers ) : string {
+		// Header-Keys lowercase-normalisieren
+		$norm = [];
+		foreach ( $headers as $k => $v ) {
+			$norm[ strtolower( (string) $k ) ] = is_array( $v ) ? implode( ' ', $v ) : (string) $v;
+		}
+		$ar = (string) ( $norm['authentication-results'] ?? '' );
+		$ras = (string) ( $norm['received-spf'] ?? '' );
+		$reply = (string) ( $norm['reply-to'] ?? '' );
+		if ( $ar === '' && $ras === '' && $reply === '' ) { return ''; }
+		$payload = [];
+		if ( $ar !== '' ) { $payload['ar'] = mb_substr( $ar, 0, 800 ); }
+		if ( $ras !== '' ) { $payload['spf'] = mb_substr( $ras, 0, 300 ); }
+		if ( $reply !== '' ) { $payload['reply_to'] = mb_substr( $reply, 0, 320 ); }
+		return (string) wp_json_encode( $payload );
 	}
 
 	public static function delete( int $id, int $customer_id ) : bool {
