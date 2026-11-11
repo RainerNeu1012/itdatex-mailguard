@@ -193,7 +193,7 @@ function Subscriptions({ accountId }) {
 
   const confirmEradicate = async () => {
     const t = purgeTarget;
-    if (!t || !purgeAck) return;
+    if (!t) return;
     const { from_addr, domain } = t;
     const alsoDomain = !!domain && purgeAlsoDomain;
     const createRule = purgeCreateRule;

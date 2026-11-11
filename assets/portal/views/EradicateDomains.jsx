@@ -83,7 +83,7 @@ function DomainsList() {
 
   const confirmAdd = async () => {
     const p = pending;
-    if (!p || !pendingAck) return;
+    if (!p) return;
     closePending();
     setSaving(true); setError(null);
     try {
