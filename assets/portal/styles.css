@@ -2133,14 +2133,21 @@ body::before {
   color: var(--mg-accent-fg);
   box-shadow: var(--mg-shadow-soft);
 }
-.mg-sidebar__item--active .mg-sidebar__item-dot { background: var(--mg-accent-fg); }
+.mg-sidebar__item--active .mg-sidebar__item-icon { color: var(--mg-accent-fg); }
 .mg-sidebar__item--active .mg-sidebar__item-kbd  { color: var(--mg-accent-fg); opacity: 0.5; border-color: color-mix(in srgb, var(--mg-accent-fg) 25%, transparent); }
-.mg-sidebar__item-dot {
-  width: 6px; height: 6px;
-  border-radius: 999px;
-  background: var(--mg-subtle);
+.mg-sidebar__item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: var(--mg-subtle);
   flex-shrink: 0;
+  font-feature-settings: "liga" off;
 }
+.mg-sidebar__item:hover .mg-sidebar__item-icon { color: var(--mg-fg); }
 .mg-sidebar__item-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mg-sidebar__item-kbd {
   font-size: 0.6rem;
@@ -2153,8 +2160,30 @@ body::before {
 .mg-sidebar--collapsed .mg-sidebar__group-label,
 .mg-sidebar--collapsed .mg-sidebar__item-label,
 .mg-sidebar--collapsed .mg-sidebar__item-kbd { display: none; }
-.mg-sidebar--collapsed .mg-sidebar__item { justify-content: center; padding: 0.6rem; }
-.mg-sidebar--collapsed .mg-sidebar__item-dot { width: 10px; height: 10px; }
+.mg-sidebar--collapsed .mg-sidebar__item {
+  justify-content: center;
+  padding: 0.6rem;
+  border-radius: 8px;
+}
+.mg-sidebar--collapsed .mg-sidebar__item-icon {
+  width: 22px;
+  height: 22px;
+  font-size: 1.25rem;
+}
+.mg-sidebar--collapsed .mg-sidebar__item--active {
+  background: var(--mg-accent);
+}
+.mg-sidebar--collapsed .mg-sidebar__item--active .mg-sidebar__item-icon {
+  color: var(--mg-accent-fg);
+}
+/* Groups visuell trennen durch leicht groesseren Abstand im collapsed-State */
+.mg-sidebar--collapsed .mg-sidebar__group + .mg-sidebar__group {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--mg-border);
+}
+/* Brand im collapsed-State zentrieren */
+.mg-sidebar--collapsed .mg-sidebar__brand { justify-content: center; padding: 0.5rem 0; }
 
 /* Foot: user + collapse-toggle */
 .mg-sidebar__foot {

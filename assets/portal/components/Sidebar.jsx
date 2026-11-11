@@ -9,25 +9,28 @@ import BrandMark from './BrandMark.jsx';
  * Props: route (aktuelle Route), me (eingeloggter User), onOpenPalette (⌘K-Trigger)
  */
 
+// Icons: minimalistische Unicode-Glyphen, monochrom, passen zum
+// Linear/Raycast-Aesthetic. Groesser gerendert im collapsed-State
+// (statt generischem Dot der nichts unterscheidet).
 const GROUPS = [
   { label: 'OVERVIEW', items: [
-    { r: 'dashboard',  label: 'Dashboard',       kbd: '1' },
+    { r: 'dashboard',  label: 'Dashboard',       kbd: '1', icon: '▣' },
   ]},
   { label: 'MAIL', items: [
-    { r: 'inbox',       label: 'Inbox',          kbd: '2' },
-    { r: 'newsletters', label: 'Newsletter',     kbd: '3' },
-    { r: 'scanner',     label: 'Scanner',        kbd: '4' },
+    { r: 'inbox',       label: 'Inbox',          kbd: '2', icon: '✉' },
+    { r: 'newsletters', label: 'Newsletter',     kbd: '3', icon: '◱' },
+    { r: 'scanner',     label: 'Scanner',        kbd: '4', icon: '⌕' },
   ]},
   { label: 'FILTER & REGELN', items: [
-    { r: 'postbox-rules',     label: 'Postfach-Regeln', kbd: '5' },
-    { r: 'eradicate-domains', label: 'Auto-Vernichten', kbd: '6' },
+    { r: 'postbox-rules',     label: 'Postfach-Regeln', kbd: '5', icon: '⚙' },
+    { r: 'eradicate-domains', label: 'Auto-Vernichten', kbd: '6', icon: '✖' },
   ]},
   { label: 'SYSTEM', items: [
-    { r: 'actions',      label: 'Aktionen',       kbd: '7' },
-    { r: 'llm-feedback', label: 'KI-Bewertungen', kbd: '8' },
-    { r: 'accounts',     label: 'Postfächer',     kbd: '9' },
-    { r: 'plan',         label: 'Plan & Lizenz' },
-    { r: 'devices',      label: 'Geräte' },
+    { r: 'actions',      label: 'Aktionen',       kbd: '7', icon: '⚡' },
+    { r: 'llm-feedback', label: 'KI-Bewertungen', kbd: '8', icon: '◈' },
+    { r: 'accounts',     label: 'Postfächer',     kbd: '9', icon: '▦' },
+    { r: 'plan',         label: 'Plan & Lizenz',           icon: '◇' },
+    { r: 'devices',      label: 'Geräte',                  icon: '▭' },
   ]},
 ];
 
@@ -99,9 +102,9 @@ export default function Sidebar({ route, me, onOpenPalette, onOpenHelp }) {
                         type="button"
                         className={'mg-sidebar__item' + (active ? ' mg-sidebar__item--active' : '')}
                         onClick={() => navigate(item.r)}
-                        title={collapsed ? item.label : undefined}
+                        title={collapsed ? item.label + (item.kbd ? ' (⌥' + item.kbd + ')' : '') : undefined}
                       >
-                        <span className="mg-sidebar__item-dot" aria-hidden="true" />
+                        <span className="mg-sidebar__item-icon" aria-hidden="true">{item.icon || '•'}</span>
                         {!collapsed && (
                           <>
                             <span className="mg-sidebar__item-label">{item.label}</span>

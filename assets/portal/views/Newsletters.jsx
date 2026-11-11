@@ -178,6 +178,27 @@ function Subscriptions({ accountId }) {
     }
   };
 
+  const autoPurge = async (from_addr) => {
+    // Auto-Vernichten: Blacklist-Regel mit action=purge anlegen bzw. hochstufen.
+    // Bestehende Mails bleiben — nur kuenftige Mails werden direkt beim Scan
+    // endgueltig geloescht. Fuer "auch vorhandene weg" ist der Vernichten-Button.
+    setBusy((b) => ({ ...b, [from_addr]: 'auto_purge' }));
+    try {
+      const { body, status } = await apiPost('inbox/senders/block', { from_addr, action: 'purge', note: 'Aus Newsletter-Uebersicht' });
+      if (status === 200 && body?.ok) {
+        const msg = body.existed
+          ? `✔ Regel war bereits aktiv (${from_addr}).`
+          : `✔ Auto-Vernichten aktiviert für ${from_addr}. Künftige Mails werden direkt beim Scan endgültig gelöscht.`;
+        alert(msg);
+        load();
+      } else {
+        alert('⚠ Auto-Vernichten fehlgeschlagen: ' + (body?.error || status));
+      }
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[from_addr]; return n; });
+    }
+  };
+
   const openEradicateDialog = (from_addr, msg_count) => {
     setPurgeAck(false);
     setPurgeAlsoDomain(false);
@@ -285,8 +306,11 @@ function Subscriptions({ accountId }) {
               <button className="mg-btn" disabled={!!busy[s.from_addr]} onClick={() => blockDomain(s.from_addr)} style={{ fontSize: '0.72rem', letterSpacing: '0.08em' }} title="Domain blockieren">
                 {busy[s.from_addr] === 'bl_domain' ? '…' : '⛔ DOMAIN'}
               </button>
+              <button className="mg-btn mg-btn--danger-ghost" disabled={!!busy[s.from_addr]} onClick={() => autoPurge(s.from_addr)} style={{ fontSize: '0.72rem', letterSpacing: '0.08em' }} title="Blacklist-Regel mit Auto-Vernichten anlegen — künftige Mails direkt beim Scan löschen (vorhandene bleiben)">
+                {busy[s.from_addr] === 'auto_purge' ? '…' : '🚫 AUTO-VERNICHTEN'}
+              </button>
               {s.msg_count > 0 && (
-                <button className="mg-btn mg-btn--danger-ghost" disabled={!!busy[s.from_addr]} onClick={() => openEradicateDialog(s.from_addr, s.msg_count)} style={{ fontSize: '0.72rem', letterSpacing: '0.08em' }} title="Alles vernichten">
+                <button className="mg-btn mg-btn--danger-ghost" disabled={!!busy[s.from_addr]} onClick={() => openEradicateDialog(s.from_addr, s.msg_count)} style={{ fontSize: '0.72rem', letterSpacing: '0.08em' }} title="Alles vernichten — bestehende Mails + Auto-Regel">
                   {busy[s.from_addr] === 'eradicate' ? '…' : `💥 VERNICHTEN · ${s.msg_count}`}
                 </button>
               )}
