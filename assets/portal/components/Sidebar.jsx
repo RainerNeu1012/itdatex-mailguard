@@ -34,22 +34,15 @@ const GROUPS = [
   ]},
 ];
 
-const COLLAPSED_KEY = 'mg_sidebar_collapsed';
-function loadCollapsed() {
-  try { return localStorage.getItem(COLLAPSED_KEY) === '1'; } catch { return false; }
-}
-function saveCollapsed(v) {
-  try { localStorage.setItem(COLLAPSED_KEY, v ? '1' : '0'); } catch { /* ignore */ }
-}
-
 export default function Sidebar({ route, me, onOpenPalette, onOpenHelp }) {
-  const [collapsed, setCollapsed] = useState(loadCollapsed);
+  // Sidebar ist immer expanded. Collapse-Feature war visuell unprofessionell
+  // (schmale Leiste mit Mini-Icons wirkt amateurhaft) und ohne echten Nutzen —
+  // 240px Sidebar auf 1280-4K-Screens ist kein Platzproblem. Mobile klappt eh
+  // komplett ein via Burger-Button.
+  const collapsed = false;
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  useEffect(() => { saveCollapsed(collapsed); }, [collapsed]);
   useEffect(() => { setMobileOpen(false); }, [route.name]);
-
-  const toggle = () => setCollapsed((c) => !c);
 
   return (
     <>
@@ -141,18 +134,9 @@ export default function Sidebar({ route, me, onOpenPalette, onOpenHelp }) {
                 aria-label="Hilfe"
               >
                 <span>?</span>
-                {!collapsed && <span className="mg-sidebar__help-label mg-mono">SHORTCUTS</span>}
+                <span className="mg-sidebar__help-label mg-mono">SHORTCUTS</span>
               </button>
             )}
-            <button
-              type="button"
-              className="mg-sidebar__collapse-btn"
-              onClick={toggle}
-              title={collapsed ? 'Ausklappen' : 'Zusammenklappen'}
-              aria-label={collapsed ? 'Ausklappen' : 'Zusammenklappen'}
-            >
-              {collapsed ? '›' : '‹'}
-            </button>
           </div>
         </div>
       </aside>
