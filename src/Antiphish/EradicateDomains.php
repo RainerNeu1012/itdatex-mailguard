@@ -133,17 +133,23 @@ final class EradicateDomains {
 		global $wpdb;
 		$t = self::table();
 		$rows = $wpdb->get_results( $wpdb->prepare(
-			"SELECT id, domain, created_at, last_hit_at, hit_count
+			"SELECT id, domain, created_at, last_hit_at, hit_count, recent_senders
 			 FROM {$t} WHERE customer_id = %d ORDER BY id DESC",
 			$customer_id
 		), ARRAY_A );
 		return array_map( static function( $r ) {
+			$senders = [];
+			if ( ! empty( $r['recent_senders'] ) ) {
+				$decoded = json_decode( (string) $r['recent_senders'], true );
+				if ( is_array( $decoded ) ) { $senders = $decoded; }
+			}
 			return [
-				'id'          => (int) $r['id'],
-				'domain'      => (string) $r['domain'],
-				'created_at'  => (string) $r['created_at'],
-				'last_hit_at' => $r['last_hit_at'] !== null ? (string) $r['last_hit_at'] : null,
-				'hit_count'   => (int) $r['hit_count'],
+				'id'             => (int) $r['id'],
+				'domain'         => (string) $r['domain'],
+				'created_at'     => (string) $r['created_at'],
+				'last_hit_at'    => $r['last_hit_at'] !== null ? (string) $r['last_hit_at'] : null,
+				'hit_count'      => (int) $r['hit_count'],
+				'recent_senders' => $senders,
 			];
 		}, $rows ?: [] );
 	}
@@ -153,12 +159,44 @@ final class EradicateDomains {
 	 * wenn eine eingehende Mail wegen dieser Domain direkt verworfen wurde.
 	 * Fire-and-forget: ein fehlgeschlagenes UPDATE darf den Pull nicht stoppen.
 	 */
-	public static function record_hit( int $customer_id, string $domain ) : void {
+	public static function record_hit( int $customer_id, string $domain, string $from_addr = '', string $subject = '' ) : void {
 		$domain = strtolower( trim( $domain ) );
 		if ( $customer_id <= 0 || $domain === '' ) { return; }
 		global $wpdb;
 		$t = self::table();
 		$now = gmdate( 'Y-m-d H:i:s' );
+
+		// Zusaetzlich zur Counter-Erhoehung: letzten Absender in recent_senders
+		// als JSON-Blob (Ring-Buffer von max 20 Eintraegen) speichern. So kann
+		// der User im Portal/App sehen WER tatsaechlich wegen dieser Regel
+		// gekillt wurde — nicht nur "N Hits gesamt".
+		if ( $from_addr !== '' ) {
+			$row = $wpdb->get_row( $wpdb->prepare(
+				"SELECT id, recent_senders FROM {$t} WHERE customer_id = %d AND domain = %s",
+				$customer_id, $domain
+			), ARRAY_A );
+			if ( $row ) {
+				$senders = [];
+				if ( ! empty( $row['recent_senders'] ) ) {
+					$decoded = json_decode( (string) $row['recent_senders'], true );
+					if ( is_array( $decoded ) ) { $senders = $decoded; }
+				}
+				// Neuester zuerst, max 20
+				array_unshift( $senders, [
+					'addr'    => mb_substr( strtolower( $from_addr ), 0, 320 ),
+					'subject' => mb_substr( (string) $subject, 0, 200 ),
+					'ts'      => $now,
+				] );
+				$senders = array_slice( $senders, 0, 20 );
+				$wpdb->update( $t, [
+					'hit_count'      => (int) $wpdb->get_var( $wpdb->prepare( "SELECT hit_count FROM {$t} WHERE id = %d", (int) $row['id'] ) ) + 1,
+					'last_hit_at'    => $now,
+					'recent_senders' => wp_json_encode( $senders ),
+				], [ 'id' => (int) $row['id'] ] );
+				return;
+			}
+		}
+		// Fallback: keine from_addr uebergeben — nur Counter erhoehen
 		$wpdb->query( $wpdb->prepare(
 			"UPDATE {$t} SET hit_count = hit_count + 1, last_hit_at = %s
 			 WHERE customer_id = %d AND domain = %s",

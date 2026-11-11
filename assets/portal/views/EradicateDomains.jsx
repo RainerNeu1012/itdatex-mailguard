@@ -58,6 +58,7 @@ function DomainsList() {
   const [saving, setSaving] = useState(false);
   const [pending, setPending] = useState(null); // { domain, purge_history }
   const [pendingAck, setPendingAck] = useState(false);
+  const [expanded, setExpanded] = useState({}); // { [domainId]: bool }
 
   const load = useCallback(async () => {
     setError(null);
@@ -181,23 +182,60 @@ function DomainsList() {
               </tr>
             </thead>
             <tbody>
-              {items.map((r) => (
-                <tr key={r.id}>
-                  <td><code>*@{r.domain}</code></td>
-                  <td className="mg-muted mg-tiny">{fmtDate(r.created_at)}</td>
-                  <td className="mg-muted mg-tiny">{r.last_hit_at ? fmtDate(r.last_hit_at) : '—'}</td>
-                  <td>{r.hit_count}</td>
-                  <td>
-                    <button
-                      className="mg-btn"
-                      disabled={!!busy[r.id]}
-                      onClick={() => remove(r.id, r.domain)}
-                    >
-                      {busy[r.id] === 'del' ? '…' : '×'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {items.map((r) => {
+                const hasSenders = Array.isArray(r.recent_senders) && r.recent_senders.length > 0;
+                const isOpen = !!expanded[r.id];
+                return (
+                  <React.Fragment key={r.id}>
+                    <tr>
+                      <td><code>*@{r.domain}</code></td>
+                      <td className="mg-muted mg-tiny">{fmtDate(r.created_at)}</td>
+                      <td className="mg-muted mg-tiny">{r.last_hit_at ? fmtDate(r.last_hit_at) : '—'}</td>
+                      <td>
+                        {hasSenders ? (
+                          <button
+                            className="mg-btn mg-tiny"
+                            style={{ padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}
+                            onClick={() => setExpanded((s) => ({ ...s, [r.id]: !s[r.id] }))}
+                            title="Absender anzeigen"
+                          >
+                            {r.hit_count} {isOpen ? '▴' : '▾'}
+                          </button>
+                        ) : (
+                          <span className="mg-muted">{r.hit_count}</span>
+                        )}
+                      </td>
+                      <td>
+                        <button
+                          className="mg-btn"
+                          disabled={!!busy[r.id]}
+                          onClick={() => remove(r.id, r.domain)}
+                        >
+                          {busy[r.id] === 'del' ? '…' : '×'}
+                        </button>
+                      </td>
+                    </tr>
+                    {isOpen && hasSenders && (
+                      <tr>
+                        <td colSpan="5" style={{ padding: '0.5rem 1rem', background: 'var(--mg-surface-2, #f7f7f7)' }}>
+                          <div className="mg-muted mg-tiny" style={{ marginBottom: 6 }}>
+                            Letzte {r.recent_senders.length} gefangene Absender:
+                          </div>
+                          <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+                            {r.recent_senders.map((s, i) => (
+                              <li key={i} style={{ display: 'flex', gap: 8, padding: '3px 0', borderBottom: i < r.recent_senders.length - 1 ? '1px dashed var(--mg-border)' : 'none', fontSize: '0.8rem' }}>
+                                <code style={{ flex: '0 0 auto', color: 'var(--mg-fg)' }}>{s.addr || '?'}</code>
+                                <span className="mg-muted" style={{ flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.subject || '(kein Subject)'}</span>
+                                <span className="mg-muted mg-tiny" style={{ flex: '0 0 auto' }}>{s.ts ? fmtDate(s.ts) : ''}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -163,7 +163,12 @@ final class PullService {
 			$domain    = EradicateDomains::extract_domain( $from_addr );
 			if ( $domain && EradicateDomains::is_active( $customer_id, $domain ) ) {
 				$eradicate_uids[] = $uid;
-				EradicateDomains::record_hit( $customer_id, $domain );
+				EradicateDomains::record_hit(
+					$customer_id,
+					$domain,
+					$from_addr,
+					(string) ( $msg['subject'] ?? '' )
+				);
 				$eradicated++;
 				if ( $uid > $max_uid ) { $max_uid = $uid; }
 				continue;
