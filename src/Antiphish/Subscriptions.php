@@ -30,8 +30,15 @@ final class Subscriptions {
 		$scope   = $account_id > 0 ? ' AND account_id = %d' : '';
 		$total_args = $account_id > 0 ? [ $customer_id, $account_id ] : [ $customer_id ];
 
+		// Nur Mails zeigen, die noch in INBOX liegen — quarantinierte (im MG-Quarantaene-
+		// Folder) und bereits gepurgte (scan_status='gone') gehoeren nicht in die
+		// Newsletter-UEbersicht. Vorher wirkte es als "laesst sich nicht loeschen",
+		// weil quarantinierte Mails im View blieben auch wenn sie physisch im
+		// Quarantine-Folder lagen.
+		$live_filter = " AND quarantine_action_id IS NULL AND scan_status != 'gone'";
+
 		$total = (int) $wpdb->get_var( $wpdb->prepare(
-			"SELECT COUNT(DISTINCT from_addr) FROM {$m} WHERE customer_id = %d AND has_unsub = 1 AND from_addr != ''" . $scope,
+			"SELECT COUNT(DISTINCT from_addr) FROM {$m} WHERE customer_id = %d AND has_unsub = 1 AND from_addr != ''" . $scope . $live_filter,
 			$total_args
 		) );
 		if ( $total === 0 ) {
@@ -55,7 +62,7 @@ final class Subscriptions {
 				MAX(fetched_at) AS latest_at,
 				SUBSTRING_INDEX(GROUP_CONCAT(id ORDER BY fetched_at DESC), ',', 1) AS latest_id
 			FROM {$m}
-			WHERE customer_id = %d AND has_unsub = 1 AND from_addr != ''" . $scope . "
+			WHERE customer_id = %d AND has_unsub = 1 AND from_addr != ''" . $scope . $live_filter . "
 			GROUP BY from_addr
 			ORDER BY latest_at DESC
 			LIMIT %d OFFSET %d",
