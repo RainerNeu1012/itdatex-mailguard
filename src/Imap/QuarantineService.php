@@ -109,6 +109,16 @@ final class QuarantineService {
 			return [ 'ok' => false, 'error' => 'move_failed', 'detail' => $e->getMessage() ];
 		}
 
+		// imap_mail_move() macht COPY + mark \Deleted — ohne EXPUNGE bleibt die
+		// Mail in Source mit \Deleted-Flag. iCloud/iPhone-Mail zeigt sie dann
+		// weiterhin an. Explicit expunge auf Source (= aktuell selected folder
+		// vor select_folder($target_folder)).
+		try {
+			$client->expunge_selected();
+		} catch ( \Throwable $e ) {
+			// nicht fatal
+		}
+
 		// target_uid=0 ist auf Servern ohne UIDPLUS normal. Wir versuchen
 		// best-effort, sie per Message-ID-Search im Ziel nachzuziehen —
 		// wenn das auch nichts liefert, schreiben wir die Action mit
@@ -556,6 +566,19 @@ final class QuarantineService {
 			} catch ( \Throwable $e ) {
 				$client->close();
 				return [ 'ok' => false, 'error' => 'move_failed', 'detail' => $e->getMessage() ];
+			}
+			// WICHTIG: imap_mail_move() macht intern COPY + mark \Deleted. Ohne
+			// EXPUNGE auf Source bleibt die Mail dort mit \Deleted-Flag liegen —
+			// iCloud/iPhone-Mail zeigt sie trotzdem weiter an. Wir expungen hier
+			// explizit den Source (INBOX) um die \Deleted-Mail wirklich zu
+			// entfernen. Side-effect: andere \Deleted-markierte Mails im Source
+			// werden mitexpunged. Das ist im iCloud/Outlook-Kontext akzeptabel —
+			// \Deleted ohne EXPUNGE ist eh nur ein transienter Zustand.
+			try {
+				$client->expunge_selected();
+			} catch ( \Throwable $e ) {
+				// nicht fatal — die Mail ist zumindest in Quarantine gelandet,
+				// nächster purge-Lauf räumt sie aus Source
 			}
 			try {
 				$client->select_folder( $quar_folder );
