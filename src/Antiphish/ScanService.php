@@ -281,6 +281,15 @@ final class ScanService {
 			$score += (int) ( $r['score'] ?? 0 );
 		}
 
+		// Age-of-Domain (RDAP): frisch registrierte Absender-Domains
+		if ( ! $blacklist_hit ) {
+			$young = Signals\YoungDomain::check( (string) ( $row['from_addr'] ?? '' ) );
+			if ( $young ) {
+				$reasons[] = $young;
+				$score += (int) $young['score'];
+			}
+		}
+
 		// Attachment-Heuristik einweben: pro Anhang aus mg_attachments die
 		// gespeicherten suspicion_reasons in scan_reasons mergen und den
 		// hoechsten Attachment-Score dazuaddieren. Wir addieren NUR den max
