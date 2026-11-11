@@ -23,7 +23,14 @@ final class Rewrite {
 	 * Redirects). Diesen einen Filter ausfiltern.
 	 */
 	public static function suppress_canonical_redirect( $redirect_url, $requested_url ) {
-		if ( preg_match( '#/' . self::slug() . '/(sw\.js|manifest\.webmanifest)$#', (string) $requested_url ) ) {
+		$url = (string) $requested_url;
+		if ( preg_match( '#/' . self::slug() . '/(sw\.js|manifest\.webmanifest)$#', $url ) ) {
+			return false;
+		}
+		// Click-Protection: /portal/go?u=... — trailing-slash-301 wuerde das
+		// u-Query-Param zwar erhalten, aber bricht wenn der Target-Browser
+		// nicht automatisch Redirects folgt (Mail-Clients oft nicht).
+		if ( preg_match( '#/' . self::slug() . '/go(?:\?|$)#', $url ) ) {
 			return false;
 		}
 		return $redirect_url;
@@ -40,6 +47,10 @@ final class Rewrite {
 		// vom Server-Side gerendert werden.
 		add_rewrite_rule( '^' . preg_quote( $slug, '#' ) . '/sw\.js$',               'index.php?' . self::QUERY_VAR . '=__sw',       'top' );
 		add_rewrite_rule( '^' . preg_quote( $slug, '#' ) . '/manifest\.webmanifest$', 'index.php?' . self::QUERY_VAR . '=__manifest', 'top' );
+		// Click-Protection: /portal/go?u=<url>&m=<msg-id> — Links in Mails
+		// werden im Portal beim Rendern auf diese URL umgeschrieben, hier wird
+		// Safe Browsing + URLhaus + DNS gegen die Original-URL geprueft.
+		add_rewrite_rule( '^' . preg_quote( $slug, '#' ) . '/go/?$',                  'index.php?' . self::QUERY_VAR . '=__go',       'top' );
 		add_rewrite_rule( '^' . preg_quote( $slug, '#' ) . '/?$',         'index.php?' . self::QUERY_VAR . '=', 'top' );
 		add_rewrite_rule( '^' . preg_quote( $slug, '#' ) . '/(.+?)/?$',   'index.php?' . self::QUERY_VAR . '=$matches[1]', 'top' );
 	}
@@ -67,6 +78,14 @@ final class Rewrite {
 			header( 'Cache-Control: no-cache, max-age=0' );
 			if ( file_exists( $sw_file ) ) { readfile( $sw_file ); }
 			exit;
+		}
+
+		// Click-Protection-Interstitial. Query-Parameter u=<url>, m=<msg-id-opt>.
+		if ( $route === '__go' ) {
+			$url = isset( $_GET['u'] ) ? (string) wp_unslash( $_GET['u'] ) : '';
+			$mid = isset( $_GET['m'] ) ? (string) wp_unslash( $_GET['m'] ) : '';
+			LinkGuard::handle_click( $url, $mid );
+			return;
 		}
 
 		// PWA Web-App-Manifest.

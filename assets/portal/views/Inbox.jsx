@@ -1877,7 +1877,18 @@ function MessageBody({ messageId, preview, fromAddr, subject }) {
   const csp = loadImages
     ? "default-src 'none'; img-src http: https: data:; style-src 'unsafe-inline'; font-src data:;"
     : "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:;";
-  const iframeDoc = body ? `<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="${csp}"><style>body{margin:0;padding:12px;font-family:system-ui,sans-serif;font-size:14px;line-height:1.5;color:#111;word-wrap:break-word;overflow-wrap:break-word}img{max-width:100%;height:auto}a{color:#2563eb}</style></head><body>${body}</body></html>` : '';
+
+  // Click-Protection: href="http(s)..." → /portal/go?u=encoded&m=<msgId>
+  // Clicks fliegen durch unseren Safe-Browsing + URLhaus + DNS + TLD-Block.
+  // target="_top" damit der Click im sandbox-iframe die Top-Navigation triggert.
+  // sandbox darunter muss 'allow-top-navigation-by-user-activation' haben.
+  const guardedBody = body
+    ? body.replace(/href\s*=\s*(["'])(https?:\/\/[^"'<>]+)\1/gi, (m, q, url) =>
+        `href=${q}/portal/go?u=${encodeURIComponent(url)}&m=${messageId}${q} target="_top" rel="noopener nofollow"`
+      )
+    : body;
+
+  const iframeDoc = guardedBody ? `<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="${csp}"><style>body{margin:0;padding:12px;font-family:system-ui,sans-serif;font-size:14px;line-height:1.5;color:#111;word-wrap:break-word;overflow-wrap:break-word}img{max-width:100%;height:auto}a{color:#2563eb}</style></head><body>${guardedBody}</body></html>` : '';
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -1897,7 +1908,7 @@ function MessageBody({ messageId, preview, fromAddr, subject }) {
         <iframe
           key={String(loadImages)}
           title="mail-body"
-          sandbox=""
+          sandbox="allow-top-navigation-by-user-activation"
           srcDoc={iframeDoc}
           style={{ width: '100%', height: '50vh', minHeight: 260, border: '1px solid var(--mg-border)', borderRadius: 4, background: '#fff' }}
         />
