@@ -212,10 +212,20 @@ final class PullService {
 						$date_hdr !== '' && $date_hdr !== '0000-00-00 00:00:00' ? $date_hdr : null
 					);
 				}
+				if ( $uid > $max_uid ) { $max_uid = $uid; }
 			}
-			elseif ( $status === 'duplicate' ) { $dup++; }
-			else { $err++; }
-			if ( $uid > $max_uid ) { $max_uid = $uid; }
+			elseif ( $status === 'duplicate' ) {
+				$dup++;
+				if ( $uid > $max_uid ) { $max_uid = $uid; }
+			}
+			else {
+				// Bei 'failed' (z.B. schema-mismatch, INSERT-Fehler ohne 'Duplicate'-Marker)
+				// NICHT max_uid erhoehen — sonst wird die Mail fuer immer uebersprungen
+				// (Bug: iCloud 11/2026, mehrere Spam-Mails mit UIDs 29404/29406/29407
+				// die auf 'duplicate' liefen aber weder in DB noch physisch gepurged waren).
+				// Beim naechsten Pull wird dieselbe UID erneut versucht.
+				$err++;
+			}
 		}
 		// Batch-EXPUNGE der auto-vernichteten UIDs. Failures nicht fatal:
 		// wenn das EXPUNGE scheitert, hat der User beim naechsten Pull-Lauf
