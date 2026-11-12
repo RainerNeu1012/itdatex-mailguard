@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 34;
+	public const CURRENT_DB_VERSION = 35;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -40,6 +40,7 @@ final class Installer {
 	public const TABLE_POSTBOX_RULES     = 'mg_postbox_rules';
 	public const TABLE_SHARED_RULES         = 'mg_shared_rules';
 	public const TABLE_SHARED_RULE_OPTOUTS  = 'mg_shared_rule_optouts';
+	public const TABLE_AUDIT_LOG            = 'mg_audit_log';
 
 	public const CRON_UNDO_EXPIRY_HOOK = 'itdatex_mailguard_undo_expiry_check';
 
@@ -624,6 +625,23 @@ final class Installer {
 			KEY idx_rule (shared_rule_id)
 		) {$charset};";
 
+		// Audit-Log: Sensitive-Action-Protokoll. Pro Event eine Zeile. customer_id NULL
+		// bei System-Events (z.B. cron-failed). severity steuert UI-Farbe.
+		$t_audit = $wpdb->prefix . self::TABLE_AUDIT_LOG;
+		$sql_audit = "CREATE TABLE {$t_audit} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NULL,
+			event VARCHAR(48) NOT NULL,
+			severity VARCHAR(16) NOT NULL DEFAULT 'info',
+			actor_ip VARCHAR(45) NOT NULL DEFAULT '',
+			actor_ua VARCHAR(255) NOT NULL DEFAULT '',
+			meta_json TEXT NULL,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			KEY idx_customer_created (customer_id, created_at),
+			KEY idx_event (event, created_at)
+		) {$charset};";
+
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		dbDelta( $sql_customers );
 		dbDelta( $sql_imap );
@@ -646,6 +664,7 @@ final class Installer {
 		dbDelta( $sql_prules );
 		dbDelta( $sql_srules );
 		dbDelta( $sql_sopts );
+		dbDelta( $sql_audit );
 
 		// One-shot Migration: aus jedem bestehenden Account einen Folder-Eintrag
 		// erzeugen. Nur wenn die Folder-Tabelle leer ist UND mind. ein Account

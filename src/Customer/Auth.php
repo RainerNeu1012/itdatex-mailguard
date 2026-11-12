@@ -87,6 +87,7 @@ final class Auth {
 		$email = strtolower( trim( $email ) );
 		$row = Account::find_by_email( $email );
 		if ( ! $row || ! password_verify( $password, (string) $row['password_hash'] ) ) {
+			AuditLog::emit( $row ? (int) $row['id'] : null, 'auth.login_failed', AuditLog::SEV_WARN, [ 'email' => $email ] );
 			return [ 'ok' => false, 'error' => self::ERR_INVALID_CREDS ];
 		}
 		if ( (string) $row['status'] === 'suspended' ) {
@@ -105,18 +106,24 @@ final class Auth {
 				return [ 'ok' => false, 'error' => 'two_fa_required' ];
 			}
 			if ( ! \Itdatex\Mailguard\Customer\TwoFA::verify_login_code( $id, $two_fa_code ) ) {
+				AuditLog::emit( $id, 'auth.two_fa_failed', AuditLog::SEV_WARN );
 				return [ 'ok' => false, 'error' => 'two_fa_invalid' ];
 			}
 		}
 
 		Account::touch_login( $id );
 		Session::start( $id );
+		AuditLog::emit( $id, 'auth.login_success' );
 
 		return [ 'ok' => true, 'customer_id' => $id, 'email' => $row['email'] ];
 	}
 
 	public static function logout() : array {
+		$cid = Session::current_customer_id();
 		Session::destroy();
+		if ( $cid > 0 ) {
+			AuditLog::emit( $cid, 'auth.logout' );
+		}
 		return [ 'ok' => true ];
 	}
 
@@ -132,6 +139,7 @@ final class Auth {
 			$token = Token::random_token();
 			Account::set_password_reset_token( (int) $row['id'], $token, 60 );
 			Mailer::send_password_reset( (string) $row['email'], $token );
+			AuditLog::emit( (int) $row['id'], 'password.reset_request' );
 		}
 		return [ 'ok' => true ];
 	}
@@ -151,8 +159,12 @@ final class Auth {
 		if ( $expires && $expires < time() ) {
 			return [ 'ok' => false, 'error' => self::ERR_TOKEN ];
 		}
-		Account::update_password( (int) $row['id'], password_hash( $new_password, PASSWORD_DEFAULT ) );
-		return [ 'ok' => true, 'customer_id' => (int) $row['id'] ];
+		$cid = (int) $row['id'];
+		Account::update_password( $cid, password_hash( $new_password, PASSWORD_DEFAULT ) );
+		Session::destroy_all_for_customer( $cid );
+		AuditLog::emit( $cid, 'password.reset_confirm', AuditLog::SEV_WARN );
+		AuditLog::emit( $cid, 'sessions.revoked_all', AuditLog::SEV_WARN, [ 'reason' => 'password_reset' ] );
+		return [ 'ok' => true, 'customer_id' => $cid ];
 	}
 
 	public static function current() : ?array {

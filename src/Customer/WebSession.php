@@ -110,6 +110,35 @@ final class WebSession {
 	}
 
 	/**
+	 * Revoke ALLE aktiven WebSessions eines Customers. Jeder JTI landet
+	 * auf der Blacklist damit Cookies ab dem naechsten Request abgelehnt werden.
+	 * @return int Anzahl der revokten Sessions.
+	 */
+	public static function revoke_all_for_customer( int $customer_id ) : int {
+		global $wpdb;
+		$now = gmdate( 'Y-m-d H:i:s' );
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			'SELECT jti, expires_at FROM ' . self::table() . '
+			 WHERE customer_id = %d AND revoked_at IS NULL AND expires_at > %s',
+			$customer_id, $now
+		), ARRAY_A );
+		$count = 0;
+		foreach ( $rows ?: [] as $r ) {
+			$jti = (string) ( $r['jti'] ?? '' );
+			$exp = strtotime( (string) $r['expires_at'] . ' UTC' );
+			if ( $jti !== '' && $exp > time() ) {
+				Token::blacklist_jti( $jti, $exp );
+				$count++;
+			}
+		}
+		$wpdb->update( self::table(),
+			[ 'revoked_at' => $now ],
+			[ 'customer_id' => $customer_id, 'revoked_at' => null ]
+		);
+		return $count;
+	}
+
+	/**
 	 * Revoke per JTI. Wird von Session::destroy (Logout) benutzt.
 	 */
 	public static function revoke_by_jti( string $jti ) : void {

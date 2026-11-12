@@ -28,6 +28,7 @@ const GROUPS = [
   ]},
   { label: 'SICHERHEIT', items: [
     { r: 'breaches',     label: 'Breach-Monitor',          icon: '⚠', badgeKey: 'breaches' },
+    { r: 'activity',     label: 'Kontoaktivitaet',         icon: '◉' },
   ]},
   { label: 'SYSTEM', items: [
     { r: 'actions',      label: 'Aktionen',       kbd: '7', icon: '⚡' },

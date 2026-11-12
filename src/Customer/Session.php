@@ -31,6 +31,16 @@ final class Session {
 		return $token;
 	}
 
+	/**
+	 * Alle Sessions (Web + API-Tokens) eines Customers invalidieren.
+	 * Wird nach Passwort-Change, 2FA-Enable/Disable/Reset gerufen.
+	 */
+	public static function destroy_all_for_customer( int $customer_id ) : int {
+		$web = WebSession::revoke_all_for_customer( $customer_id );
+		$api = ApiToken::revoke_all_for_customer( $customer_id );
+		return $web + $api;
+	}
+
 	public static function destroy() : void {
 		// Aktuellen JTI aus dem Cookie ziehen — wenn wir hier stehen, ist er
 		// (noch) im $_COOKIE — bevor wir ihn überschreiben.

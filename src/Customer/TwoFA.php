@@ -88,6 +88,10 @@ final class TwoFA {
 			],
 			[ 'id' => $customer_id ]
 		);
+		AuditLog::emit( $customer_id, 'two_fa.enable', AuditLog::SEV_WARN );
+		// Alte Sessions trotzdem gueltig lassen — der User hat GERADE in der aktuellen
+		// Session aktiviert; andere Sessions muessen nicht nochmal 2FA machen.
+		// (Bei disable + reset_confirm IST Invalidation noetig.)
 		return $backup;
 	}
 
@@ -98,6 +102,11 @@ final class TwoFA {
 			[ 'two_fa_secret' => null, 'two_fa_enabled_at' => null, 'two_fa_backup_codes' => null ],
 			[ 'id' => $customer_id ]
 		);
+		// Alle anderen Sessions ausloggen — wenn Angreifer vorher 2FA bypasst hat
+		// (z.B. via Reset), kickt das ihn JETZT raus. Aktuelle Session bleibt.
+		Session::destroy_all_for_customer( $customer_id );
+		AuditLog::emit( $customer_id, 'two_fa.disable', AuditLog::SEV_WARN );
+		AuditLog::emit( $customer_id, 'sessions.revoked_all', AuditLog::SEV_WARN, [ 'reason' => 'two_fa_disable' ] );
 	}
 
 	/**
@@ -152,6 +161,7 @@ final class TwoFA {
 		$code = sprintf( '%06d', random_int( 0, 999999 ) );
 		set_transient( 'mg_2fa_reset_' . $cid, $code, 15 * MINUTE_IN_SECONDS );
 		Mailer::send_2fa_reset( (string) $row['email'], $code );
+		AuditLog::emit( $cid, 'two_fa.reset_request', AuditLog::SEV_WARN );
 	}
 
 	/**
@@ -164,10 +174,17 @@ final class TwoFA {
 		$cid = (int) $row['id'];
 		$stored = (string) get_transient( 'mg_2fa_reset_' . $cid );
 		$code   = preg_replace( '/\D/', '', $code );
-		if ( $stored === '' || strlen( $code ) !== 6 ) { return false; }
-		if ( ! hash_equals( $stored, $code ) ) { return false; }
+		if ( $stored === '' || strlen( $code ) !== 6 ) {
+			AuditLog::emit( $cid, 'two_fa.reset_failed', AuditLog::SEV_WARN );
+			return false;
+		}
+		if ( ! hash_equals( $stored, $code ) ) {
+			AuditLog::emit( $cid, 'two_fa.reset_failed', AuditLog::SEV_WARN );
+			return false;
+		}
 		delete_transient( 'mg_2fa_reset_' . $cid );
-		self::disable_for_customer( $cid );
+		self::disable_for_customer( $cid ); // emittet bereits two_fa.disable + sessions.revoked_all
+		AuditLog::emit( $cid, 'two_fa.reset_confirm', AuditLog::SEV_CRITICAL );
 		return true;
 	}
 

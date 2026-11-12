@@ -177,6 +177,32 @@ final class ApiToken {
 		);
 	}
 
+	/**
+	 * Alle aktiven API-Tokens eines Customers revoken. Wird nach Passwort-Change,
+	 * 2FA-Enable/Disable/Reset gerufen. $except_hash kann leer sein.
+	 */
+	public static function revoke_all_for_customer( int $customer_id, string $except_hash = '' ) : int {
+		global $wpdb;
+		$sql = "UPDATE " . self::table() . "
+			SET revoked_at = %s
+			WHERE customer_id = %d AND revoked_at IS NULL";
+		$params = [ gmdate( 'Y-m-d H:i:s' ), $customer_id ];
+		if ( $except_hash !== '' ) {
+			$sql .= " AND token_hash != %s";
+			$params[] = $except_hash;
+		}
+		// Cache-Invalidation: holt die betroffenen Hashes vor dem Update
+		$hashes = $wpdb->get_col( $wpdb->prepare(
+			"SELECT token_hash FROM " . self::table() . "
+			 WHERE customer_id = %d AND revoked_at IS NULL" . ( $except_hash !== '' ? " AND token_hash != %s" : "" ),
+			$except_hash !== '' ? [ $customer_id, $except_hash ] : [ $customer_id ]
+		) );
+		foreach ( $hashes ?: [] as $h ) {
+			wp_cache_delete( (string) $h, self::CACHE_GROUP );
+		}
+		return (int) $wpdb->query( $wpdb->prepare( $sql, ...$params ) );
+	}
+
 	/** Portal-View "Angemeldete Geraete". */
 	public static function list_for_customer( int $customer_id ) : array {
 		global $wpdb;

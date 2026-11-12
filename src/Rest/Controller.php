@@ -107,6 +107,18 @@ final class Controller {
 			'callback'            => [ __CLASS__, 'me_health' ],
 		] );
 
+		register_rest_route( self::NAMESPACE, '/me/activity', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_activity' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/sessions/revoke-all-others', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_revoke_all_other_sessions' ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/me/breaches', [
 			'methods'             => 'GET',
 			'permission_callback' => '__return_true',
@@ -3456,6 +3468,53 @@ HTML;
 	 * 2FA-Setup: generiert Secret + QR-URL, speichert noch nicht.
 	 * User scant QR, dann /me/2fa/activate {code}.
 	 */
+	public static function me_activity( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$items = \Itdatex\Mailguard\Customer\AuditLog::list_for_customer( $cid, 100 );
+		return new WP_REST_Response( [ 'ok' => true, 'items' => $items ], 200 );
+	}
+
+	public static function me_revoke_all_other_sessions( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		// Aktuelle Session-Identitaet erhalten: current JTI (Cookie) oder aktueller Bearer-Hash (Mobile).
+		$current_jti = \Itdatex\Mailguard\Customer\Session::current_jti();
+		$hdr = (string) ( $_SERVER['HTTP_AUTHORIZATION'] ?? '' );
+		$current_access_hash = '';
+		if ( stripos( $hdr, 'Bearer ' ) === 0 ) {
+			$current_access_hash = hash( 'sha256', trim( substr( $hdr, 7 ) ) );
+		}
+		// Web-Sessions ausser aktueller
+		global $wpdb;
+		$t = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_WEB_SESSIONS;
+		$web_count = 0;
+		$web_rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT jti, expires_at FROM {$t}
+			 WHERE customer_id = %d AND revoked_at IS NULL AND jti != %s AND expires_at > %s",
+			$cid, $current_jti, gmdate( 'Y-m-d H:i:s' )
+		), ARRAY_A );
+		foreach ( $web_rows ?: [] as $r ) {
+			$exp = strtotime( (string) $r['expires_at'] . ' UTC' );
+			if ( $exp > time() ) {
+				\Itdatex\Mailguard\Customer\Token::blacklist_jti( (string) $r['jti'], $exp );
+				$web_count++;
+			}
+		}
+		if ( $web_count > 0 ) {
+			$wpdb->query( $wpdb->prepare(
+				"UPDATE {$t} SET revoked_at = %s
+				 WHERE customer_id = %d AND revoked_at IS NULL AND jti != %s",
+				gmdate( 'Y-m-d H:i:s' ), $cid, $current_jti
+			) );
+		}
+		// API-Tokens ausser aktuellem
+		$api_count = \Itdatex\Mailguard\Customer\ApiToken::revoke_all_for_customer( $cid, $current_access_hash );
+
+		\Itdatex\Mailguard\Customer\AuditLog::emit( $cid, 'sessions.revoked_others', \Itdatex\Mailguard\Customer\AuditLog::SEV_WARN, [ 'web' => $web_count, 'api' => $api_count ] );
+		return new WP_REST_Response( [ 'ok' => true, 'web_revoked' => $web_count, 'api_revoked' => $api_count ], 200 );
+	}
+
 	public static function me_2fa_setup( WP_REST_Request $req ) {
 		$cid = self::require_customer();
 		if ( is_wp_error( $cid ) ) { return $cid; }
