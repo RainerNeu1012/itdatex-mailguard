@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { navigate } from '../router.js';
+import { apiGet } from '../api.js';
 import BrandMark from './BrandMark.jsx';
 
 /**
@@ -25,6 +26,9 @@ const GROUPS = [
     { r: 'postbox-rules',     label: 'Postfach-Regeln', kbd: '5', icon: '⚙' },
     { r: 'eradicate-domains', label: 'Auto-Vernichten', kbd: '6', icon: '✖' },
   ]},
+  { label: 'SICHERHEIT', items: [
+    { r: 'breaches',     label: 'Breach-Monitor',          icon: '⚠', badgeKey: 'breaches' },
+  ]},
   { label: 'SYSTEM', items: [
     { r: 'actions',      label: 'Aktionen',       kbd: '7', icon: '⚡' },
     { r: 'llm-feedback', label: 'KI-Bewertungen', kbd: '8', icon: '◈' },
@@ -41,8 +45,27 @@ export default function Sidebar({ route, me, onOpenPalette, onOpenHelp }) {
   // komplett ein via Burger-Button.
   const collapsed = false;
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [badges, setBadges] = useState({});
 
   useEffect(() => { setMobileOpen(false); }, [route.name]);
+
+  // Unread-Badges: alle 60s + bei Route-Wechsel refreshen. Aktuell nur Breach-Monitor.
+  useEffect(() => {
+    if (!me) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const { status, body } = await apiGet('me/breaches');
+        if (!alive) return;
+        if (status === 200 && body?.ok) {
+          setBadges((b) => ({ ...b, breaches: Number(body.unread_cnt || 0) }));
+        }
+      } catch (_) {}
+    };
+    load();
+    const t = setInterval(load, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, [me?.customer_id, route.name]);
 
   return (
     <>
@@ -101,6 +124,13 @@ export default function Sidebar({ route, me, onOpenPalette, onOpenHelp }) {
                         {!collapsed && (
                           <>
                             <span className="mg-sidebar__item-label">{item.label}</span>
+                            {item.badgeKey && badges[item.badgeKey] > 0 && (
+                              <span className="mg-sidebar__item-badge mg-mono" style={{
+                                background:'var(--mg-err, #f85149)',color:'#fff',
+                                fontSize:'0.7rem',padding:'1px 6px',borderRadius:'10px',
+                                marginLeft:'auto',minWidth:18,textAlign:'center'
+                              }}>{badges[item.badgeKey]}</span>
+                            )}
                             {item.kbd && <span className="mg-sidebar__item-kbd mg-mono">⌥{item.kbd}</span>}
                           </>
                         )}

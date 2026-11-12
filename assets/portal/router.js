@@ -41,6 +41,7 @@ export function currentRoute() {
     case 'actions':         return { name: 'actions',          params };
     case 'devices':         return { name: 'devices',          params };
     case 'llm-feedback':    return { name: 'llm-feedback',     params };
+    case 'breaches':        return { name: 'breaches',         params };
   }
   // accounts/{id}/edit
   const m = rest.match(/^accounts\/(\d+)\/edit$/);

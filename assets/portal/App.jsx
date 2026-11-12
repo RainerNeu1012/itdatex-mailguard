@@ -21,6 +21,7 @@ import Plan           from './views/Plan.jsx';
 import Actions        from './views/Actions.jsx';
 import Devices        from './views/Devices.jsx';
 import LlmFeedback    from './views/LlmFeedback.jsx';
+import Breaches       from './views/Breaches.jsx';
 import NotificationsBell from './components/NotificationsBell.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import BrandMark from './components/BrandMark.jsx';
@@ -38,6 +39,7 @@ const ROUTE_TITLES = {
   'eradicate-domains': 'Auto-Vernichten',
   actions: 'Aktionen',
   'llm-feedback': 'KI-Bewertungen',
+  'breaches': 'Breach-Monitor',
   accounts: 'Postfächer',
   'account-new': 'Postfach anlegen',
   'account-edit': 'Postfach bearbeiten',
@@ -127,7 +129,7 @@ export default function App() {
     return <div className="mg-shell"><div className="mg-card">Lade …</div></div>;
   }
 
-  const requiresAuth   = [ 'dashboard', 'accounts', 'account-new', 'account-edit', 'inbox', 'newsletters', 'scanner', 'rules', 'postbox-rules', 'eradicate-domains', 'plan', 'actions', 'devices' ];
+  const requiresAuth   = [ 'dashboard', 'accounts', 'account-new', 'account-edit', 'inbox', 'newsletters', 'scanner', 'rules', 'postbox-rules', 'eradicate-domains', 'plan', 'actions', 'devices', 'llm-feedback', 'breaches' ];
   const requiresAnon   = [ 'login', 'register', 'forgot-password' ];
 
   if (requiresAuth.includes(route.name) && !me) {
@@ -247,6 +249,7 @@ function pickView(name) {
     case 'plan':            return Plan;
     case 'actions':         return Actions;
     case 'llm-feedback':    return LlmFeedback;
+    case 'breaches':        return Breaches;
     case 'devices':         return Devices;
     case 'logout':          return Empty;
     default:                return NotFound;
