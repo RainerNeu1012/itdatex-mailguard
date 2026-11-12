@@ -7,6 +7,60 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.70.0] – 2026-11-12
+
+Sammelrelease fuer alle Features zwischen v0.50.0 und v0.70.0 inklusive
+der diesmonatigen 2FA- und Breach-Monitor-Arbeit. App laeuft ab jetzt
+wieder synchron auf derselben Versionsnummer (v0.70.0).
+
+### Added — Security & Monitoring (Nov 2026)
+- **Zwei-Faktor-Authentifizierung (TOTP)** nach RFC 6238. Setup ueber
+  Portal/App (Plan bzw. Konto), QR + Secret + 10 Backup-Codes. Login
+  verlangt Code wenn aktiv. `/me/2fa/setup`, `/me/2fa/activate`,
+  `/me/2fa/disable`.
+- **2FA-Reset per E-Mail-OTP** wenn Handy + Backup-Codes verloren:
+  `/2fa/reset-request` + `/2fa/reset-confirm`, 6-Digit-Code, 15 min TTL.
+- **Breach-Monitor via XposedOrNot**. Hourly-Cron prueft alle aktiven
+  Customer- und IMAP-Account-Emails gegen bekannte Credential-Leaks,
+  schreibt in `mg_breach_alerts`. `/me/breaches` + Mark-All-Read.
+- **Mailbox-Health-Score** (Portal-Dashboard): 100 - threats/total mit
+  30-Tage-Trend-Chart. `/me/health`.
+- **Admin-Overview** (WP-Admin → MailGuard → Overview): 8 Stat-Cards,
+  Cron-Health, Server-Load, Per-Customer 7-Tage-Tabelle.
+- **Quarantine-Digest** optional daily/weekly Mail-Report pro Customer.
+
+### Added — Scanner-Signale (Okt/Nov 2026)
+- DisplayName-Spoof, Homograph-Domain, Auth-Headers, URLhaus,
+  YoungDomain via RDAP, QR-Code-Suspicion, UserFeedback-Trust.
+- Content-Filter (from_name/body-Match + optional Sofort-Purge).
+- Absender-Erlauben mit Undo + Rule-IDs im SenderIndex-Response.
+
+### Added — Portal/UX
+- Click-Protection ueber `/portal/go?u=<url>&m=<id>`.
+- Anti-Tracking-Pixel-Filter im Body-Rendering.
+- Eradicate-Domains zeigt die letzten 20 gefangenen Absender je Domain.
+
+### Changed
+- QR-Code jetzt **inline-SVG** via `chillerlan/php-qrcode` statt
+  `api.qrserver.com`. Kein externer Host, kein CSP-Whitelist noetig.
+- Hardgecodete Dark-Mode-Farben in Plan/Login/Breaches auf CSS-Variablen
+  (`--mg-surface-2`, `--mg-border`, `--mg-fg`, `--mg-muted`) —
+  behebt schwarze Panels im Light-Mode.
+- Breach-Date-Parsing normalisiert auf `YYYY-MM-DD`.
+- Breach-Cron auf `hourly` (vorher `daily`).
+
+### Fixed
+- Outlook-Mails zeigen jetzt Inhalt im Portal/App (DB-preview-Fallback).
+- IMAP explicit EXPUNGE nach Move (iCloud).
+- `max_uid` bei INSERT-Failures nicht mehr hochgesetzt (stuck-mail-Bug).
+- Newsletter-View filtert blacklisted/quarantined/gone Mails raus.
+- Mobile Sender-Head: grid-area 1-col, Subject-Clamp auf 2 Zeilen.
+- PWA SW-Version-Bump verhindert Self-Lock.
+- Rule-Dedup mit UNIQUE-Constraint, Rule::create idempotent.
+
+### Security
+- v0.70.1-Hardening-Patch (Commit 3df8dba).
+
 ## [0.50.0] – 2026-10-05
 
 ### Fixed
