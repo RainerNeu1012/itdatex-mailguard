@@ -51,9 +51,18 @@ final class TwoFA {
 	}
 
 	public static function qr_url( string $otpauth ) : string {
-		// Kostenloser Public-QR-Generator (kein Key noetig)
-		return 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=4&data='
-			. rawurlencode( $otpauth );
+		// Inline-SVG data-URL via chillerlan/php-qrcode. Keine externe HTTP-Abhaengigkeit,
+		// kein CSP-Whitelist noetig, funktioniert auch in der Tauri-Desktop-App.
+		$opts = new \chillerlan\QRCode\QROptions( [
+			'version'           => -1,
+			'versionMin'        => 4,
+			'versionMax'        => 15,
+			'outputType'        => \chillerlan\QRCode\QRCode::OUTPUT_MARKUP_SVG,
+			'eccLevel'          => \chillerlan\QRCode\QRCode::ECC_L,
+			'drawLightModules'  => true,
+			'cssClass'          => 'mg-2fa-qr',
+		] );
+		return ( new \chillerlan\QRCode\QRCode( $opts ) )->render( $otpauth );
 	}
 
 	public static function verify_code( string $secret, string $code ) : bool {
