@@ -53,26 +53,26 @@ export default function Plan({ me, reloadMe }) {
         <SectionHeader num="001" title="PLAN & ABRECHNUNG" counter={planInfo.name.toUpperCase()} />
         <div className="mg-card">
       <div style={{display:'flex',gap:'1.25rem',flexWrap:'wrap',margin:'0.5rem 0 1.5rem'}}>
-        <div style={{background:'#0d1117',border:'1px solid #30363d',borderRadius:'8px',padding:'1.25rem 1.5rem',flex:'1 1 220px'}}>
+        <div style={{background:'var(--mg-surface-2)',border:'1px solid var(--mg-border)',borderRadius:'8px',padding:'1.25rem 1.5rem',flex:'1 1 220px'}}>
           <p style={{margin:0,fontFamily:'ui-monospace,Menlo,monospace',fontSize:'1rem',color:'#6e7681',letterSpacing:'0.08em',textTransform:'uppercase'}}>// plan</p>
           <p style={{margin:'0.4rem 0 0',fontSize:'1.6rem',fontWeight:600,color:planInfo.color}}>{planInfo.name}</p>
-          <p style={{margin:'0.2rem 0 0',color:'#8b949e'}}>{planInfo.price}</p>
+          <p style={{margin:'0.2rem 0 0',color:'var(--mg-muted)'}}>{planInfo.price}</p>
         </div>
-        <div style={{background:'#0d1117',border:'1px solid #30363d',borderRadius:'8px',padding:'1.25rem 1.5rem',flex:'1 1 220px'}}>
+        <div style={{background:'var(--mg-surface-2)',border:'1px solid var(--mg-border)',borderRadius:'8px',padding:'1.25rem 1.5rem',flex:'1 1 220px'}}>
           <p style={{margin:0,fontFamily:'ui-monospace,Menlo,monospace',fontSize:'1rem',color:'#6e7681',letterSpacing:'0.08em',textTransform:'uppercase'}}>// status</p>
           <p style={{margin:'0.4rem 0 0',fontSize:'1.6rem',fontWeight:600,color:statusInfo.color}}>{statusInfo.label}</p>
           {me.plan_grace_until && (
-            <p style={{margin:'0.2rem 0 0',color:'#8b949e',fontSize:'1rem'}}>Daten gelöscht am {new Date(me.plan_grace_until + 'Z').toLocaleDateString('de-DE')}</p>
+            <p style={{margin:'0.2rem 0 0',color:'var(--mg-muted)',fontSize:'1rem'}}>Daten gelöscht am {new Date(me.plan_grace_until + 'Z').toLocaleDateString('de-DE')}</p>
           )}
         </div>
       </div>
 
-      <p style={{color:'#8b949e',marginBottom:'1.25rem'}}>{inUseHint}</p>
+      <p style={{color:'var(--mg-muted)',marginBottom:'1.25rem'}}>{inUseHint}</p>
 
       {planHasLlm && (
-        <div style={{background:'#0d1117',border:'1px solid #30363d',borderRadius:'8px',padding:'1.25rem 1.5rem',marginBottom:'1.25rem'}}>
+        <div style={{background:'var(--mg-surface-2)',border:'1px solid var(--mg-border)',borderRadius:'8px',padding:'1.25rem 1.5rem',marginBottom:'1.25rem'}}>
           <p style={{margin:'0 0 0.4rem',fontWeight:600}}>KI-Tiefenanalyse via Ollama Cloud</p>
-          <p style={{margin:'0 0 0.75rem',color:'#8b949e',fontSize:'1rem'}}>
+          <p style={{margin:'0 0 0.75rem',color:'var(--mg-muted)',fontSize:'1rem'}}>
             Subject + Body verdächtiger Mails (Heuristik-Score 30–69, typisch &lt;10 % der Mails) gehen
             zur Bewertung an Ollama Inc., USA. Drittlandtransfer auf Grundlage der EU-Standardvertragsklauseln.
             Details: <a href="https://wp.itdatex.support/datenschutz/#sec-10-2" target="_blank" rel="noopener">Datenschutzerklärung 10.2</a>.
@@ -115,9 +115,9 @@ export default function Plan({ me, reloadMe }) {
         )}
       </div>
 
-      <div style={{background:'#0d1117',border:'1px solid #30363d',borderRadius:'8px',padding:'1.25rem 1.5rem',margin:'1.25rem 0 0'}}>
+      <div style={{background:'var(--mg-surface-2)',border:'1px solid var(--mg-border)',borderRadius:'8px',padding:'1.25rem 1.5rem',margin:'1.25rem 0 0'}}>
         <p style={{margin:'0 0 0.5rem',fontWeight:600}}>Zusammenfassungs-Report per E-Mail</p>
-        <p style={{margin:'0 0 0.8rem',color:'#8b949e',fontSize:'0.95rem'}}>
+        <p style={{margin:'0 0 0.8rem',color:'var(--mg-muted)',fontSize:'0.95rem'}}>
           Regelmäßiger Report an {me.email}: wie viele Phishing-Mails wurden abgefangen, wie viele Newsletter aussortiert, Top-Absender.
         </p>
         <select
@@ -127,7 +127,7 @@ export default function Plan({ me, reloadMe }) {
             await apiPost('me/digest', { frequency: freq });
             if (reloadMe) await reloadMe();
           }}
-          style={{padding:'0.4rem 0.6rem',borderRadius:'4px',background:'#0d1117',border:'1px solid #30363d',color:'#f0f6fc'}}
+          style={{padding:'0.4rem 0.6rem',borderRadius:'4px',background:'var(--mg-surface-2)',border:'1px solid var(--mg-border)',color:'var(--mg-fg)'}}
         >
           <option value="off">Aus</option>
           <option value="daily">Täglich</option>
@@ -138,7 +138,7 @@ export default function Plan({ me, reloadMe }) {
       <TwoFactorPanel me={me} reloadMe={reloadMe} />
 
       {error && (
-        <div style={{marginTop:'1rem',padding:'0.85rem 1rem',background:'rgba(218,54,51,0.08)',border:'1px solid #da3633',borderRadius:'6px',color:'#ff7b72'}}>
+        <div style={{marginTop:'1rem',padding:'0.85rem 1rem',background:'rgba(248,81,73,0.08)',border:'1px solid var(--mg-err)',borderRadius:'6px',color:'var(--mg-err)'}}>
           {error}
         </div>
       )}
@@ -202,12 +202,12 @@ function TwoFactorPanel({ me, reloadMe }) {
   };
 
   return (
-    <div style={{background:'#0d1117',border:'1px solid #30363d',borderRadius:'8px',padding:'1.25rem 1.5rem',margin:'1.25rem 0 0'}}>
+    <div style={{background:'var(--mg-surface-2)',border:'1px solid var(--mg-border)',borderRadius:'8px',padding:'1.25rem 1.5rem',margin:'1.25rem 0 0'}}>
       <p style={{margin:'0 0 0.5rem',fontWeight:600}}>
         Zwei-Faktor-Authentifizierung (TOTP)
         {me.two_fa_enabled && <span className="mg-pill mg-pill--ok" style={{marginLeft:8}}>✓ aktiv</span>}
       </p>
-      <p style={{margin:'0 0 0.8rem',color:'#8b949e',fontSize:'0.95rem'}}>
+      <p style={{margin:'0 0 0.8rem',color:'var(--mg-muted)',fontSize:'0.95rem'}}>
         Zusätzlicher 6-stelliger Code aus deiner Authenticator-App (Google Authenticator, Authy, 1Password, Bitwarden) bei jedem Login. Schützt vor Account-Takeover auch bei Passwort-Leak.
       </p>
 
@@ -221,8 +221,8 @@ function TwoFactorPanel({ me, reloadMe }) {
         <form onSubmit={activate} style={{marginTop:'1rem',display:'flex',flexDirection:'column',gap:'0.75rem',alignItems:'flex-start'}}>
           <p style={{margin:0,fontSize:'0.95rem'}}>1. Scanne den QR mit deiner Authenticator-App:</p>
           <img src={setupData.qr_url} alt="2FA-QR" width={200} height={200} style={{background:'#fff',padding:'6px',borderRadius:'6px'}} />
-          <p style={{margin:0,fontSize:'0.85rem',color:'#8b949e'}}>
-            Alternativ Secret eintippen: <code style={{background:'#161b22',padding:'2px 6px',borderRadius:'3px',fontSize:'0.9rem'}}>{setupData.secret}</code>
+          <p style={{margin:0,fontSize:'0.85rem',color:'var(--mg-muted)'}}>
+            Alternativ Secret eintippen: <code style={{background:'var(--mg-surface)',padding:'2px 6px',borderRadius:'3px',fontSize:'0.9rem'}}>{setupData.secret}</code>
           </p>
           <label style={{width:'100%'}}>2. Gib den aktuellen 6-stelligen Code ein:
             <input
@@ -234,7 +234,7 @@ function TwoFactorPanel({ me, reloadMe }) {
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
               placeholder="123 456"
-              style={{display:'block',marginTop:4,padding:'0.5rem 0.75rem',fontFamily:'var(--mg-mono)',letterSpacing:'0.2em',fontSize:'1.2rem',textAlign:'center',width:'180px',background:'#0d1117',border:'1px solid #30363d',color:'#f0f6fc',borderRadius:4}}
+              style={{display:'block',marginTop:4,padding:'0.5rem 0.75rem',fontFamily:'var(--mg-mono)',letterSpacing:'0.2em',fontSize:'1.2rem',textAlign:'center',width:'180px',background:'var(--mg-surface-2)',border:'1px solid var(--mg-border)',color:'var(--mg-fg)',borderRadius:4}}
             />
           </label>
           <div style={{display:'flex',gap:8}}>
@@ -247,12 +247,12 @@ function TwoFactorPanel({ me, reloadMe }) {
       )}
 
       {backupCodes && (
-        <div style={{marginTop:'1rem',padding:'1rem',background:'rgba(63,185,80,0.08)',border:'1px solid #3fb950',borderRadius:'6px'}}>
-          <p style={{margin:'0 0 0.5rem',fontWeight:600,color:'#3fb950'}}>✓ 2FA aktiviert — bitte Backup-Codes sichern!</p>
-          <p style={{margin:'0 0 0.6rem',fontSize:'0.9rem',color:'#8b949e'}}>
+        <div style={{marginTop:'1rem',padding:'1rem',background:'rgba(63,185,80,0.08)',border:'1px solid var(--mg-ok)',borderRadius:'6px'}}>
+          <p style={{margin:'0 0 0.5rem',fontWeight:600,color:'var(--mg-ok)'}}>✓ 2FA aktiviert — bitte Backup-Codes sichern!</p>
+          <p style={{margin:'0 0 0.6rem',fontSize:'0.9rem',color:'var(--mg-muted)'}}>
             Diese Codes werden dir NUR EINMAL angezeigt. Speichere sie in deinem Passwort-Manager. Jeder Code ist einmal verwendbar als Ersatz für den App-Code wenn du dein Handy nicht hast.
           </p>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6,fontFamily:'var(--mg-mono)',fontSize:'1rem',letterSpacing:'0.08em',background:'#0d1117',padding:12,borderRadius:4}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6,fontFamily:'var(--mg-mono)',fontSize:'1rem',letterSpacing:'0.08em',background:'var(--mg-surface)',padding:12,borderRadius:4}}>
             {backupCodes.map((c, i) => <div key={i}>{c}</div>)}
           </div>
           <button className="mg-btn" style={{marginTop:8}} onClick={() => setBackupCodes(null)}>Verstanden</button>
@@ -269,7 +269,7 @@ function TwoFactorPanel({ me, reloadMe }) {
             value={disablingCode}
             onChange={(e) => setDisablingCode(e.target.value.replace(/\D/g, ''))}
             placeholder="Code für Deaktivierung"
-            style={{padding:'0.4rem 0.6rem',fontFamily:'var(--mg-mono)',background:'#0d1117',border:'1px solid #30363d',color:'#f0f6fc',borderRadius:4,width:200}}
+            style={{padding:'0.4rem 0.6rem',fontFamily:'var(--mg-mono)',background:'var(--mg-surface-2)',border:'1px solid var(--mg-border)',color:'var(--mg-fg)',borderRadius:4,width:200}}
           />
           <button className="mg-btn" disabled={busy || !disablingCode} onClick={disable} style={{color:'var(--mg-err)'}}>
             {busy ? '…' : '2FA deaktivieren'}

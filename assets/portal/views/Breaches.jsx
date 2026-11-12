@@ -90,11 +90,11 @@ function BreachRow({ it }) {
           <strong style={{fontSize:'1.1rem'}}>{it.breach_name || '(unbekannter Leak)'}</strong>
           {unread && <span className="mg-pill mg-pill--err" style={{marginLeft:8}}>NEU</span>}
         </div>
-        <span className="mg-mono" style={{color:'#8b949e',fontSize:'0.9rem'}}>
+        <span className="mg-mono" style={{color:'var(--mg-muted)',fontSize:'0.9rem'}}>
           {it.breach_date ? String(it.breach_date).slice(0,10) : '—'}
         </span>
       </div>
-      <div style={{marginTop:6,color:'#8b949e',fontSize:'0.95rem'}}>
+      <div style={{marginTop:6,color:'var(--mg-muted)',fontSize:'0.95rem'}}>
         Betroffene Adresse: <code>{it.email}</code>
         {count > 0 && <> · <strong>{count.toLocaleString('de-DE')}</strong> Datensaetze geleakt</>}
       </div>
@@ -105,8 +105,8 @@ function BreachRow({ it }) {
           ))}
         </div>
       )}
-      <div style={{marginTop:10,fontSize:'0.9rem',color:'#8b949e'}}>
-        <strong style={{color:'#f0f6fc'}}>Handlungsempfehlung:</strong>{' '}
+      <div style={{marginTop:10,fontSize:'0.9rem',color:'var(--mg-muted)'}}>
+        <strong style={{color:'var(--mg-fg)'}}>Handlungsempfehlung:</strong>{' '}
         Passwort fuer <code>{it.email}</code> aendern, ueberall wo es ggf. wiederverwendet wurde.
         2FA aktivieren (siehe Plan-Seite) falls noch nicht geschehen.
       </div>

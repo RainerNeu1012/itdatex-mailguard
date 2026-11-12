@@ -120,15 +120,15 @@ export default function Login({ route }) {
         {twoFaRequired && !resetMode && (
           <div style={{marginTop:'0.75rem',fontSize:'0.9rem',textAlign:'center'}}>
             <a href="#" onClick={(e) => { e.preventDefault(); setResetMode('request'); setResetInfo(null); setResetError(null); }}
-               style={{color:'#8b949e'}}>
+               style={{color:'var(--mg-muted)'}}>
               2FA verloren? Code per E-Mail anfordern
             </a>
           </div>
         )}
 
         {resetMode === 'request' && (
-          <div style={{marginTop:'0.75rem',padding:'0.85rem 1rem',background:'rgba(139,148,158,0.08)',border:'1px solid #30363d',borderRadius:'6px'}}>
-            <p style={{margin:'0 0 0.6rem',fontSize:'0.9rem',color:'#8b949e'}}>
+          <div style={{marginTop:'0.75rem',padding:'0.85rem 1rem',background:'var(--mg-surface-2)',border:'1px solid var(--mg-border)',borderRadius:'6px'}}>
+            <p style={{margin:'0 0 0.6rem',fontSize:'0.9rem',color:'var(--mg-muted)'}}>
               Wir schicken einen 6-stelligen Reset-Code an <strong>{email || 'deine E-Mail'}</strong>. Nach Bestaetigung wird die Zwei-Faktor-Authentifizierung entfernt.
             </p>
             <div style={{display:'flex',gap:8}}>
@@ -142,8 +142,8 @@ export default function Login({ route }) {
         )}
 
         {resetMode === 'confirm' && (
-          <div style={{marginTop:'0.75rem',padding:'0.85rem 1rem',background:'rgba(139,148,158,0.08)',border:'1px solid #30363d',borderRadius:'6px'}}>
-            {resetInfo && <p style={{margin:'0 0 0.6rem',fontSize:'0.9rem',color:'#8b949e'}}>{resetInfo}</p>}
+          <div style={{marginTop:'0.75rem',padding:'0.85rem 1rem',background:'var(--mg-surface-2)',border:'1px solid var(--mg-border)',borderRadius:'6px'}}>
+            {resetInfo && <p style={{margin:'0 0 0.6rem',fontSize:'0.9rem',color:'var(--mg-muted)'}}>{resetInfo}</p>}
             <input
               type="text"
               inputMode="numeric"
@@ -152,7 +152,7 @@ export default function Login({ route }) {
               value={resetCode}
               onChange={(e) => setResetCode(e.target.value.replace(/\D/g, ''))}
               placeholder="123 456"
-              style={{ width:'100%',padding:'0.5rem 0.75rem',fontFamily:'var(--mg-mono)',letterSpacing:'0.2em',fontSize:'1.2rem',textAlign:'center',background:'#0d1117',border:'1px solid #30363d',color:'#f0f6fc',borderRadius:4 }}
+              style={{ width:'100%',padding:'0.5rem 0.75rem',fontFamily:'var(--mg-mono)',letterSpacing:'0.2em',fontSize:'1.2rem',textAlign:'center',background:'var(--mg-surface)',border:'1px solid var(--mg-border)',color:'var(--mg-fg)',borderRadius:4 }}
             />
             <div style={{display:'flex',gap:8,marginTop:8}}>
               <button type="button" className="mg-btn mg-btn--primary" disabled={resetBusy || resetCode.length !== 6} onClick={confirmReset}>
@@ -165,8 +165,8 @@ export default function Login({ route }) {
         )}
 
         {resetMode === 'done' && (
-          <div style={{marginTop:'0.75rem',padding:'0.85rem 1rem',background:'rgba(63,185,80,0.08)',border:'1px solid #3fb950',borderRadius:'6px'}}>
-            <p style={{margin:0,color:'#3fb950',fontSize:'0.95rem'}}>✓ {resetInfo}</p>
+          <div style={{marginTop:'0.75rem',padding:'0.85rem 1rem',background:'rgba(63,185,80,0.08)',border:'1px solid var(--mg-ok)',borderRadius:'6px'}}>
+            <p style={{margin:0,color:'var(--mg-ok)',fontSize:'0.95rem'}}>✓ {resetInfo}</p>
           </div>
         )}
 
