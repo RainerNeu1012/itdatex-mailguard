@@ -89,7 +89,7 @@ final class Plugin {
 			wp_schedule_event( time() + 3600, 'hourly', 'itdatex_mailguard_digest' );
 		}
 		if ( ! wp_next_scheduled( 'itdatex_mailguard_breach_check' ) ) {
-			wp_schedule_event( time() + 7200, 'daily', 'itdatex_mailguard_breach_check' );
+			wp_schedule_event( time() + 7200, 'hourly', 'itdatex_mailguard_breach_check' );
 		}
 	}
 

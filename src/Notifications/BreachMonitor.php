@@ -137,7 +137,10 @@ final class BreachMonitor {
 		foreach ( $details as $b ) {
 			$name = (string) ( $b['breach'] ?? '' );
 			if ( $name === '' ) { continue; }
-			$date = (string) ( $b['xposed_date'] ?? '' );
+			$date = self::normalize_breach_date(
+				(string) ( $b['xposed_date'] ?? '' ),
+				(string) ( $b['added'] ?? '' )
+			);
 			$count = isset( $b['xposed_records'] ) ? (int) $b['xposed_records'] : null;
 			$dc = (string) ( $b['xposed_data'] ?? '' );
 			$out[] = [
@@ -150,6 +153,29 @@ final class BreachMonitor {
 		return $out;
 	}
 
+	/**
+	 * XposedOrNot liefert `xposed_date` meist als Jahr ("2025"),
+	 * manchmal als YYYY-MM oder YYYY-MM-DD. `added` ist ein voller ISO-Timestamp.
+	 * Rueckgabe: YYYY-MM-DD oder null.
+	 */
+	private static function normalize_breach_date( string $xposed, string $added ) : ?string {
+		$x = trim( $xposed );
+		if ( preg_match( '/^(\d{4})-(\d{2})-(\d{2})/', $x, $m ) ) {
+			return $m[1] . '-' . $m[2] . '-' . $m[3];
+		}
+		if ( preg_match( '/^(\d{4})-(\d{2})$/', $x, $m ) ) {
+			return $m[1] . '-' . $m[2] . '-01';
+		}
+		if ( preg_match( '/^(\d{4})$/', $x, $m ) ) {
+			return $m[1] . '-01-01';
+		}
+		// Fallback: `added` ist ISO 8601 (z.B. "2026-06-15T05:23:45+00:00")
+		if ( preg_match( '/^(\d{4}-\d{2}-\d{2})/', $added, $m ) ) {
+			return $m[1];
+		}
+		return null;
+	}
+
 	private static function persist_breaches( int $customer_id, string $email, array $breaches ) : void {
 		if ( ! $breaches ) { return; }
 		global $wpdb;
@@ -157,18 +183,32 @@ final class BreachMonitor {
 		$now = gmdate( 'Y-m-d H:i:s' );
 		foreach ( $breaches as $b ) {
 			// UNIQUE key macht das idempotent — alter Treffer wird nicht neu geloggt
-			$wpdb->query( $wpdb->prepare(
-				"INSERT IGNORE INTO {$t}
-				 (customer_id, email, breach_name, breach_date, pwned_count, data_classes, created_at)
-				 VALUES (%d, %s, %s, %s, %d, %s, %s)",
-				$customer_id,
-				$email,
-				mb_substr( $b['name'], 0, 190 ),
-				$b['date'] !== '' ? substr( $b['date'], 0, 10 ) : null,
-				$b['count'] ?? 0,
-				mb_substr( $b['data_classes'], 0, 500 ),
-				$now
-			) );
+			if ( $b['date'] !== null ) {
+				$wpdb->query( $wpdb->prepare(
+					"INSERT IGNORE INTO {$t}
+					 (customer_id, email, breach_name, breach_date, pwned_count, data_classes, created_at)
+					 VALUES (%d, %s, %s, %s, %d, %s, %s)",
+					$customer_id,
+					$email,
+					mb_substr( $b['name'], 0, 190 ),
+					$b['date'],
+					$b['count'] ?? 0,
+					mb_substr( $b['data_classes'], 0, 500 ),
+					$now
+				) );
+			} else {
+				$wpdb->query( $wpdb->prepare(
+					"INSERT IGNORE INTO {$t}
+					 (customer_id, email, breach_name, pwned_count, data_classes, created_at)
+					 VALUES (%d, %s, %s, %d, %s, %s)",
+					$customer_id,
+					$email,
+					mb_substr( $b['name'], 0, 190 ),
+					$b['count'] ?? 0,
+					mb_substr( $b['data_classes'], 0, 500 ),
+					$now
+				) );
+			}
 		}
 	}
 }
