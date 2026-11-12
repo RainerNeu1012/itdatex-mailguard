@@ -130,6 +130,38 @@ final class TwoFA {
 		return $v !== null && $v !== '';
 	}
 
+	/**
+	 * "2FA verloren" — Flow Schritt 1: Code per Mail an die hinterlegte Login-Adresse schicken.
+	 * Gibt immer true zurueck (keine Account-Enumeration). Rate-Limit kommt vom Controller.
+	 * Code = 6 Digits, Transient 15 Min TTL. Nur gesendet wenn Customer existiert UND 2FA aktiv.
+	 */
+	public static function request_reset( string $email ) : void {
+		$row = Account::find_by_email( strtolower( trim( $email ) ) );
+		if ( ! $row ) { return; }
+		$cid = (int) $row['id'];
+		if ( ! self::is_enabled_for_customer( $cid ) ) { return; }
+		$code = sprintf( '%06d', random_int( 0, 999999 ) );
+		set_transient( 'mg_2fa_reset_' . $cid, $code, 15 * MINUTE_IN_SECONDS );
+		Mailer::send_2fa_reset( (string) $row['email'], $code );
+	}
+
+	/**
+	 * "2FA verloren" — Flow Schritt 2: Code aus Mail + Email pruefen, 2FA ausschalten.
+	 * Rueckgabe false = Code falsch/abgelaufen oder Email unbekannt.
+	 */
+	public static function confirm_reset( string $email, string $code ) : bool {
+		$row = Account::find_by_email( strtolower( trim( $email ) ) );
+		if ( ! $row ) { return false; }
+		$cid = (int) $row['id'];
+		$stored = (string) get_transient( 'mg_2fa_reset_' . $cid );
+		$code   = preg_replace( '/\D/', '', $code );
+		if ( $stored === '' || strlen( $code ) !== 6 ) { return false; }
+		if ( ! hash_equals( $stored, $code ) ) { return false; }
+		delete_transient( 'mg_2fa_reset_' . $cid );
+		self::disable_for_customer( $cid );
+		return true;
+	}
+
 	// --- Internal helpers ---
 
 	private static function totp_at( string $base32_secret, int $time_slice ) : string {

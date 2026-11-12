@@ -12,6 +12,12 @@ export default function Login({ route }) {
   const [twoFaRequired, setTwoFaRequired] = useState(false);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
+  // Reset-Flow: 'request' (Code anfordern) | 'confirm' (Code aus Mail eingeben) | 'done'
+  const [resetMode, setResetMode] = useState(null);
+  const [resetCode, setResetCode] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetInfo, setResetInfo] = useState(null);
+  const [resetError, setResetError] = useState(null);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -45,6 +51,35 @@ export default function Login({ route }) {
       setTwoFaCode('');
     } catch (e) { setError(String(e)); }
     finally     { setLoading(false); }
+  };
+
+  const requestReset = async () => {
+    setResetBusy(true); setResetError(null);
+    try {
+      await apiPost('2fa/reset-request', { email });
+      setResetMode('confirm');
+      setResetInfo('Wir haben dir einen 6-stelligen Code an ' + email + ' geschickt. Code gueltig 15 Minuten.');
+    } catch (e) {
+      setResetError(String(e));
+    } finally { setResetBusy(false); }
+  };
+
+  const confirmReset = async () => {
+    setResetBusy(true); setResetError(null);
+    try {
+      const { status, body } = await apiPost('2fa/reset-confirm', { email, code: resetCode });
+      if (status === 200 && body?.ok) {
+        setResetMode('done');
+        setResetInfo('2FA wurde entfernt. Melde dich jetzt mit E-Mail + Passwort an.');
+        setTwoFaRequired(false);
+        setTwoFaCode('');
+        setError(null);
+      } else {
+        setResetError('Code falsch oder abgelaufen. Neuen Code anfordern?');
+      }
+    } catch (e) {
+      setResetError(String(e));
+    } finally { setResetBusy(false); }
   };
 
   const pluginUrl = (window.itdatexMailguard || {}).pluginUrl || '';
@@ -81,6 +116,60 @@ export default function Login({ route }) {
         <button type="submit" className="mg-btn mg-btn--primary mg-auth__submit" disabled={loading || (twoFaRequired && twoFaCode.length < 6)}>
           {loading ? '…' : (twoFaRequired ? 'Code bestätigen' : 'Anmelden')}
         </button>
+
+        {twoFaRequired && !resetMode && (
+          <div style={{marginTop:'0.75rem',fontSize:'0.9rem',textAlign:'center'}}>
+            <a href="#" onClick={(e) => { e.preventDefault(); setResetMode('request'); setResetInfo(null); setResetError(null); }}
+               style={{color:'#8b949e'}}>
+              2FA verloren? Code per E-Mail anfordern
+            </a>
+          </div>
+        )}
+
+        {resetMode === 'request' && (
+          <div style={{marginTop:'0.75rem',padding:'0.85rem 1rem',background:'rgba(139,148,158,0.08)',border:'1px solid #30363d',borderRadius:'6px'}}>
+            <p style={{margin:'0 0 0.6rem',fontSize:'0.9rem',color:'#8b949e'}}>
+              Wir schicken einen 6-stelligen Reset-Code an <strong>{email || 'deine E-Mail'}</strong>. Nach Bestaetigung wird die Zwei-Faktor-Authentifizierung entfernt.
+            </p>
+            <div style={{display:'flex',gap:8}}>
+              <button type="button" className="mg-btn mg-btn--primary" disabled={resetBusy || !email} onClick={requestReset}>
+                {resetBusy ? '…' : 'Code anfordern'}
+              </button>
+              <button type="button" className="mg-btn" onClick={() => { setResetMode(null); setResetError(null); }}>Abbrechen</button>
+            </div>
+            {resetError && <div className="mg-error" style={{marginTop:8}}>{resetError}</div>}
+          </div>
+        )}
+
+        {resetMode === 'confirm' && (
+          <div style={{marginTop:'0.75rem',padding:'0.85rem 1rem',background:'rgba(139,148,158,0.08)',border:'1px solid #30363d',borderRadius:'6px'}}>
+            {resetInfo && <p style={{margin:'0 0 0.6rem',fontSize:'0.9rem',color:'#8b949e'}}>{resetInfo}</p>}
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              value={resetCode}
+              onChange={(e) => setResetCode(e.target.value.replace(/\D/g, ''))}
+              placeholder="123 456"
+              style={{ width:'100%',padding:'0.5rem 0.75rem',fontFamily:'var(--mg-mono)',letterSpacing:'0.2em',fontSize:'1.2rem',textAlign:'center',background:'#0d1117',border:'1px solid #30363d',color:'#f0f6fc',borderRadius:4 }}
+            />
+            <div style={{display:'flex',gap:8,marginTop:8}}>
+              <button type="button" className="mg-btn mg-btn--primary" disabled={resetBusy || resetCode.length !== 6} onClick={confirmReset}>
+                {resetBusy ? '…' : '2FA entfernen'}
+              </button>
+              <button type="button" className="mg-btn" onClick={() => { setResetMode(null); setResetCode(''); setResetError(null); }}>Abbrechen</button>
+            </div>
+            {resetError && <div className="mg-error" style={{marginTop:8}}>{resetError}</div>}
+          </div>
+        )}
+
+        {resetMode === 'done' && (
+          <div style={{marginTop:'0.75rem',padding:'0.85rem 1rem',background:'rgba(63,185,80,0.08)',border:'1px solid #3fb950',borderRadius:'6px'}}>
+            <p style={{margin:0,color:'#3fb950',fontSize:'0.95rem'}}>✓ {resetInfo}</p>
+          </div>
+        )}
+
         <div className="mg-auth__links">
           <a href="#" onClick={(e) => { e.preventDefault(); navigate('forgot-password'); }}>Passwort vergessen?</a>
           <span className="mg-auth__dot" aria-hidden="true">·</span>

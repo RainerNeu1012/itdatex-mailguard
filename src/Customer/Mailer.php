@@ -115,6 +115,27 @@ final class Mailer {
 		return self::send( $email, $subject, $text, $html );
 	}
 
+	public static function send_2fa_reset( string $email, string $code ) : bool {
+		$subject = sprintf( __( '[%s] Zwei-Faktor-Reset — Code', 'itdatex-mailguard' ), get_bloginfo( 'name' ) );
+		$text = sprintf(
+			__( "Du hast einen 2FA-Reset angefordert.\n\nDein Einmal-Code (gueltig 15 Minuten):\n\n  %s\n\nGib den Code im Login-Fenster unter \"2FA verloren?\" ein. Nach Bestaetigung wird die Zwei-Faktor-Authentifizierung entfernt und du kannst dich wieder nur mit Email + Passwort anmelden.\n\nFalls du das nicht warst, ignoriere diese Mail — dein 2FA bleibt aktiv.", 'itdatex-mailguard' ),
+			$code
+		);
+		$html = MailTemplate::render(
+			'Dein 2FA-Reset-Code ist 15 Minuten gültig.',
+			'TWOFA-RESET',
+			'Zwei-Faktor zurücksetzen',
+			'Du hast einen 2FA-Reset angefordert. Gib diesen Einmal-Code im Login-Fenster unter <em>"2FA verloren?"</em> ein — danach ist die Zwei-Faktor-Authentifizierung entfernt.',
+			[],
+			[
+				'CODE &middot; <span style="font-family:ui-monospace,Menlo,monospace;font-size:1.4rem;letter-spacing:0.2em">' . esc_html( $code ) . '</span>',
+				'GÜLTIG &middot; 15 MINUTEN',
+			],
+			'Falls du das nicht warst, ignoriere diese Mail — dein 2FA bleibt aktiv.'
+		);
+		return self::send( $email, $subject, $text, $html );
+	}
+
 	public static function send_password_reset( string $email, string $token ) : bool {
 		$url_web = self::portal_url( 'reset-password?token=' . rawurlencode( $token ) );
 		$url_app = self::app_deep_link( 'reset', $token );

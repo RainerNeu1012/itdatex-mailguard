@@ -129,6 +129,18 @@ final class Controller {
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'me_2fa_activate' ],
 		] );
+		register_rest_route( self::NAMESPACE, '/2fa/reset-request', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'two_fa_reset_request' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/2fa/reset-confirm', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'two_fa_reset_confirm' ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/me/2fa/disable', [
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
@@ -3477,6 +3489,34 @@ HTML;
 		delete_transient( 'mg_2fa_pending_' . $cid );
 		$backup = \Itdatex\Mailguard\Customer\TwoFA::enable_for_customer( $cid, $pending );
 		return new WP_REST_Response( [ 'ok' => true, 'backup_codes' => $backup ], 200 );
+	}
+
+	/**
+	 * "2FA verloren" — Schritt 1: Code an die hinterlegte Mail senden. Immer OK-Response
+	 * (keine Enumeration). Rate-Limit: 5 Versuche / Stunde pro IP.
+	 */
+	public static function two_fa_reset_request( WP_REST_Request $req ) {
+		if ( $err = self::throttle_auth( 'twofa_reset_req', 5, 3600 ) ) { return $err; }
+		$json  = (array) $req->get_json_params();
+		$email = (string) ( $json['email'] ?? '' );
+		\Itdatex\Mailguard\Customer\TwoFA::request_reset( $email );
+		return new WP_REST_Response( [ 'ok' => true ], 200 );
+	}
+
+	/**
+	 * "2FA verloren" — Schritt 2: Code + Email → 2FA entfernen.
+	 * Rate-Limit: 10 Versuche / 10 Minuten pro IP (verhindert 6-Digit-Brute-Force).
+	 */
+	public static function two_fa_reset_confirm( WP_REST_Request $req ) {
+		if ( $err = self::throttle_auth( 'twofa_reset_conf', 10, 600 ) ) { return $err; }
+		$json  = (array) $req->get_json_params();
+		$email = (string) ( $json['email'] ?? '' );
+		$code  = (string) ( $json['code'] ?? '' );
+		$ok = \Itdatex\Mailguard\Customer\TwoFA::confirm_reset( $email, $code );
+		if ( ! $ok ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'invalid_or_expired' ], 400 );
+		}
+		return new WP_REST_Response( [ 'ok' => true ], 200 );
 	}
 
 	public static function me_2fa_disable( WP_REST_Request $req ) {
