@@ -718,7 +718,20 @@ final class ImapClient {
 	public function fetch_body_text( int $uid, int $max = 100000 ) : string {
 		$structure = @imap_fetchstructure( $this->stream, $uid, FT_UID );
 		if ( ! $structure ) { return ''; }
-		return $this->extract_text_preview( $uid, $structure, $max );
+		$preview = $this->extract_text_preview( $uid, $structure, $max );
+		if ( $preview !== '' ) { return $preview; }
+		// Fallback: imap_body() fuer Microsoft-Office365-Mails wo BODYSTRUCTURE
+		// scheinbar OK ist aber imap_fetchbody() an der angegebenen Part-Nummer
+		// leer liefert.
+		$raw = self::fallback_imap_body( $this->stream, $uid, 0 );
+		if ( $raw === '' ) { return ''; }
+		// Heuristik: wenn HTML-Tags enthalten, als HTML-text zu text extrahieren
+		if ( stripos( $raw, '<html' ) !== false || stripos( $raw, '<body' ) !== false ) {
+			$plain = html_entity_decode( strip_tags( $raw ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+			$plain = (string) preg_replace( '/\s+/', ' ', $plain );
+			return trim( mb_substr( $plain, 0, $max ) );
+		}
+		return trim( mb_substr( $raw, 0, $max ) );
 	}
 
 	/**
@@ -737,7 +750,16 @@ final class ImapClient {
 		if ( empty( $structure->parts ) ) {
 			$raw = (string) @imap_fetchbody( $this->stream, $uid, '1', FT_UID );
 			$decoded = $this->decode_part( $raw, (int) ( $structure->encoding ?? 0 ) );
-			return [ 'format' => 'text', 'body' => mb_substr( $decoded, 0, $max ) ];
+			if ( $decoded === '' ) {
+				// Fallback: Outlook365 liefert fuer manche einfache Mails BODYSTRUCTURE
+				// mit parts=[] UND imap_fetchbody($num='1') = leer. imap_body() liefert
+				// dann den vollstaendigen Raw-Body. Heuristisch decoden.
+				$decoded = self::fallback_imap_body( $this->stream, $uid, (int) ( $structure->encoding ?? 0 ) );
+			}
+			$subtype = strtolower( (string) ( $structure->subtype ?? '' ) );
+			$fmt = $subtype === 'html' ? 'html' : 'text';
+			$body = $fmt === 'html' ? self::sanitize_html_body( $decoded ) : $decoded;
+			return [ 'format' => $fmt, 'body' => mb_substr( $body, 0, $max ) ];
 		}
 
 		$best_plain = null; $best_html = null;
@@ -760,14 +782,80 @@ final class ImapClient {
 		if ( $best_html !== null ) {
 			$body = (string) @imap_fetchbody( $this->stream, $uid, $best_html[0], FT_UID );
 			$decoded = $this->decode_part( $body, $best_html[1] );
-			return [ 'format' => 'html', 'body' => mb_substr( self::sanitize_html_body( $decoded ), 0, $max ) ];
+			if ( $decoded !== '' ) {
+				return [ 'format' => 'html', 'body' => mb_substr( self::sanitize_html_body( $decoded ), 0, $max ) ];
+			}
 		}
 		if ( $best_plain !== null ) {
 			$body = (string) @imap_fetchbody( $this->stream, $uid, $best_plain[0], FT_UID );
 			$decoded = $this->decode_part( $body, $best_plain[1] );
-			return [ 'format' => 'text', 'body' => mb_substr( $decoded, 0, $max ) ];
+			if ( $decoded !== '' ) {
+				return [ 'format' => 'text', 'body' => mb_substr( $decoded, 0, $max ) ];
+			}
+		}
+
+		// Letzter Fallback: nutze die identische Logik die beim PULL funktioniert
+		// (extract_text_preview hat für diese Mails korrekte body_preview geliefert
+		// — also kann derselbe Code hier auch den Vollbody liefern). Microsoft-
+		// Office365 reagiert manchmal auf imap_fetchbody($num, FT_UID) mit '',
+		// während extract_text_preview's Nummern-Pick klappt — vermutlich eine
+		// Session-State-Sache.
+		$preview = $this->extract_text_preview( $uid, $structure, $max );
+		if ( $preview !== '' ) {
+			return [ 'format' => 'text', 'body' => mb_substr( $preview, 0, $max ) ];
+		}
+
+		// Fallback wenn Walker nichts findet ODER die gefundenen Parts leer waren:
+		// imap_body() holt den vollstaendigen Body als einen String. Content-Type-
+		// Erkennung ueber BODYSTRUCTURE-Hinweis auf erste Text-Alternative.
+		$fallback = self::fallback_imap_body( $this->stream, $uid, 0 );
+		if ( $fallback !== '' ) {
+			// Heuristik: wenn Fallback HTML-Tags enthaelt, format=html, sonst text
+			$fmt = ( stripos( $fallback, '<html' ) !== false || stripos( $fallback, '<body' ) !== false || stripos( $fallback, '<div' ) !== false )
+				? 'html' : 'text';
+			$body = $fmt === 'html' ? self::sanitize_html_body( $fallback ) : $fallback;
+			return [ 'format' => $fmt, 'body' => mb_substr( $body, 0, $max ) ];
 		}
 		return [ 'format' => 'text', 'body' => '' ];
+	}
+
+	/**
+	 * Letzter Fallback: imap_body() auf UID. Microsoft Office365 liefert
+	 * BODYSTRUCTURE mit parts-Angabe, aber imap_fetchbody() gegen die
+	 * angegebenen Teil-Nummern kommt leer zurueck. Direkter imap_body()
+	 * holt dann trotzdem den Raw-Rohbody. Wir versuchen Standard-
+	 * Decodings (quoted-printable / base64) und geben den ersten nicht-
+	 * leeren Treffer zurueck.
+	 */
+	private static function fallback_imap_body( $stream, int $uid, int $encoding_hint ) : string {
+		$raw = (string) @imap_body( $stream, $uid, FT_UID );
+		if ( $raw === '' ) { return ''; }
+
+		// Content-Transfer-Encoding aus Header raten falls encoding_hint=0
+		$encodings_to_try = [];
+		if ( $encoding_hint > 0 ) { $encodings_to_try[] = $encoding_hint; }
+		$encodings_to_try[] = 4; // QUOTED-PRINTABLE
+		$encodings_to_try[] = 3; // BASE64
+		$encodings_to_try[] = 0; // 7BIT (keine Decoding)
+
+		foreach ( $encodings_to_try as $enc ) {
+			$decoded = match ( $enc ) {
+				3       => (string) @base64_decode( $raw, false ),
+				4       => (string) @quoted_printable_decode( $raw ),
+				default => $raw,
+			};
+			$decoded = trim( $decoded );
+			if ( $decoded !== '' && mb_check_encoding( $decoded, 'UTF-8' ) ) {
+				return $decoded;
+			}
+			// Nicht UTF-8 → versuch 8bit zu UTF-8 zu konvertieren
+			if ( $decoded !== '' ) {
+				$conv = @mb_convert_encoding( $decoded, 'UTF-8', 'auto' );
+				if ( is_string( $conv ) && $conv !== '' ) { return $conv; }
+			}
+		}
+		// Trotzdem leer? Dann raw
+		return $raw;
 	}
 
 	/**

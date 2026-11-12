@@ -2363,14 +2363,31 @@ final class Controller {
 			], 200 );
 		}
 
+		// Fallback: wenn Live-Fetch leer blieb (Microsoft-OAuth-Session-Issue,
+		// Mail hat echt keinen Body-Part etc.) nutze den beim Pull extrahierten
+		// body_preview aus mg_messages. Der ist zwar auf 500 Zeichen gecappt,
+		// gibt dem User aber wenigstens den Mail-Inhalt statt leerer Fläche.
+		$body_out   = (string) $result['body'];
+		$format_out = (string) $result['format'];
+		$source     = 'live';
+		if ( $body_out === '' ) {
+			$preview = (string) ( $msg['body_preview'] ?? '' );
+			if ( $preview !== '' ) {
+				$body_out   = $preview;
+				$format_out = 'text';
+				$source     = 'db_preview';
+			}
+		}
+
 		return new WP_REST_Response( [
 			'ok'        => true,
-			'format'    => $result['format'],
-			'body'      => $result['body'],
+			'format'    => $format_out,
+			'body'      => $body_out,
 			// Legacy Rueckwaerts-Kompatibilitaet fuer v0.40.0-Clients:
-			'body_text' => $result['format'] === 'text' ? $result['body'] : '',
-			'length'    => mb_strlen( $result['body'] ),
-			'truncated' => mb_strlen( $result['body'] ) >= ( $want_html ? 500000 : 100000 ),
+			'body_text' => $format_out === 'text' ? $body_out : '',
+			'length'    => mb_strlen( $body_out ),
+			'truncated' => $source === 'live' && mb_strlen( $body_out ) >= ( $want_html ? 500000 : 100000 ),
+			'source'    => $source,
 		], 200 );
 	}
 
