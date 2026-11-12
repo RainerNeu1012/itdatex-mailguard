@@ -113,6 +113,18 @@ final class Controller {
 			'callback'            => [ __CLASS__, 'me_activity' ],
 		] );
 
+		register_rest_route( self::NAMESPACE, '/me/trusted-devices', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_trusted_devices_list' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/trusted-devices/(?P<id>\d+)', [
+			'methods'             => 'DELETE',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_trusted_devices_revoke' ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/me/sessions/revoke-all-others', [
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
@@ -2748,13 +2760,28 @@ final class Controller {
 		return self::respond( $res );
 	}
 
+	public static function me_trusted_devices_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		return new WP_REST_Response( [ 'ok' => true, 'items' => \Itdatex\Mailguard\Customer\TrustDevice::list_for_customer( $cid ) ], 200 );
+	}
+
+	public static function me_trusted_devices_revoke( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req->get_param( 'id' );
+		$ok = \Itdatex\Mailguard\Customer\TrustDevice::revoke( $id, $cid );
+		return new WP_REST_Response( [ 'ok' => $ok ], $ok ? 200 : 404 );
+	}
+
 	public static function login( WP_REST_Request $req ) {
 		if ( $err = self::throttle_auth( 'login', 10, 300 ) ) { return $err; }
 		$json     = (array) $req->get_json_params();
 		$email    = (string) ( $json['email'] ?? '' );
 		$password = (string) ( $json['password'] ?? '' );
 		$two_fa   = (string) ( $json['two_fa_code'] ?? '' );
-		$res = Auth::login( $email, $password, $two_fa );
+		$remember = ! empty( $json['remember_device'] );
+		$res = Auth::login( $email, $password, $two_fa, $remember );
 		return self::respond( $res );
 	}
 

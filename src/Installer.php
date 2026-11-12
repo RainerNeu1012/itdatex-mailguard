@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 35;
+	public const CURRENT_DB_VERSION = 36;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -41,6 +41,7 @@ final class Installer {
 	public const TABLE_SHARED_RULES         = 'mg_shared_rules';
 	public const TABLE_SHARED_RULE_OPTOUTS  = 'mg_shared_rule_optouts';
 	public const TABLE_AUDIT_LOG            = 'mg_audit_log';
+	public const TABLE_TRUSTED_DEVICES      = 'mg_trusted_devices';
 
 	public const CRON_UNDO_EXPIRY_HOOK = 'itdatex_mailguard_undo_expiry_check';
 
@@ -625,6 +626,26 @@ final class Installer {
 			KEY idx_rule (shared_rule_id)
 		) {$charset};";
 
+		// Trust-Device: 30-Tage-Cookie das die 2FA-Challenge ueberspringt. device_hash =
+		// SHA256 des client-seitigen device_id (Random-Hex); so faellt die rohe ID
+		// nicht per DB-Dump an. Revoke setzt revoked_at.
+		$t_trust = $wpdb->prefix . self::TABLE_TRUSTED_DEVICES;
+		$sql_trust_dev = "CREATE TABLE {$t_trust} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			device_hash CHAR(64) NOT NULL,
+			label VARCHAR(100) NOT NULL DEFAULT '',
+			ua VARCHAR(255) NOT NULL DEFAULT '',
+			ip VARCHAR(45) NOT NULL DEFAULT '',
+			created_at DATETIME NOT NULL,
+			last_seen_at DATETIME NULL,
+			expires_at DATETIME NOT NULL,
+			revoked_at DATETIME NULL,
+			PRIMARY KEY (id),
+			UNIQUE KEY uniq_device_hash (device_hash),
+			KEY idx_customer (customer_id, revoked_at)
+		) {$charset};";
+
 		// Audit-Log: Sensitive-Action-Protokoll. Pro Event eine Zeile. customer_id NULL
 		// bei System-Events (z.B. cron-failed). severity steuert UI-Farbe.
 		$t_audit = $wpdb->prefix . self::TABLE_AUDIT_LOG;
@@ -665,6 +686,7 @@ final class Installer {
 		dbDelta( $sql_srules );
 		dbDelta( $sql_sopts );
 		dbDelta( $sql_audit );
+		dbDelta( $sql_trust_dev );
 
 		// One-shot Migration: aus jedem bestehenden Account einen Folder-Eintrag
 		// erzeugen. Nur wenn die Folder-Tabelle leer ist UND mind. ein Account

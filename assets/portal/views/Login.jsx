@@ -10,6 +10,7 @@ export default function Login({ route }) {
   const [password, setPassword] = useState('');
   const [twoFaCode, setTwoFaCode] = useState('');
   const [twoFaRequired, setTwoFaRequired] = useState(false);
+  const [rememberDevice, setRememberDevice] = useState(true);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
   // Reset-Flow: 'request' (Code anfordern) | 'confirm' (Code aus Mail eingeben) | 'done'
@@ -25,6 +26,7 @@ export default function Login({ route }) {
     try {
       const payload = { email, password };
       if (twoFaRequired && twoFaCode) payload.two_fa_code = twoFaCode;
+      if (twoFaRequired && rememberDevice) payload.remember_device = true;
       const { status, body } = await apiPost('login', payload);
       if (status === 200 && body.ok) {
         await refreshMe();
@@ -96,21 +98,28 @@ export default function Login({ route }) {
         <label>E-Mail<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus autoComplete="email" placeholder="dein@mailpostfach.de" disabled={twoFaRequired} /></label>
         <label>Passwort<input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" placeholder="••••••••" disabled={twoFaRequired} /></label>
         {twoFaRequired && (
-          <label>Zwei-Faktor-Code
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              pattern="[0-9]*"
-              maxLength={8}
-              required
-              value={twoFaCode}
-              onChange={(e) => setTwoFaCode(e.target.value.replace(/\D/g, ''))}
-              autoFocus
-              placeholder="123 456"
-              style={{ fontFamily: 'var(--mg-mono)', letterSpacing: '0.2em', fontSize: '1.3rem', textAlign: 'center' }}
-            />
-          </label>
+          <>
+            <label>Zwei-Faktor-Code
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]*"
+                maxLength={8}
+                required
+                value={twoFaCode}
+                onChange={(e) => setTwoFaCode(e.target.value.replace(/\D/g, ''))}
+                autoFocus
+                placeholder="123 456"
+                style={{ fontFamily: 'var(--mg-mono)', letterSpacing: '0.2em', fontSize: '1.3rem', textAlign: 'center' }}
+              />
+            </label>
+            <label style={{display:'flex',alignItems:'center',gap:8,fontSize:'0.9rem',color:'var(--mg-muted)',flexDirection:'row'}}>
+              <input type="checkbox" checked={rememberDevice} onChange={(e)=>setRememberDevice(e.target.checked)}
+                style={{width:'auto',margin:0}} />
+              Dieses Geraet 30 Tage merken (keine 2FA-Abfrage mehr auf diesem Browser)
+            </label>
+          </>
         )}
         {error && <div className="mg-error">{error}</div>}
         <button type="submit" className="mg-btn mg-btn--primary mg-auth__submit" disabled={loading || (twoFaRequired && twoFaCode.length < 6)}>

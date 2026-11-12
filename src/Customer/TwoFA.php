@@ -105,6 +105,8 @@ final class TwoFA {
 		// Alle anderen Sessions ausloggen — wenn Angreifer vorher 2FA bypasst hat
 		// (z.B. via Reset), kickt das ihn JETZT raus. Aktuelle Session bleibt.
 		Session::destroy_all_for_customer( $customer_id );
+		// Trust-Device-Eintraege auch wegraeumen: sonst springt 2FA-skip beim naechsten Re-Enable
+		TrustDevice::revoke_all_for_customer( $customer_id );
 		AuditLog::emit( $customer_id, 'two_fa.disable', AuditLog::SEV_WARN );
 		AuditLog::emit( $customer_id, 'sessions.revoked_all', AuditLog::SEV_WARN, [ 'reason' => 'two_fa_disable' ] );
 	}

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { apiGet, apiPost } from '../api.js';
+import { apiGet, apiPost, apiDelete } from '../api.js';
 import { PageShell, PageTopbar, Section, SectionHeader } from '../components/Section.jsx';
 
 const EVENT_LABELS = {
@@ -61,6 +61,8 @@ export default function Activity({ me }) {
           SICHERHEITSRELEVANTE EREIGNISSE DER LETZTEN TAGE · IP + USER-AGENT PRO EVENT
         </div>
 
+        <TrustedDevicesPanel />
+
         {error && <div className="mg-card mg-error">{error}</div>}
         {items === null && <div className="mg-card">Lade …</div>}
         {items && items.length === 0 && (
@@ -105,6 +107,54 @@ function Row({ it }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function TrustedDevicesPanel() {
+  const [items, setItems] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    const { status, body } = await apiGet('me/trusted-devices');
+    if (status === 200 && body?.ok) setItems(body.items || []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const revoke = async (id) => {
+    if (!confirm('Dieses Geraet nicht mehr vertrauen? Beim naechsten Login wird dort wieder 2FA abgefragt.')) return;
+    setBusy(true);
+    await apiDelete(`me/trusted-devices/${id}`);
+    setBusy(false);
+    await load();
+  };
+
+  const activeCount = items?.filter(it => !it.revoked_at).length || 0;
+  if (!items || items.length === 0) return null;
+  return (
+    <div className="mg-card" style={{marginBottom:16,padding:'1rem 1.25rem'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8}}>
+        <strong>Vertraute Geraete ({activeCount} aktiv)</strong>
+        <span className="mg-mono" style={{fontSize:'0.8rem',color:'var(--mg-muted)'}}>2FA uebersprungen</span>
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:6}}>
+        {items.map(d => (
+          <div key={d.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,padding:'6px 0',borderTop:'1px solid var(--mg-border)'}}>
+            <div>
+              <div style={{fontSize:'0.95rem'}}>{d.label || 'Unbekanntes Geraet'}</div>
+              <div style={{fontSize:'0.8rem',color:'var(--mg-muted)'}}>
+                {d.ip && <code>{d.ip}</code>} · bis {String(d.expires_at).slice(0,10)}
+                {d.revoked_at && <> · <span style={{color:'var(--mg-err)'}}>revokt</span></>}
+              </div>
+            </div>
+            {!d.revoked_at && (
+              <button className="mg-btn" disabled={busy} onClick={() => revoke(d.id)} style={{fontSize:'0.8rem',padding:'4px 8px'}}>
+                Nicht mehr vertrauen
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

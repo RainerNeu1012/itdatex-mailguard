@@ -79,7 +79,7 @@ final class Auth {
 		return [ 'ok' => true, 'customer_id' => (int) $row['id'], 'email' => (string) $row['email'] ];
 	}
 
-	public static function login( string $email, string $password, string $two_fa_code = '' ) : array {
+	public static function login( string $email, string $password, string $two_fa_code = '', bool $remember_device = false ) : array {
 		$rl = RateLimiter::check( RateLimiter::KEY_LOGIN );
 		if ( ! $rl['allowed'] ) {
 			return [ 'ok' => false, 'error' => self::ERR_RATE, 'retry_after' => $rl['retry_after'] ];
@@ -100,12 +100,15 @@ final class Auth {
 
 		$id = (int) $row['id'];
 
-		// 2FA-Check: wenn aktiv, braucht der Call einen gueltigen Code
+		// 2FA-Check: wenn aktiv, braucht der Call einen gueltigen Code — ausser
+		// wenn ein gueltiges Trust-Device-Cookie vorliegt (dann skippen).
+		$trust_hit = false;
 		if ( \Itdatex\Mailguard\Customer\TwoFA::is_enabled_for_customer( $id ) ) {
-			if ( $two_fa_code === '' ) {
+			if ( TrustDevice::verify_for_customer( $id ) ) {
+				$trust_hit = true;
+			} elseif ( $two_fa_code === '' ) {
 				return [ 'ok' => false, 'error' => 'two_fa_required' ];
-			}
-			if ( ! \Itdatex\Mailguard\Customer\TwoFA::verify_login_code( $id, $two_fa_code ) ) {
+			} elseif ( ! \Itdatex\Mailguard\Customer\TwoFA::verify_login_code( $id, $two_fa_code ) ) {
 				AuditLog::emit( $id, 'auth.two_fa_failed', AuditLog::SEV_WARN );
 				return [ 'ok' => false, 'error' => 'two_fa_invalid' ];
 			}
@@ -113,7 +116,12 @@ final class Auth {
 
 		Account::touch_login( $id );
 		Session::start( $id );
-		AuditLog::emit( $id, 'auth.login_success' );
+		AuditLog::emit( $id, 'auth.login_success', AuditLog::SEV_INFO, $trust_hit ? [ 'trust_device_hit' => true ] : [] );
+		// Nur wenn Fresh-2FA UND User hat remember_device angekreuzt: Trust-Cookie ausstellen.
+		// (Bei trust_hit war das Device schon bekannt — kein Reset-Ausstellen noetig.)
+		if ( $remember_device && ! $trust_hit && $two_fa_code !== '' ) {
+			TrustDevice::issue( $id );
+		}
 
 		return [ 'ok' => true, 'customer_id' => $id, 'email' => $row['email'] ];
 	}
