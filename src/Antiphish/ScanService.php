@@ -281,6 +281,15 @@ final class ScanService {
 			$score += (int) ( $r['score'] ?? 0 );
 		}
 
+		// Short-URL-Unshortener: bit.ly & Co entfalten, Final-Landing bewerten
+		if ( ! $blacklist_hit ) {
+			$short = Signals\UrlShortener::check( (string) ( $row['body_preview'] ?? '' ) );
+			if ( $short ) {
+				$reasons[] = $short;
+				$score += (int) $short['score'];
+			}
+		}
+
 		// Age-of-Domain (RDAP): frisch registrierte Absender-Domains
 		if ( ! $blacklist_hit ) {
 			$young = Signals\YoungDomain::check( (string) ( $row['from_addr'] ?? '' ) );
