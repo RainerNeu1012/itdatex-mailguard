@@ -348,6 +348,34 @@ final class ScanService {
 			}
 		}
 
+		// LLM-Zweitmeinung (Ollama, lokal) — nur Grauzone-Mails vor Attachments/AV
+		if ( ! $blacklist_hit && Ollama\OllamaClient::is_configured()
+			&& $score >= Ollama\OllamaClient::GRAY_MIN
+			&& $score <= Ollama\OllamaClient::GRAY_MAX ) {
+			$llm = Ollama\OllamaClient::second_opinion( [
+				'subject'   => (string) ( $row['subject']   ?? '' ),
+				'body'      => (string) ( $row['body_preview'] ?? '' ),
+				'from_name' => (string) ( $row['from_name'] ?? '' ),
+				'from_addr' => (string) ( $row['from_addr'] ?? '' ),
+			] );
+			if ( $llm ) {
+				$reasons[] = $llm['reason'];
+				$score    += (int) $llm['adjust'];
+				\Itdatex\Mailguard\Customer\AuditLog::emit(
+					$customer_id,
+					'scan.llm_second_opinion',
+					\Itdatex\Mailguard\Customer\AuditLog::SEV_INFO,
+					[
+						'msg_id'     => $id,
+						'verdict'    => $llm['reason']['detail']['verdict'] ?? '',
+						'confidence' => $llm['reason']['detail']['confidence'] ?? 0,
+						'adjust'     => $llm['adjust'],
+						'latency_ms' => $llm['reason']['detail']['latency_ms'] ?? 0,
+					]
+				);
+			}
+		}
+
 		// Attachment-Heuristik einweben: pro Anhang aus mg_attachments die
 		// gespeicherten suspicion_reasons in scan_reasons mergen und den
 		// hoechsten Attachment-Score dazuaddieren. Wir addieren NUR den max

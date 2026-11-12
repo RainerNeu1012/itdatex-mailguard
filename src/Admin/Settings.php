@@ -62,6 +62,12 @@ final class Settings {
 		self::field_number( 'scan_batch_size',    __( 'Scans pro Cron-Run', 'itdatex-mailguard' ), 'mg_api', 1, 100 );
 		self::field_number( 'manual_scan_quota',  __( 'Manuelle Scans / Endkunde / 24h', 'itdatex-mailguard' ), 'mg_api', 1, 1000 );
 
+		add_settings_section( 'mg_ollama', __( 'LLM-Zweitmeinung (Ollama, lokal)', 'itdatex-mailguard' ), [ __CLASS__, 'ollama_intro' ], self::PAGE_SLUG );
+		self::field_checkbox( 'ollama_enabled', __( 'Grauzone an LLM weiterreichen', 'itdatex-mailguard' ), 'mg_ollama', __( 'Mails mit Heuristik-Score 30-49 bekommen eine LLM-Zweitmeinung. Nur-lokal (kein Cloud-Transfer), keine DSGVO-Einwilligung noetig.', 'itdatex-mailguard' ) );
+		self::field_text(     'ollama_endpoint', __( 'Endpoint', 'itdatex-mailguard' ), 'mg_ollama', [ 'placeholder' => 'http://127.0.0.1:11434' ] );
+		self::field_text(     'ollama_model',    __( 'Modell', 'itdatex-mailguard' ), 'mg_ollama', [ 'placeholder' => 'qwen2.5:7b-instruct-q4_K_M' ] );
+		self::field_number(   'ollama_timeout',  __( 'Timeout (Sek.)', 'itdatex-mailguard' ), 'mg_ollama', 5, 120 );
+
 		add_settings_section( 'mg_safebrowsing', __( 'Google Safe Browsing', 'itdatex-mailguard' ), [ __CLASS__, 'safebrowsing_intro' ], self::PAGE_SLUG );
 		self::field_checkbox( 'safe_browsing_enabled', __( 'Safe Browsing aktivieren', 'itdatex-mailguard' ), 'mg_safebrowsing', __( 'URLs aus eingehenden Mails gegen Googles Phishing-/Malware-Liste pruefen (10.000 Lookups/Tag kostenlos). Treffer += 40 Score pro URL.', 'itdatex-mailguard' ) );
 		self::field_password( 'safe_browsing_api_key', __( 'Google-Cloud API-Key', 'itdatex-mailguard' ), 'mg_safebrowsing' );
@@ -116,6 +122,11 @@ final class Settings {
 			__( 'Anleitung: <a href="https://console.cloud.google.com" target="_blank" rel="noopener">console.cloud.google.com</a> → neues Projekt → <em>APIs &amp; Services</em> → <em>Library</em> → <em>Gmail API</em> aktivieren. Dann <em>OAuth consent screen</em>: User type „External", App-Name, Developer-Email; eigene Email als <em>Test user</em> hinzufügen; Scope <code>https://mail.google.com/</code>. Schließlich <em>Credentials</em> → <em>+ Create credentials</em> → <em>OAuth client ID</em> → <em>Web application</em>, Redirect-URI = die URL oben. Hinweis: <code>mail.google.com</code> ist „restricted scope" — bis 100 Test-User reicht der Test-Modus, für Production später Google-Verifikation einreichen.', 'itdatex-mailguard' ),
 			[ 'a' => [ 'href' => [], 'target' => [], 'rel' => [] ], 'em' => [], 'code' => [] ]
 		) . '</p>';
+	}
+
+	public static function ollama_intro() : void {
+		echo '<p>' . esc_html__( 'Grauzone-Mails (Heuristik-Score 30-49) werden an eine lokale Ollama-Instanz geschickt fuer eine Zweitmeinung. Das Modell liefert verdict+confidence+reasons, der Score wird angepasst. Nur-lokal — keine Daten verlassen den Server, kein DSGVO-Consent noetig.', 'itdatex-mailguard' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'Modell-Download: ollama pull qwen2.5:7b-instruct-q4_K_M (4.7 GB, mein Pick). Latenz ~5-25 s/Mail bei Warmup, danach <5 s. Ollama muss am Endpoint erreichbar sein.', 'itdatex-mailguard' ) . '</p>';
 	}
 
 	public static function safebrowsing_intro() : void {
@@ -185,8 +196,17 @@ final class Settings {
 				$out['push_fcm_service_account'] = $json;
 			}
 		}
-		foreach ( [ 'allow_registration', 'require_email_verification', 'scan_deep', 'scan_auto_destroy_dangerous', 'av_clamav_enabled', 'av_notify_admin', 'safe_browsing_enabled' ] as $k ) {
+		foreach ( [ 'allow_registration', 'require_email_verification', 'scan_deep', 'scan_auto_destroy_dangerous', 'av_clamav_enabled', 'av_notify_admin', 'safe_browsing_enabled', 'ollama_enabled' ] as $k ) {
 			$out[ $k ] = ! empty( $input[ $k ] ) ? 1 : 0;
+		}
+		if ( isset( $input['ollama_endpoint'] ) ) {
+			$out['ollama_endpoint'] = rtrim( esc_url_raw( trim( (string) $input['ollama_endpoint'] ) ), '/' );
+		}
+		if ( isset( $input['ollama_model'] ) ) {
+			$out['ollama_model'] = sanitize_text_field( (string) $input['ollama_model'] );
+		}
+		if ( isset( $input['ollama_timeout'] ) ) {
+			$out['ollama_timeout'] = max( 5, min( 120, (int) $input['ollama_timeout'] ) );
 		}
 		if ( array_key_exists( 'safe_browsing_api_key', $input ) ) {
 			$key = trim( (string) $input['safe_browsing_api_key'] );
