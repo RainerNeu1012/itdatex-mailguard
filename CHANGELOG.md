@@ -7,6 +7,40 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.71.0] – 2026-11-12
+
+Security-Finish auf 2FA plus zwei neue Scanner-Signale und Grauzonen-Check im Digest.
+
+### Added — Security
+- **Audit-Log**: `mg_audit_log`-Table (DB_VERSION 34→35). AuditLog::emit() fire-and-forget
+  mit customer_id/event/severity/ip/ua/meta_json. Events: `auth.*`, `two_fa.*`,
+  `password.*`, `sessions.*`, `device.*`. Portal: neue View "Kontoaktivitaet"
+  unter Sidebar-Gruppe SICHERHEIT.
+- **Session-Invalidate** bei sensitive actions: password-reset, 2FA-disable und
+  2FA-reset-confirm revoken automatisch alle Web-Sessions + API-Tokens + Trust-
+  Devices. Session::destroy_all_for_customer(), WebSession::revoke_all_for_customer(),
+  ApiToken::revoke_all_for_customer(). Portal-Button "Alle anderen Sessions beenden"
+  (`POST /me/sessions/revoke-all-others`).
+- **Trust-Device** nach 2FA: Checkbox "Dieses Geraet 30 Tage merken" skippt
+  2FA-Challenge auf bekanntem Browser. HMAC-signed Cookie ueber LOGGED_IN_KEY +
+  `mg_trusted_devices`-Table (DB_VERSION 35→36). Revoke pro Device im Portal.
+
+### Added — Scanner-Signale
+- **BEC-Heuristik**: CEO-Fraud-Erkennung ohne Links. 5 Indikatoren
+  (authority_display_name / freemail_sender / urgency / money_request / isolation),
+  +15 pro Match, max +45. Trigger-Minimum: 2 Indikatoren PLUS mind. eine Action-
+  orientierte (urgency/money/isolation). Kein Trigger bei Links/Anhaengen oder
+  Intra-Firma-Domain.
+- **URL-Unshortener**: bit.ly/tinyurl/t.co + 13 weitere per HEAD-Chain aufgeloest
+  (max 5 Redirects, 4s Timeout). Scoring: +10 bei Shortener-mit-Kontext,
+  +25 pro resolved URL mit suspekter Landing (Punycode/dubious-TLD/geschachtelter
+  Shortener/user@host-Phishing-Pattern/unaufloesbar). Max +50. Transient-Cache 24h.
+
+### Changed
+- **Digest-Report** zeigt zusaetzlich "Grauzonen-Check" mit den 5 marginalsten
+  Faellen (Score 30-49) der Periode, jeder mit Klick-Link zur Portal-Inbox.
+  Daily-Digest wird jetzt auch bei 0 Actions geschickt wenn >=1 marginaler Fall.
+
 ## [0.70.0] – 2026-11-12
 
 Sammelrelease fuer alle Features zwischen v0.50.0 und v0.70.0 inklusive
