@@ -69,6 +69,7 @@ final class Plugin {
 		add_action( Installer::CRON_SCAN_HOOK, [ ScanService::class, 'scan_pending_batch' ] );
 		add_action( Installer::CRON_UNSUB_POLL_HOOK, [ UnsubService::class, 'poll_pending_dsn' ] );
 		add_action( 'itdatex_mailguard_digest', [ \Itdatex\Mailguard\Notifications\DigestService::class, 'run_cron' ] );
+		add_action( 'itdatex_mailguard_breach_check', [ \Itdatex\Mailguard\Notifications\BreachMonitor::class, 'run_cron' ] );
 
 		// Selbst-Heilung: falls die Aktivierung damals ohne Unsub-Poll lief
 		// (Migration einer bestehenden Installation), Schedule bei plugins_loaded
@@ -86,6 +87,9 @@ final class Plugin {
 	public static function ensure_digest_scheduled() : void {
 		if ( ! wp_next_scheduled( 'itdatex_mailguard_digest' ) ) {
 			wp_schedule_event( time() + 3600, 'hourly', 'itdatex_mailguard_digest' );
+		}
+		if ( ! wp_next_scheduled( 'itdatex_mailguard_breach_check' ) ) {
+			wp_schedule_event( time() + 7200, 'daily', 'itdatex_mailguard_breach_check' );
 		}
 	}
 

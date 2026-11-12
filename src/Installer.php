@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 32;
+	public const CURRENT_DB_VERSION = 34;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -31,6 +31,7 @@ final class Installer {
 	public const TABLE_WEB_SESSIONS  = 'mg_web_sessions';
 	public const TABLE_ATTACHMENTS   = 'mg_attachments';
 	public const TABLE_NOTIFICATIONS = 'mg_notifications';
+	public const TABLE_BREACH_ALERTS = 'mg_breach_alerts';
 	public const TABLE_ERADICATE_DOMAINS = 'mg_eradicate_domains';
 	public const TABLE_SENDER_TRUST      = 'mg_sender_trust';
 	public const TABLE_LLM_FEEDBACK      = 'mg_llm_feedback';
@@ -168,6 +169,9 @@ final class Installer {
 			cloud_consent_text_version VARCHAR(20) NULL,
 			digest_frequency VARCHAR(10) NOT NULL DEFAULT 'off',
 			digest_last_sent_at DATETIME NULL,
+			two_fa_secret VARCHAR(64) NULL,
+			two_fa_enabled_at DATETIME NULL,
+			two_fa_backup_codes TEXT NULL,
 			PRIMARY KEY (id),
 			UNIQUE KEY uniq_email (email),
 			KEY idx_status (status),
@@ -417,6 +421,24 @@ final class Installer {
 			KEY idx_customer_created (customer_id, created_at)
 		) {$charset};";
 
+		// Dark-Web-Breach-Alerts: pro Customer + Email + Breach-Name eine Zeile.
+		// UNIQUE verhindert Duplikate wenn Cron mehrfach laeuft.
+		$t_brh = $wpdb->prefix . self::TABLE_BREACH_ALERTS;
+		$sql_brh = "CREATE TABLE {$t_brh} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			email VARCHAR(190) NOT NULL,
+			breach_name VARCHAR(190) NOT NULL,
+			breach_date DATE NULL,
+			pwned_count BIGINT UNSIGNED NULL,
+			data_classes VARCHAR(500) NOT NULL DEFAULT '',
+			created_at DATETIME NOT NULL,
+			read_at DATETIME NULL,
+			PRIMARY KEY (id),
+			UNIQUE KEY uniq_cust_email_breach (customer_id, email, breach_name),
+			KEY idx_customer_unread (customer_id, read_at)
+		) {$charset};";
+
 		// Web-Sessions: Tracking-Only. Der HMAC-signierte Session-Cookie ist
 		// weiterhin die eigentliche Auth-Quelle (kein DB-Lookup pro Request);
 		// diese Tabelle listet nur, wo der User gerade eingeloggt ist, damit
@@ -617,6 +639,7 @@ final class Installer {
 		dbDelta( $sql_erd );
 		dbDelta( $sql_btlds );
 		dbDelta( $sql_not );
+		dbDelta( $sql_brh );
 		dbDelta( $sql_trust );
 		dbDelta( $sql_llmfb );
 		dbDelta( $sql_cblocks );

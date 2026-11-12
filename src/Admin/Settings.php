@@ -21,6 +21,7 @@ final class Settings {
 			59
 		);
 		Customers::add_menu();
+		Overview::add_menu();
 		add_submenu_page(
 			Customers::PAGE_SLUG,
 			__( 'Einstellungen', 'itdatex-mailguard' ),

@@ -7,6 +7,7 @@ import { PageShell, PageTopbar, Section, SectionHeader, HairlineList, HairlineRo
 // hairline dividers, live-pulse. Zero cards, pure information hierarchy.
 export default function Dashboard({ me }) {
   const [data, setData]   = useState(null);
+  const [health, setHealth] = useState(null);
   const [err, setErr]     = useState(null);
   const [now, setNow]     = useState(() => new Date());
 
@@ -14,10 +15,11 @@ export default function Dashboard({ me }) {
     let cancelled = false;
     const load = async () => {
       try {
-        const { status, body } = await apiGet('dashboard');
+        const [d, h] = await Promise.all([apiGet('dashboard'), apiGet('me/health')]);
         if (cancelled) return;
-        if (status < 400 && body?.ok) setData(body);
-        else setErr(body?.error || ('HTTP ' + status));
+        if (d.status < 400 && d.body?.ok) setData(d.body);
+        else setErr(d.body?.error || ('HTTP ' + d.status));
+        if (h.status < 400 && h.body?.ok) setHealth(h.body);
       } catch (e) { if (!cancelled) setErr(String(e)); }
     };
     load();
@@ -37,6 +39,9 @@ export default function Dashboard({ me }) {
   const s = data?.stats || {};
   return (
     <div className="mg-dash">
+      {/* HEALTH-SCORE + 30-TAGE-TREND */}
+      {health && <HealthHero health={health} />}
+
       {/* HERO METRICS — monumentale Numerals */}
       <section className="mg-dash__hero">
         <HeroStat
@@ -199,6 +204,91 @@ export default function Dashboard({ me }) {
 }
 
 /* ------------------------- Components ------------------------- */
+
+function HealthHero({ health }) {
+  const score = health.score || 0;
+  const t = health.totals || {};
+  const trend = health.trend || [];
+  // Chart: SVG area, max = max daily total across trend, fallback 1
+  const maxTotal = Math.max(1, ...trend.map(d => d.total));
+  const W = 800, H = 110, P = 8;
+  const bw = (W - 2*P) / Math.max(trend.length, 1);
+  // Score color
+  const color = score >= 90 ? 'var(--mg-ok, #3fb950)'
+             : score >= 70 ? 'var(--mg-warn, #d29922)'
+             : 'var(--mg-err, #d94848)';
+  return (
+    <section className="mg-dash__health" style={{
+      display: 'grid',
+      gridTemplateColumns: 'auto 1fr',
+      gap: '2rem',
+      alignItems: 'stretch',
+      padding: '1.5rem 1.75rem',
+      marginBottom: '1.5rem',
+      border: '1px solid var(--mg-border)',
+      borderRadius: 'var(--mg-radius-lg, 12px)',
+      background: 'var(--mg-surface)',
+    }}>
+      {/* Score-Dial */}
+      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 180 }}>
+        <div className="mg-mono mg-tiny mg-muted" style={{ letterSpacing: '0.14em', marginBottom: 4 }}>// HEALTH-SCORE · 30 TAGE</div>
+        <div style={{ fontFamily: 'var(--mg-display, "Bebas Neue", sans-serif)', fontSize: '5rem', lineHeight: 1, color, fontWeight: 400, letterSpacing: '-0.02em' }}>
+          {score}<span className="mg-muted" style={{ fontSize: '1.4rem', marginLeft: 6 }}>/100</span>
+        </div>
+        <div className="mg-tiny mg-muted" style={{ marginTop: 6 }}>
+          {score >= 90 ? 'Postfach ist sauber' : score >= 70 ? 'Routinemäßige Threats abgefangen' : 'Erhöhtes Bedrohungsniveau'}
+        </div>
+      </div>
+      {/* Trend-Chart + Totals */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.9rem' }}>
+          <HealthStat label="GESCANNT" value={t.scanned} />
+          <HealthStat label="SAUBER" value={t.clean} tone="ok" />
+          <HealthStat label="VERDÄCHTIG" value={t.suspicious} tone="warn" />
+          <HealthStat label="GEFÄHRLICH" value={t.dangerous} tone="err" />
+          <HealthStat label="QUARANTÄNE" value={t.quarantines} />
+          <HealthStat label="VERNICHTET" value={t.purges} />
+        </div>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: H, display: 'block' }}>
+          {trend.map((d, i) => {
+            const x = P + i * bw;
+            const dangerH = (d.danger / maxTotal) * (H - 2*P);
+            const suspH   = (d.susp / maxTotal) * (H - 2*P);
+            const cleanH  = (d.clean / maxTotal) * (H - 2*P);
+            let y = H - P;
+            // stacked: clean (bottom), susp, danger (top)
+            return (
+              <g key={i}>
+                {cleanH > 0 && <rect x={x} y={y - cleanH} width={Math.max(1, bw - 1)} height={cleanH} fill="var(--mg-ok, #3fb950)" opacity="0.7" />}
+                {(() => { y -= cleanH; return null; })()}
+                {suspH > 0 && <rect x={x} y={y - suspH} width={Math.max(1, bw - 1)} height={suspH} fill="var(--mg-warn, #d29922)" opacity="0.8" />}
+                {(() => { y -= suspH; return null; })()}
+                {dangerH > 0 && <rect x={x} y={y - dangerH} width={Math.max(1, bw - 1)} height={dangerH} fill="var(--mg-err, #d94848)" />}
+              </g>
+            );
+          })}
+        </svg>
+        <div className="mg-tiny mg-muted" style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span>{trend[0]?.date || ''}</span>
+          <span>heute</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HealthStat({ label, value, tone }) {
+  const color = tone === 'ok' ? 'var(--mg-ok)'
+             : tone === 'warn' ? 'var(--mg-warn)'
+             : tone === 'err' ? 'var(--mg-err)'
+             : 'var(--mg-fg)';
+  return (
+    <div>
+      <div className="mg-mono mg-tiny mg-muted" style={{ letterSpacing: '0.08em' }}>{label}</div>
+      <div style={{ fontFamily: 'var(--mg-display, "Bebas Neue")', fontSize: '1.4rem', color, lineHeight: 1 }}>{num(value || 0)}</div>
+    </div>
+  );
+}
 
 function HeroStat({ value, label, detail, tone }) {
   const display = value === null || value === undefined ? '—' : num(value);

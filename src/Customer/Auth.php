@@ -79,7 +79,7 @@ final class Auth {
 		return [ 'ok' => true, 'customer_id' => (int) $row['id'], 'email' => (string) $row['email'] ];
 	}
 
-	public static function login( string $email, string $password ) : array {
+	public static function login( string $email, string $password, string $two_fa_code = '' ) : array {
 		$rl = RateLimiter::check( RateLimiter::KEY_LOGIN );
 		if ( ! $rl['allowed'] ) {
 			return [ 'ok' => false, 'error' => self::ERR_RATE, 'retry_after' => $rl['retry_after'] ];
@@ -98,6 +98,17 @@ final class Auth {
 		}
 
 		$id = (int) $row['id'];
+
+		// 2FA-Check: wenn aktiv, braucht der Call einen gueltigen Code
+		if ( \Itdatex\Mailguard\Customer\TwoFA::is_enabled_for_customer( $id ) ) {
+			if ( $two_fa_code === '' ) {
+				return [ 'ok' => false, 'error' => 'two_fa_required' ];
+			}
+			if ( ! \Itdatex\Mailguard\Customer\TwoFA::verify_login_code( $id, $two_fa_code ) ) {
+				return [ 'ok' => false, 'error' => 'two_fa_invalid' ];
+			}
+		}
+
 		Account::touch_login( $id );
 		Session::start( $id );
 
@@ -175,6 +186,7 @@ final class Auth {
 			'cloud_consent_at' => $consent_at,
 			'cloud_consent_required' => $consent_needed,
 			'digest_frequency' => (string) ( $row['digest_frequency'] ?? 'off' ),
+			'two_fa_enabled'   => ! empty( $row['two_fa_enabled_at'] ),
 		];
 	}
 

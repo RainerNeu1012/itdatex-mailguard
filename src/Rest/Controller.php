@@ -101,6 +101,40 @@ final class Controller {
 			'callback'            => [ __CLASS__, 'me_digest' ],
 		] );
 
+		register_rest_route( self::NAMESPACE, '/me/health', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_health' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/breaches', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_breaches' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/breaches/mark-read', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_breaches_mark_read' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/2fa/setup', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_2fa_setup' ],
+		] );
+		register_rest_route( self::NAMESPACE, '/me/2fa/activate', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_2fa_activate' ],
+		] );
+		register_rest_route( self::NAMESPACE, '/me/2fa/disable', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_2fa_disable' ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/mobile/login', [
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
@@ -2695,7 +2729,8 @@ final class Controller {
 		$json     = (array) $req->get_json_params();
 		$email    = (string) ( $json['email'] ?? '' );
 		$password = (string) ( $json['password'] ?? '' );
-		$res = Auth::login( $email, $password );
+		$two_fa   = (string) ( $json['two_fa_code'] ?? '' );
+		$res = Auth::login( $email, $password, $two_fa );
 		return self::respond( $res );
 	}
 
@@ -2773,10 +2808,11 @@ final class Controller {
 		$json     = (array) $req->get_json_params();
 		$email    = (string) ( $json['email'] ?? '' );
 		$password = (string) ( $json['password'] ?? '' );
+		$two_fa   = (string) ( $json['two_fa_code'] ?? '' );
 		$platform = (string) ( $json['platform'] ?? 'unknown' );
 		$name     = (string) ( $json['device_name'] ?? '' );
 
-		$res = Auth::login( $email, $password );
+		$res = Auth::login( $email, $password, $two_fa );
 		if ( empty( $res['ok'] ) ) {
 			return self::respond( $res );
 		}
@@ -3288,6 +3324,172 @@ HTML;
 			Auth::ERR_BAD_INPUT, 'registration_disabled', 'create_failed' => 400,
 			default                                        => 500,
 		};
+	}
+
+	/**
+	 * Postfach-Health-Score + 30-Tage-Trend. Aggregiert mg_messages + mg_actions
+	 * fuer ein visuelles Dashboard-Hero.
+	 */
+	public static function me_health( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+
+		global $wpdb;
+		$t_msg = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_MESSAGES;
+		$t_act = $wpdb->prefix . \Itdatex\Mailguard\Installer::TABLE_ACTIONS;
+
+		// Overall 30d totals
+		$totals = $wpdb->get_row( $wpdb->prepare(
+			"SELECT COUNT(*) AS total,
+			        SUM(scan_verdict='clean') AS clean,
+			        SUM(scan_verdict='suspicious') AS susp,
+			        SUM(scan_verdict='dangerous') AS danger
+			 FROM {$t_msg}
+			 WHERE customer_id = %d AND fetched_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+			   AND scan_status = 'done'",
+			$cid
+		), ARRAY_A );
+		$total = (int) ( $totals['total'] ?? 0 );
+		$clean = (int) ( $totals['clean'] ?? 0 );
+		$susp  = (int) ( $totals['susp']  ?? 0 );
+		$danger = (int) ( $totals['danger'] ?? 0 );
+
+		$act_30d = $wpdb->get_row( $wpdb->prepare(
+			"SELECT SUM(action='purge') AS purges,
+			        SUM(action='quarantine') AS quarantines
+			 FROM {$t_act}
+			 WHERE customer_id = %d AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+			   AND status = 'done'",
+			$cid
+		), ARRAY_A );
+
+		// Health-Score: 100 - penalty wenn susp+danger steigt, Boost fuer purges
+		// (Scanner greift aktiv), gecappt 0-100.
+		$threats = $susp + $danger;
+		$score = $total > 0 ? 100 - (int) round( ( $threats / $total ) * 100 ) : 100;
+		$score = max( 0, min( 100, $score ) );
+
+		// Trend: pro Tag der letzten 30 Tage total/clean/susp/danger
+		$trend_rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT DATE(fetched_at) AS d,
+			        COUNT(*) AS total,
+			        SUM(scan_verdict='clean') AS clean,
+			        SUM(scan_verdict='suspicious') AS susp,
+			        SUM(scan_verdict='dangerous') AS danger
+			 FROM {$t_msg}
+			 WHERE customer_id = %d AND fetched_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+			   AND scan_status = 'done'
+			 GROUP BY DATE(fetched_at)
+			 ORDER BY d ASC",
+			$cid
+		), ARRAY_A );
+
+		$by_date = [];
+		foreach ( $trend_rows as $r ) {
+			$by_date[ (string) $r['d'] ] = [
+				'total'  => (int) $r['total'],
+				'clean'  => (int) $r['clean'],
+				'susp'   => (int) $r['susp'],
+				'danger' => (int) $r['danger'],
+			];
+		}
+		// Fuellen mit Zero-Days damit Chart durchgehend ist
+		$trend = [];
+		for ( $i = 29; $i >= 0; $i-- ) {
+			$d = gmdate( 'Y-m-d', time() - $i * DAY_IN_SECONDS );
+			$trend[] = array_merge(
+				[ 'date' => $d ],
+				$by_date[ $d ] ?? [ 'total' => 0, 'clean' => 0, 'susp' => 0, 'danger' => 0 ]
+			);
+		}
+
+		return new WP_REST_Response( [
+			'ok'          => true,
+			'score'       => $score,
+			'period_days' => 30,
+			'totals'      => [
+				'scanned'     => $total,
+				'clean'       => $clean,
+				'suspicious'  => $susp,
+				'dangerous'   => $danger,
+				'threats'     => $threats,
+				'purges'      => (int) ( $act_30d['purges'] ?? 0 ),
+				'quarantines' => (int) ( $act_30d['quarantines'] ?? 0 ),
+			],
+			'trend'       => $trend,
+		], 200 );
+	}
+
+	/**
+	 * Breach-Alerts (Dark-Web-Monitoring) fuer den aktuellen Customer.
+	 */
+	public static function me_breaches( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		return new WP_REST_Response( [
+			'ok'         => true,
+			'items'      => \Itdatex\Mailguard\Notifications\BreachMonitor::list_for_customer( $cid ),
+			'unread_cnt' => \Itdatex\Mailguard\Notifications\BreachMonitor::count_unread( $cid ),
+		], 200 );
+	}
+
+	public static function me_breaches_mark_read( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$n = \Itdatex\Mailguard\Notifications\BreachMonitor::mark_all_read( $cid );
+		return new WP_REST_Response( [ 'ok' => true, 'marked' => $n ], 200 );
+	}
+
+	/**
+	 * 2FA-Setup: generiert Secret + QR-URL, speichert noch nicht.
+	 * User scant QR, dann /me/2fa/activate {code}.
+	 */
+	public static function me_2fa_setup( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$me = Auth::current();
+		if ( ! $me ) { return new WP_Error( 'not_authenticated', '', [ 'status' => 401 ] ); }
+
+		// Pending-Secret im Transient, nicht in DB — User muss activate aufrufen
+		$secret = \Itdatex\Mailguard\Customer\TwoFA::generate_secret();
+		set_transient( 'mg_2fa_pending_' . $cid, $secret, 10 * MINUTE_IN_SECONDS );
+		$otpauth = \Itdatex\Mailguard\Customer\TwoFA::otpauth_uri( $me['email'], $secret );
+		return new WP_REST_Response( [
+			'ok'      => true,
+			'secret'  => $secret,
+			'otpauth' => $otpauth,
+			'qr_url'  => \Itdatex\Mailguard\Customer\TwoFA::qr_url( $otpauth ),
+		], 200 );
+	}
+
+	public static function me_2fa_activate( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json = (array) $req->get_json_params();
+		$code = (string) ( $json['code'] ?? '' );
+		$pending = (string) get_transient( 'mg_2fa_pending_' . $cid );
+		if ( $pending === '' ) {
+			return new WP_Error( 'no_pending', 'Setup erst starten', [ 'status' => 400 ] );
+		}
+		if ( ! \Itdatex\Mailguard\Customer\TwoFA::verify_code( $pending, $code ) ) {
+			return new WP_Error( 'bad_code', 'Code ungueltig oder abgelaufen', [ 'status' => 400 ] );
+		}
+		delete_transient( 'mg_2fa_pending_' . $cid );
+		$backup = \Itdatex\Mailguard\Customer\TwoFA::enable_for_customer( $cid, $pending );
+		return new WP_REST_Response( [ 'ok' => true, 'backup_codes' => $backup ], 200 );
+	}
+
+	public static function me_2fa_disable( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json = (array) $req->get_json_params();
+		$code = (string) ( $json['code'] ?? '' );
+		// Vor Deaktivierung Code bestätigen damit Angreifer kein Hijack macht
+		if ( ! \Itdatex\Mailguard\Customer\TwoFA::verify_login_code( $cid, $code ) ) {
+			return new WP_Error( 'bad_code', 'Code falsch', [ 'status' => 400 ] );
+		}
+		\Itdatex\Mailguard\Customer\TwoFA::disable_for_customer( $cid );
+		return new WP_REST_Response( [ 'ok' => true ], 200 );
 	}
 
 	/**
