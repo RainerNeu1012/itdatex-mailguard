@@ -7,6 +7,20 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.72.0] – 2026-11-12
+
+### Added
+- **LLM-Zweitmeinung via lokalem Ollama**: Mails im Heuristik-Score-Fenster
+  30-49 (Grauzone) bekommen einen On-Prem-LLM-Call (`qwen2.5:7b-instruct-q4_K_M`
+  default, konfigurierbar). Modell liefert `{verdict, confidence, reasons}` als
+  strukturiertes JSON, Score wird angepasst (dangerous +30/+20, suspicious
+  +10/0, clean -20/-10 je nach confidence>=70). Nur-lokal: kein
+  cloud_consent noetig, auch Free-Plan-Customer bekommen das Feature.
+- WP-Admin → MailGuard → Einstellungen: neue Section "LLM-Zweitmeinung
+  (Ollama, lokal)" mit `ollama_enabled`, `ollama_endpoint`, `ollama_model`,
+  `ollama_timeout`.
+- AuditLog-Event `scan.llm_second_opinion` pro Call fuer Observability.
+
 ## [0.71.0] – 2026-11-12
 
 Security-Finish auf 2FA plus zwei neue Scanner-Signale und Grauzonen-Check im Digest.
