@@ -48,9 +48,9 @@ final class DigestService {
 		$period_days = $frequency === 'weekly' ? 7 : 1;
 		$agg = self::aggregate( $customer_id, $period_days );
 
-		// Keine Aktivitaet? Trotzdem senden damit User weiss dass System laeuft —
-		// aber nur bei WOECHENTLICH (daily wird das zu nervig).
-		if ( $frequency === 'daily' && $agg['total_actions'] === 0 ) {
+		// Keine Aktivitaet UND keine marginalen Faelle? Daily skippen.
+		// Weekly wird trotzdem gesendet (System-Lebenszeichen).
+		if ( $frequency === 'daily' && $agg['total_actions'] === 0 && empty( $agg['marginal'] ) ) {
 			self::mark_sent( $customer_id );
 			return [ 'ok' => true, 'skipped' => 'no_activity' ];
 		}
@@ -133,6 +133,19 @@ final class DigestService {
 			$customer_id, $since
 		), ARRAY_A );
 
+		// Grauzone: Mails mit Score 30-49 aus der Periode. Das sind die
+		// Faelle wo die Heuristik sich am meisten vertan haben koennte —
+		// User sollte die kurz checken. Max 5, damit die Mail lesbar bleibt.
+		$marginal = $wpdb->get_results( $wpdb->prepare(
+			"SELECT id, subject, from_addr, scan_score, scan_verdict, fetched_at
+			 FROM {$t_msg}
+			 WHERE customer_id = %d AND fetched_at >= %s AND scan_status='done'
+			   AND scan_score BETWEEN 30 AND 49
+			 ORDER BY ABS(scan_score - 40), fetched_at DESC
+			 LIMIT 5",
+			$customer_id, $since
+		), ARRAY_A );
+
 		return [
 			'purges'        => $purges,
 			'quarantines'   => $quarantines,
@@ -145,6 +158,14 @@ final class DigestService {
 			'suspicious'    => (int) ( $scan['susp']   ?? 0 ),
 			'dangerous'     => (int) ( $scan['danger'] ?? 0 ),
 			'period_days'   => $period_days,
+			'marginal'      => array_map( static fn( $r ) => [
+				'id'         => (int) $r['id'],
+				'subject'    => (string) $r['subject'],
+				'from_addr'  => (string) $r['from_addr'],
+				'score'      => (int) $r['scan_score'],
+				'verdict'    => (string) $r['scan_verdict'],
+				'fetched_at' => (string) $r['fetched_at'],
+			], $marginal ?: [] ),
 		];
 	}
 
@@ -179,11 +200,33 @@ final class DigestService {
 	$row( 'Gefährlich', $a['dangerous'], '#d94848' ) .
 '</table>' .
 $top_html .
+self::render_marginal_html( $a['marginal'] ?? [] ) .
 '<p style="color:#888;font-size:12px;margin:24px 0 0;line-height:1.5">
 Dieser Report kommt ' . ( $freq === 'weekly' ? 'wöchentlich' : 'täglich' ) . '. Frequenz ändern oder abschalten:
 <a href="https://wp.itdatex.support/portal/plan" style="color:#2563eb">Portal → Einstellungen</a>.
 </p>
 </div></body></html>';
+	}
+
+	private static function render_marginal_html( array $cases ) : string {
+		if ( ! $cases ) { return ''; }
+		$out = '<h2 style="font-size:14px;margin:24px 0 6px;color:#555;text-transform:uppercase;letter-spacing:.08em">Grauzonen-Check (Score 30-49)</h2>';
+		$out .= '<p style="color:#888;font-size:12px;margin:0 0 10px">Heuristik unsicher — ein kurzer Blick lohnt. Klick auf einen Eintrag oeffnet ihn im Portal.</p>';
+		$out .= '<table style="width:100%;border-collapse:collapse;border-top:1px solid #eee;font-size:13px">';
+		foreach ( $cases as $c ) {
+			$score_color = $c['score'] >= 40 ? '#d29922' : '#9a6700';
+			$from_short  = esc_html( mb_substr( (string) $c['from_addr'], 0, 36 ) );
+			$subj_short  = esc_html( mb_substr( (string) $c['subject'], 0, 60 ) );
+			$url         = 'https://wp.itdatex.support/portal/inbox?msg_id=' . (int) $c['id'];
+			$out .= '<tr><td style="padding:8px 0;border-bottom:1px solid #f0f0f0">
+				<a href="' . esc_url( $url ) . '" style="color:#111;text-decoration:none">
+					<strong>' . $subj_short . '</strong><br>
+					<span style="color:#888;font-size:11px">von ' . $from_short . '</span>
+				</a>
+			</td><td style="padding:8px 0;border-bottom:1px solid #f0f0f0;text-align:right;color:' . $score_color . ';font-family:ui-monospace,Menlo,monospace;font-weight:700">' . (int) $c['score'] . '</td></tr>';
+		}
+		$out .= '</table>';
+		return $out;
 	}
 
 	private static function render_text( array $a, string $freq ) : string {
@@ -206,6 +249,14 @@ Dieser Report kommt ' . ( $freq === 'weekly' ? 'wöchentlich' : 'täglich' ) . '
 			$lines[] = 'Top-Blocked Absender:';
 			foreach ( $a['top_senders'] as $t ) {
 				$lines[] = sprintf( '  %-40s %dx', $t['from'], $t['count'] );
+			}
+		}
+		if ( ! empty( $a['marginal'] ) ) {
+			$lines[] = '';
+			$lines[] = 'Grauzonen-Check (Score 30-49):';
+			foreach ( $a['marginal'] as $c ) {
+				$lines[] = sprintf( '  [%d] %s · von %s', $c['score'], mb_substr( $c['subject'], 0, 50 ), mb_substr( $c['from_addr'], 0, 30 ) );
+				$lines[] = '      https://wp.itdatex.support/portal/inbox?msg_id=' . $c['id'];
 			}
 		}
 		$lines[] = '';
