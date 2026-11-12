@@ -74,7 +74,11 @@ export default function Breaches({ me }) {
 
 function BreachRow({ it }) {
   const unread = !it.read_at;
-  const classes = Array.isArray(it.data_classes) ? it.data_classes : [];
+  const classes = Array.isArray(it.data_classes)
+    ? it.data_classes
+    : (typeof it.data_classes === 'string' && it.data_classes
+        ? it.data_classes.split(';').map(s => s.trim()).filter(Boolean)
+        : []);
   const count = Number(it.pwned_count || 0);
   return (
     <div className="mg-card" style={{
