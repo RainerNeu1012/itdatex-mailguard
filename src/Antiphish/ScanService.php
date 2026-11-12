@@ -310,6 +310,35 @@ final class ScanService {
 			$score += (int) $ufb['score'];
 		}
 
+		// BEC-Heuristik: CEO-Fraud ohne Links (Authority + Urgency + Money)
+		if ( ! $blacklist_hit ) {
+			$body_s = (string) ( $row['body_preview'] ?? '' );
+			$has_links = (bool) preg_match( '#https?://#i', $body_s );
+			$recipient_domain = '';
+			if ( ! empty( $row['account_id'] ) ) {
+				$acc_username = $wpdb->get_var( $wpdb->prepare(
+					'SELECT username FROM ' . $wpdb->prefix . Installer::TABLE_IMAP_ACCOUNTS . ' WHERE id = %d',
+					(int) $row['account_id']
+				) );
+				if ( $acc_username && strpos( (string) $acc_username, '@' ) !== false ) {
+					$recipient_domain = (string) substr( strrchr( (string) $acc_username, '@' ), 1 );
+				}
+			}
+			$bec = Signals\BecHeuristic::check(
+				(string) ( $row['from_name'] ?? '' ),
+				(string) ( $row['from_addr'] ?? '' ),
+				(string) ( $row['subject'] ?? '' ),
+				$body_s,
+				$recipient_domain,
+				$has_links,
+				(int) ( $row['has_attachments'] ?? 0 ) === 1
+			);
+			if ( $bec ) {
+				$reasons[] = $bec;
+				$score += (int) $bec['score'];
+			}
+		}
+
 		// Attachment-Heuristik einweben: pro Anhang aus mg_attachments die
 		// gespeicherten suspicion_reasons in scan_reasons mergen und den
 		// hoechsten Attachment-Score dazuaddieren. Wir addieren NUR den max
