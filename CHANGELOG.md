@@ -7,6 +7,23 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.73.2] – 2026-11-13
+
+### Fixed
+- **Komplette Mobile-UX-Reparatur** fuer das Portal:
+  - **Dashboard HealthHero**: inline `gridTemplateColumns:'auto 1fr'` hatte
+    keinen Mobile-Breakpoint. Score-Dial frass ~200 px, 6 Stats quetschten
+    sich in verbleibende ~150 px → "GESCANNT" wurde buchstabenweise
+    vertikal gestackt. Refactor: inline styles entfernt, dedizierte CSS-
+    Klassen `.mg-dash__health-*` mit Mobile-Breakpoints bei 640 px
+    (3-Col Stats-Grid) und 400 px (2-Col).
+  - **Topbar-Padding**: `@media (max-width:900px) { padding-left: 4rem }`
+    wurde von der spaeter im File stehenden safe-area base-rule
+    ueberschrieben. Resultat: "DASHBOARD"-Crumb wurde vom fixed Burger
+    ueberlappt. Fix: Mobile-Rule chained + nach base-rule, zusaetzliche
+    640 px-Regel die Kicker/Clock/Suche-Label kaschiert damit die aktive
+    Crumb Platz hat.
+
 ## [0.73.1] – 2026-11-13
 
 ### Fixed
