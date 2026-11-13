@@ -342,6 +342,14 @@ function EradicateSuggestionsCard({ onAdded }) {
                   </span>
                 </div>
                 <div style={{ fontSize: 12, marginTop: 4, opacity: 0.85 }}>{sug.reason_text}</div>
+                {Array.isArray(sug.sample_senders) && sug.sample_senders.length > 0 && (
+                  <div style={{ marginTop: 6, fontSize: 12 }} className="mg-mono">
+                    <span className="mg-muted" style={{ marginRight: 6 }}>Beispiel-Absender:</span>
+                    {sug.sample_senders.slice(0, 5).map((addr, i) => (
+                      <code key={i} style={{ marginRight: 8, display: 'inline-block', color: 'var(--mg-fg)' }}>{addr}</code>
+                    ))}
+                  </div>
+                )}
               </div>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                 <button className="mg-btn mg-btn--danger" onClick={() => { setPending(sug); setPendingAck(false); }} disabled={busy === sug.id}>

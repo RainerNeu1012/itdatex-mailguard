@@ -50,12 +50,15 @@ final class AutoDestroySuggestions {
 		$t_rul = $wpdb->prefix . Installer::TABLE_RULES;
 
 		// Purge-Aggregate pro Domain. from_domain wird aus from_addr_snap extrahiert.
+		// GROUP_CONCAT mit DISTINCT sammelt die konkreten Absender-Adressen — der User
+		// will beim Suggestion-Card sehen WELCHE Absender das sind, nicht nur eine Zahl.
 		$purges = $wpdb->get_results( $wpdb->prepare(
 			"SELECT LOWER(SUBSTRING_INDEX(from_addr_snap, '@', -1)) AS domain,
 					COUNT(*)                                        AS purge_count,
 					COUNT(DISTINCT LOWER(from_addr_snap))            AS distinct_senders,
 					MIN(created_at)                                  AS first_purge_at,
-					MAX(created_at)                                  AS last_purge_at
+					MAX(created_at)                                  AS last_purge_at,
+					GROUP_CONCAT(DISTINCT LOWER(from_addr_snap) ORDER BY created_at DESC SEPARATOR '|') AS senders_csv
 			 FROM {$t_act}
 			 WHERE customer_id = %d
 			   AND action = 'purge'
@@ -114,11 +117,18 @@ final class AutoDestroySuggestions {
 
 			$purge_count = (int) $p['purge_count'];
 			$senders     = (int) $p['distinct_senders'];
+			// senders_csv: pipe-separated Liste aller DISTINCT Absender. Fuer die UI
+			// die ersten 5 reichen (so viele wie PatternSuggestions auch liefert).
+			$sender_list = array_filter(
+				array_map( 'trim', explode( '|', (string) ( $p['senders_csv'] ?? '' ) ) ),
+				static fn( $s ) => $s !== ''
+			);
 			$out[] = [
 				'id'               => 'ad:' . $domain,
 				'domain'           => $domain,
 				'purge_count'      => $purge_count,
 				'distinct_senders' => $senders,
+				'sample_senders'   => array_slice( array_values( $sender_list ), 0, 5 ),
 				'first_purge_at'   => (string) $p['first_purge_at'],
 				'last_purge_at'    => (string) $p['last_purge_at'],
 				'window_days'      => $window_days,
