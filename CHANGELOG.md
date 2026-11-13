@@ -7,6 +7,19 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.73.0] – 2026-11-13
+
+### Changed
+- **LLM-Zweitmeinung jetzt via Anthropic Claude Haiku 4.5** statt Ollama.
+  Latenz 1-2 s (vorher 20-25 s), bessere Nuance bei Social Engineering.
+  Kosten ~0.0004 €/Call. AnthropicClient ersetzt den OllamaClient (Code
+  geloescht). Settings-Schema: `ollama_*` → `llm_*` (enabled, api_key,
+  model, timeout). Password-Feld fuer den Anthropic-API-Key. Default-
+  Modell `claude-haiku-4-5-20251001`.
+
+### Removed
+- `src/Antiphish/Ollama/` komplett entfernt — kein Fallback-Pfad.
+
 ## [0.72.0] – 2026-11-12
 
 ### Added
