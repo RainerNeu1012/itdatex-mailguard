@@ -34,8 +34,11 @@ final class WebAuthnService {
 		if ( $instance === null ) {
 			$rp_id   = self::rp_id();
 			$rp_name = (string) get_bloginfo( 'name' );
-			// 'none'-Attestation akzeptieren — wir vertrauen Browser-side auth
-			$instance = new WebAuthn( $rp_name !== '' ? $rp_name : 'MailGuard', $rp_id, [ 'none' ] );
+			// 'none'-Attestation akzeptieren — wir vertrauen Browser-side auth.
+			// 4. Param useBase64UrlEncoding=true: ByteBuffer serialisiert zu plain
+			// base64url-Strings statt zum legacy '=?BINARY?B?...?=' Wrapper. Unser
+			// JS-Client erwartet base64url und decodiert via atob() → ArrayBuffer.
+			$instance = new WebAuthn( $rp_name !== '' ? $rp_name : 'MailGuard', $rp_id, [ 'none' ], true );
 		}
 		return $instance;
 	}
