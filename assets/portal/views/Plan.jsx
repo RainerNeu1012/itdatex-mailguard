@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { apiGet, apiPost } from '../api.js';
+import React, { useState, useEffect, useCallback } from 'react';
+import { apiGet, apiPost, apiDelete } from '../api.js';
 import { PageShell, Section, SectionHeader } from '../components/Section.jsx';
 
 const PLAN_LABELS = {
@@ -136,6 +136,7 @@ export default function Plan({ me, reloadMe }) {
       </div>
 
       <TwoFactorPanel me={me} reloadMe={reloadMe} />
+      <PasskeysPanel me={me} reloadMe={reloadMe} />
 
       {error && (
         <div style={{marginTop:'1rem',padding:'0.85rem 1rem',background:'rgba(248,81,73,0.08)',border:'1px solid var(--mg-err)',borderRadius:'6px',color:'var(--mg-err)'}}>
@@ -280,4 +281,112 @@ function TwoFactorPanel({ me, reloadMe }) {
       {err && <div className="mg-error" style={{marginTop:8}}>{err}</div>}
     </div>
   );
+}
+
+function PasskeysPanel({ me, reloadMe }) {
+  const [items, setItems] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const supported = typeof window !== 'undefined' && !!window.PublicKeyCredential;
+
+  const load = useCallback(async () => {
+    const { status, body } = await apiGet('me/webauthn/credentials');
+    if (status === 200 && body?.ok) setItems(body.items || []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const registerKey = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const { status, body } = await apiPost('me/webauthn/register-options', {});
+      if (status !== 200 || !body?.ok) { setErr('Setup fehlgeschlagen'); return; }
+      const opts = body.options;
+      // lbuchs liefert bereits publicKey — der Browser erwartet nested: { publicKey }
+      const pk = opts.publicKey || opts;
+      // Challenge + user.id + excludeCredentials[].id sind base64url-Strings — nach ArrayBuffer wandeln
+      pk.challenge = b64urlToBuf(pk.challenge);
+      if (pk.user?.id) pk.user.id = b64urlToBuf(pk.user.id);
+      if (Array.isArray(pk.excludeCredentials)) {
+        pk.excludeCredentials = pk.excludeCredentials.map(c => ({ ...c, id: b64urlToBuf(c.id) }));
+      }
+      const cred = await navigator.credentials.create({ publicKey: pk });
+      if (!cred) { setErr('Abgebrochen'); return; }
+      const name = prompt('Name fuer den Passkey (z.B. "MacBook Touch ID"):') || '';
+      const payload = {
+        name,
+        client_data_json:    bufToB64url(cred.response.clientDataJSON),
+        attestation_object:  bufToB64url(cred.response.attestationObject),
+      };
+      const { status: s2, body: b2 } = await apiPost('me/webauthn/register', payload);
+      if (s2 !== 200 || !b2?.ok) { setErr('Registrierung fehlgeschlagen'); return; }
+      await load();
+      if (reloadMe) await reloadMe();
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally { setBusy(false); }
+  };
+
+  const revokeKey = async (id) => {
+    if (!confirm('Diesen Passkey entfernen? Danach koennen User sich mit diesem Hardware-Key nicht mehr anmelden.')) return;
+    await apiDelete(`me/webauthn/credentials/${id}`);
+    await load();
+    if (reloadMe) await reloadMe();
+  };
+
+  return (
+    <div style={{background:'var(--mg-surface-2)',border:'1px solid var(--mg-border)',borderRadius:'8px',padding:'1.25rem 1.5rem',margin:'1.25rem 0 0'}}>
+      <p style={{margin:'0 0 0.5rem',fontWeight:600}}>
+        Passkeys / Hardware-Keys
+        {items && items.length > 0 && <span className="mg-pill mg-pill--ok" style={{marginLeft:8}}>✓ {items.length} aktiv</span>}
+      </p>
+      <p style={{margin:'0 0 0.8rem',color:'var(--mg-muted)',fontSize:'0.95rem'}}>
+        WebAuthn-basierte Anmeldung mit YubiKey, Touch-ID, Windows-Hello oder Platform-Authenticator. Ersetzt den TOTP-Code beim Login. Mehrere Keys moeglich (Backup auf zweitem Geraet).
+      </p>
+      {!supported && (
+        <div className="mg-error">Dein Browser unterstuetzt WebAuthn nicht (benoetigt Chrome/Edge/Safari/Firefox ab 2019).</div>
+      )}
+      {supported && (
+        <>
+          <button className="mg-btn mg-btn--primary" disabled={busy} onClick={registerKey}>
+            {busy ? '…' : '+ Neuen Passkey hinzufuegen'}
+          </button>
+          {items && items.length > 0 && (
+            <div style={{marginTop:'0.75rem',display:'flex',flexDirection:'column',gap:6}}>
+              {items.map(k => (
+                <div key={k.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderTop:'1px solid var(--mg-border)'}}>
+                  <div>
+                    <div style={{fontSize:'0.95rem'}}>{k.name || 'Passkey'}</div>
+                    <div style={{fontSize:'0.8rem',color:'var(--mg-muted)'}}>
+                      erstellt {String(k.created_at).slice(0,10)}
+                      {k.last_used_at && <> · zuletzt {String(k.last_used_at).slice(0,10)}</>}
+                    </div>
+                  </div>
+                  <button className="mg-btn" onClick={() => revokeKey(k.id)} style={{fontSize:'0.8rem',padding:'4px 8px'}}>
+                    Entfernen
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      {err && <div className="mg-error" style={{marginTop:8}}>{err}</div>}
+    </div>
+  );
+}
+
+function b64urlToBuf(s) {
+  if (typeof s !== 'string') return s;
+  const pad = '='.repeat((4 - s.length % 4) % 4);
+  const b64 = (s + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+function bufToB64url(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }

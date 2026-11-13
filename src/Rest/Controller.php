@@ -153,6 +153,36 @@ final class Controller {
 			'permission_callback' => '__return_true',
 			'callback'            => [ __CLASS__, 'me_2fa_activate' ],
 		] );
+		register_rest_route( self::NAMESPACE, '/me/webauthn/register-options', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_webauthn_register_options' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/webauthn/register', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_webauthn_register' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/webauthn/credentials', [
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_webauthn_list' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/me/webauthn/credentials/(?P<id>\d+)', [
+			'methods'             => 'DELETE',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'me_webauthn_revoke' ],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/webauthn/login-options', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'webauthn_login_options' ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/2fa/reset-request', [
 			'methods'             => 'POST',
 			'permission_callback' => '__return_true',
@@ -2781,7 +2811,8 @@ final class Controller {
 		$password = (string) ( $json['password'] ?? '' );
 		$two_fa   = (string) ( $json['two_fa_code'] ?? '' );
 		$remember = ! empty( $json['remember_device'] );
-		$res = Auth::login( $email, $password, $two_fa, $remember );
+		$webauthn = is_array( $json['webauthn'] ?? null ) ? $json['webauthn'] : null;
+		$res = Auth::login( $email, $password, $two_fa, $remember, $webauthn );
 		return self::respond( $res );
 	}
 
@@ -3540,6 +3571,57 @@ HTML;
 
 		\Itdatex\Mailguard\Customer\AuditLog::emit( $cid, 'sessions.revoked_others', \Itdatex\Mailguard\Customer\AuditLog::SEV_WARN, [ 'web' => $web_count, 'api' => $api_count ] );
 		return new WP_REST_Response( [ 'ok' => true, 'web_revoked' => $web_count, 'api_revoked' => $api_count ], 200 );
+	}
+
+	public static function me_webauthn_register_options( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$me = Auth::current();
+		if ( ! $me ) { return new WP_Error( 'not_authenticated', '', [ 'status' => 401 ] ); }
+		$opts = \Itdatex\Mailguard\Customer\WebAuthnService::register_options( $cid, (string) $me['email'] );
+		return new WP_REST_Response( [ 'ok' => true, 'options' => $opts ], 200 );
+	}
+
+	public static function me_webauthn_register( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$json = (array) $req->get_json_params();
+		try {
+			$r = \Itdatex\Mailguard\Customer\WebAuthnService::register_verify(
+				$cid,
+				(string) ( $json['client_data_json']   ?? '' ),
+				(string) ( $json['attestation_object'] ?? '' ),
+				(string) ( $json['name'] ?? '' )
+			);
+			return new WP_REST_Response( [ 'ok' => true, 'credential' => $r ], 200 );
+		} catch ( \Throwable $e ) {
+			return new WP_Error( 'webauthn_register_failed', $e->getMessage(), [ 'status' => 400 ] );
+		}
+	}
+
+	public static function me_webauthn_list( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		return new WP_REST_Response( [ 'ok' => true, 'items' => \Itdatex\Mailguard\Customer\WebAuthnService::list_for_customer( $cid ) ], 200 );
+	}
+
+	public static function me_webauthn_revoke( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req->get_param( 'id' );
+		$ok = \Itdatex\Mailguard\Customer\WebAuthnService::revoke( $id, $cid );
+		return new WP_REST_Response( [ 'ok' => $ok ], $ok ? 200 : 404 );
+	}
+
+	public static function webauthn_login_options( WP_REST_Request $req ) {
+		if ( $err = self::throttle_auth( 'webauthn_login', 20, 300 ) ) { return $err; }
+		$json  = (array) $req->get_json_params();
+		$email = (string) ( $json['email'] ?? '' );
+		$opts = \Itdatex\Mailguard\Customer\WebAuthnService::login_options( $email );
+		if ( ! $opts ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'no_credentials' ], 200 );
+		}
+		return new WP_REST_Response( [ 'ok' => true, 'options' => $opts ], 200 );
 	}
 
 	public static function me_2fa_setup( WP_REST_Request $req ) {

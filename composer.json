@@ -5,7 +5,8 @@
   "license": "GPL-2.0-or-later",
   "require": {
     "php": ">=8.1",
-    "chillerlan/php-qrcode": "^5.0"
+    "chillerlan/php-qrcode": "^5.0",
+    "lbuchs/webauthn": "^2.2"
   },
   "autoload": {
     "psr-4": { "Itdatex\\Mailguard\\": "src/" }

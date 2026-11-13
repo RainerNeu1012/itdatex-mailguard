@@ -79,7 +79,7 @@ final class Auth {
 		return [ 'ok' => true, 'customer_id' => (int) $row['id'], 'email' => (string) $row['email'] ];
 	}
 
-	public static function login( string $email, string $password, string $two_fa_code = '', bool $remember_device = false ) : array {
+	public static function login( string $email, string $password, string $two_fa_code = '', bool $remember_device = false, ?array $webauthn = null ) : array {
 		$rl = RateLimiter::check( RateLimiter::KEY_LOGIN );
 		if ( ! $rl['allowed'] ) {
 			return [ 'ok' => false, 'error' => self::ERR_RATE, 'retry_after' => $rl['retry_after'] ];
@@ -101,25 +101,55 @@ final class Auth {
 		$id = (int) $row['id'];
 
 		// 2FA-Check: wenn aktiv, braucht der Call einen gueltigen Code — ausser
-		// wenn ein gueltiges Trust-Device-Cookie vorliegt (dann skippen).
+		// wenn ein gueltiges Trust-Device-Cookie vorliegt (dann skippen) ODER
+		// eine erfolgreich verifizierte WebAuthn-Assertion dabei ist.
 		$trust_hit = false;
-		if ( \Itdatex\Mailguard\Customer\TwoFA::is_enabled_for_customer( $id ) ) {
+		$totp_active = \Itdatex\Mailguard\Customer\TwoFA::is_enabled_for_customer( $id );
+		$webauthn_active = WebAuthnService::has_credentials( $id );
+
+		if ( $totp_active || $webauthn_active ) {
 			if ( TrustDevice::verify_for_customer( $id ) ) {
 				$trust_hit = true;
-			} elseif ( $two_fa_code === '' ) {
-				return [ 'ok' => false, 'error' => 'two_fa_required' ];
-			} elseif ( ! \Itdatex\Mailguard\Customer\TwoFA::verify_login_code( $id, $two_fa_code ) ) {
-				AuditLog::emit( $id, 'auth.two_fa_failed', AuditLog::SEV_WARN );
-				return [ 'ok' => false, 'error' => 'two_fa_invalid' ];
+			} elseif ( $webauthn !== null && ! empty( $webauthn['credential_id'] ) ) {
+				// WebAuthn-Zweitfaktor
+				$ok = WebAuthnService::login_verify(
+					$email,
+					(string) $webauthn['credential_id'],
+					(string) ( $webauthn['client_data_json']   ?? '' ),
+					(string) ( $webauthn['authenticator_data'] ?? '' ),
+					(string) ( $webauthn['signature']          ?? '' )
+				);
+				if ( ! $ok ) {
+					AuditLog::emit( $id, 'auth.webauthn_failed', AuditLog::SEV_WARN );
+					return [ 'ok' => false, 'error' => 'webauthn_invalid' ];
+				}
+			} elseif ( $totp_active && $two_fa_code !== '' ) {
+				if ( ! \Itdatex\Mailguard\Customer\TwoFA::verify_login_code( $id, $two_fa_code ) ) {
+					AuditLog::emit( $id, 'auth.two_fa_failed', AuditLog::SEV_WARN );
+					return [ 'ok' => false, 'error' => 'two_fa_invalid' ];
+				}
+			} else {
+				// Noch kein Zweit-Faktor-Response geliefert. Signal welche Methoden offen stehen.
+				return [
+					'ok' => false,
+					'error' => 'two_fa_required',
+					'methods' => [
+						'totp'     => $totp_active,
+						'webauthn' => $webauthn_active,
+					],
+				];
 			}
 		}
 
 		Account::touch_login( $id );
 		Session::start( $id );
-		AuditLog::emit( $id, 'auth.login_success', AuditLog::SEV_INFO, $trust_hit ? [ 'trust_device_hit' => true ] : [] );
-		// Nur wenn Fresh-2FA UND User hat remember_device angekreuzt: Trust-Cookie ausstellen.
-		// (Bei trust_hit war das Device schon bekannt — kein Reset-Ausstellen noetig.)
-		if ( $remember_device && ! $trust_hit && $two_fa_code !== '' ) {
+		$audit_meta = [];
+		if ( $trust_hit ) { $audit_meta['trust_device_hit'] = true; }
+		if ( $webauthn !== null && ! empty( $webauthn['credential_id'] ) ) { $audit_meta['method'] = 'webauthn'; }
+		AuditLog::emit( $id, 'auth.login_success', AuditLog::SEV_INFO, $audit_meta );
+		// Trust-Cookie: nur bei fresh factor-step (nicht bei trust_hit), und nur wenn gesetzt
+		$fresh_factor = ( $two_fa_code !== '' ) || ( $webauthn !== null && ! empty( $webauthn['credential_id'] ) );
+		if ( $remember_device && ! $trust_hit && $fresh_factor ) {
 			TrustDevice::issue( $id );
 		}
 
@@ -207,6 +237,7 @@ final class Auth {
 			'cloud_consent_required' => $consent_needed,
 			'digest_frequency' => (string) ( $row['digest_frequency'] ?? 'off' ),
 			'two_fa_enabled'   => ! empty( $row['two_fa_enabled_at'] ),
+			'webauthn_enabled' => WebAuthnService::has_credentials( (int) $row['id'] ),
 		];
 	}
 

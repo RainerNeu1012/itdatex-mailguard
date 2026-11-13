@@ -7,7 +7,7 @@ final class Installer {
 
 	public const OPTION_SETTINGS  = 'itdatex_mailguard_settings';
 	public const OPTION_DB_VERSION = 'itdatex_mailguard_db_version';
-	public const CURRENT_DB_VERSION = 36;
+	public const CURRENT_DB_VERSION = 37;
 
 	// Versions-String der aktuellen Cloud-Consent-Texts. Bei jeder
 	// Wortlaut-Änderung hochzählen — neue Consent-Erteilungen werden mit dem
@@ -42,6 +42,7 @@ final class Installer {
 	public const TABLE_SHARED_RULE_OPTOUTS  = 'mg_shared_rule_optouts';
 	public const TABLE_AUDIT_LOG            = 'mg_audit_log';
 	public const TABLE_TRUSTED_DEVICES      = 'mg_trusted_devices';
+	public const TABLE_WEBAUTHN_CREDENTIALS = 'mg_webauthn_credentials';
 
 	public const CRON_UNDO_EXPIRY_HOOK = 'itdatex_mailguard_undo_expiry_check';
 
@@ -646,6 +647,26 @@ final class Installer {
 			KEY idx_customer (customer_id, revoked_at)
 		) {$charset};";
 
+		// WebAuthn / Passkeys: ein Credential pro Hardware-Key / Platform-Authenticator.
+		// credential_id ist der eindeutige Identifier vom Authenticator (binaer, hier
+		// base64-enkodiert). public_key ist der CBOR-encoded Public Key. counter sichert
+		// gegen Cloned-Authenticators (muss monoton steigen).
+		$t_wa = $wpdb->prefix . self::TABLE_WEBAUTHN_CREDENTIALS;
+		$sql_webauthn = "CREATE TABLE {$t_wa} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			customer_id BIGINT UNSIGNED NOT NULL,
+			credential_id VARCHAR(500) NOT NULL,
+			public_key TEXT NOT NULL,
+			counter BIGINT UNSIGNED NOT NULL DEFAULT 0,
+			name VARCHAR(100) NOT NULL DEFAULT '',
+			transports VARCHAR(100) NOT NULL DEFAULT '',
+			created_at DATETIME NOT NULL,
+			last_used_at DATETIME NULL,
+			PRIMARY KEY (id),
+			UNIQUE KEY uniq_credential_id (credential_id(190)),
+			KEY idx_customer (customer_id)
+		) {$charset};";
+
 		// Audit-Log: Sensitive-Action-Protokoll. Pro Event eine Zeile. customer_id NULL
 		// bei System-Events (z.B. cron-failed). severity steuert UI-Farbe.
 		$t_audit = $wpdb->prefix . self::TABLE_AUDIT_LOG;
@@ -687,6 +708,7 @@ final class Installer {
 		dbDelta( $sql_sopts );
 		dbDelta( $sql_audit );
 		dbDelta( $sql_trust_dev );
+		dbDelta( $sql_webauthn );
 
 		// One-shot Migration: aus jedem bestehenden Account einen Folder-Eintrag
 		// erzeugen. Nur wenn die Folder-Tabelle leer ist UND mind. ein Account
