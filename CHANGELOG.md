@@ -7,6 +7,35 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.74.0] – 2026-11-13
+
+### Added
+- **WebAuthn / Passkeys als Alternative zu TOTP** (`#1` aus dem Backlog):
+  - lbuchs/webauthn via composer (single-class API, zero-deps)
+  - `mg_webauthn_credentials`-Table (DB_VERSION 36→37) mit credential_id,
+    public_key, counter (Cloned-Authenticator-Schutz), name, last_used_at
+  - `WebAuthnService::register_options/register_verify` fuer Setup
+  - `WebAuthnService::login_options/login_verify` fuer Authentication
+  - `Auth::login` akzeptiert `$webauthn`-Array als Alternative zu `$two_fa_code`.
+    Koexistenz: Customer kann BEIDES haben, Server liefert `methods`-Info im
+    `two_fa_required`-Response damit Client den Pfad auswaehlen kann
+  - REST-Endpoints: `/me/webauthn/register-options`, `/me/webauthn/register`,
+    `/me/webauthn/credentials` (GET/DELETE), `/webauthn/login-options` (unauth,
+    rate-limited 20/5min)
+  - Portal-UI: PasskeysPanel in Plan-Seite unterhalb TwoFactorPanel,
+    Login-Screen zeigt "Mit Passkey anmelden"-Button wenn Server
+    `webauthn=true` liefert
+  - Audit-Events `webauthn.register` / `webauthn.revoke` / `auth.webauthn_failed`
+
+### Fixed
+- **Auto-Vernichten-Vorschlaege** zeigen jetzt die konkreten Email-Adressen,
+  nicht nur "X verschiedene Absender" als Zahl. `AutoDestroySuggestions` nutzt
+  `GROUP_CONCAT(DISTINCT LOWER(from_addr_snap))` und liefert ein
+  `sample_senders`-Array (bis zu 5). Portal-UI rendert "Beispiel-Absender:
+  &lt;addr&gt; &lt;addr&gt; ..." unter dem reason_text in den
+  Suggestion-Cards. User sieht jetzt VOR der Auto-Vernichten-Entscheidung
+  welche Email-Adressen betroffen waren.
+
 ## [0.73.2] – 2026-11-13
 
 ### Fixed
