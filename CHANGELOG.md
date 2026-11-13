@@ -7,6 +7,15 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.74.1] – 2026-11-13
+
+### Fixed
+- **WebAuthn**: lbuchs/webauthn im base64url-Modus konstruiert
+  (`new WebAuthn(..., true)`). Ohne das Flag serialisiert die Library
+  ByteBuffer zu `=?BINARY?B?<base64>?=` RFC-2047-Wrapper — Client-JS
+  `atob()` schlug fehl. Entdeckt beim Live-Register-Test via Chromium
+  CDP Virtual Authenticator.
+
 ## [0.74.0] – 2026-11-13
 
 ### Added
