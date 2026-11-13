@@ -780,7 +780,13 @@ final class ScanService {
 	 */
 	private static function extract_hosts_from_body( string $text ) : array {
 		if ( $text === '' ) { return []; }
-		if ( ! preg_match_all( '#https?://([^\s"\'<>)]+)#i', $text, $m ) ) { return []; }
+		// HTML-Entities + Non-Breaking-Space normalisieren BEVOR die URL-Regex matched.
+		// Sonst wird "https://foo.com&nbsp;text" als Host "foo.com&nbsp;text" gelesen
+		// (weil & nicht im Exclusion-Set der Regex ist), der DNS-Check schlaegt fehl
+		// und liefert +40 False-Positive-Score fuer eine harmlose HTML-Mail.
+		$text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		$text = str_replace( [ "\xC2\xA0", "\xE2\x80\x8B", "\xE2\x80\x8C", "\xE2\x80\x8D", "\xEF\xBB\xBF" ], ' ', $text );
+		if ( ! preg_match_all( '#https?://([^\s"\'<>)\]]+)#i', $text, $m ) ) { return []; }
 		$hosts = [];
 		foreach ( $m[1] as $urlpart ) {
 			$host_only = preg_split( '~[/?#]~', $urlpart, 2 )[0];
@@ -791,11 +797,17 @@ final class ScanService {
 				$host_only = substr( $host_only, 0, strpos( $host_only, ':' ) );
 			}
 			$host_only = strtolower( rtrim( $host_only, '.' ) );
+			// Letzter Trailing-Garbage ausschliessen (Komma, Semikolon, Punkt-am-Ende
+			// aus Satzzeichen-Nachbarschaft, oder Reste von nicht-dekodierten Entities).
+			$host_only = rtrim( $host_only, ',.;)]>!?' );
 			// Nur "echte" Hostnamen mit Punkt akzeptieren — sonst waeren
 			// http://localhost oder http://intranet auch drin.
-			if ( $host_only !== '' && strpos( $host_only, '.' ) !== false ) {
-				$hosts[ $host_only ] = true;
-			}
+			if ( $host_only === '' || strpos( $host_only, '.' ) === false ) { continue; }
+			// Host darf nur Buchstaben, Ziffern, Punkte, Bindestriche enthalten.
+			// Wenn "&" / ";" / Whitespace drin — durch Entities oder sonstige Quelle —
+			// ist das kein echter Hostname, ueberspringen.
+			if ( ! preg_match( '/^[a-z0-9.\-]+$/i', $host_only ) ) { continue; }
+			$hosts[ $host_only ] = true;
 		}
 		return array_keys( $hosts );
 	}
