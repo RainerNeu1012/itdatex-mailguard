@@ -62,11 +62,11 @@ final class Settings {
 		self::field_number( 'scan_batch_size',    __( 'Scans pro Cron-Run', 'itdatex-mailguard' ), 'mg_api', 1, 100 );
 		self::field_number( 'manual_scan_quota',  __( 'Manuelle Scans / Endkunde / 24h', 'itdatex-mailguard' ), 'mg_api', 1, 1000 );
 
-		add_settings_section( 'mg_ollama', __( 'LLM-Zweitmeinung (Ollama, lokal)', 'itdatex-mailguard' ), [ __CLASS__, 'ollama_intro' ], self::PAGE_SLUG );
-		self::field_checkbox( 'ollama_enabled', __( 'Grauzone an LLM weiterreichen', 'itdatex-mailguard' ), 'mg_ollama', __( 'Mails mit Heuristik-Score 30-49 bekommen eine LLM-Zweitmeinung. Nur-lokal (kein Cloud-Transfer), keine DSGVO-Einwilligung noetig.', 'itdatex-mailguard' ) );
-		self::field_text(     'ollama_endpoint', __( 'Endpoint', 'itdatex-mailguard' ), 'mg_ollama', [ 'placeholder' => 'http://127.0.0.1:11434' ] );
-		self::field_text(     'ollama_model',    __( 'Modell', 'itdatex-mailguard' ), 'mg_ollama', [ 'placeholder' => 'qwen2.5:7b-instruct-q4_K_M' ] );
-		self::field_number(   'ollama_timeout',  __( 'Timeout (Sek.)', 'itdatex-mailguard' ), 'mg_ollama', 5, 120 );
+		add_settings_section( 'mg_llm', __( 'LLM-Zweitmeinung (Anthropic Claude)', 'itdatex-mailguard' ), [ __CLASS__, 'llm_intro' ], self::PAGE_SLUG );
+		self::field_checkbox( 'llm_enabled', __( 'Grauzone an LLM weiterreichen', 'itdatex-mailguard' ), 'mg_llm', __( 'Mails mit Heuristik-Score 30-49 bekommen eine LLM-Zweitmeinung via Claude Haiku 4.5. Score-Adjust: dangerous +30/+20, suspicious +10/0, clean -20/-10 je nach Confidence.', 'itdatex-mailguard' ) );
+		self::field_password( 'llm_api_key', __( 'Anthropic API-Key', 'itdatex-mailguard' ), 'mg_llm' );
+		self::field_text(     'llm_model',   __( 'Modell', 'itdatex-mailguard' ), 'mg_llm', [ 'placeholder' => 'claude-haiku-4-5-20251001' ] );
+		self::field_number(   'llm_timeout', __( 'Timeout (Sek.)', 'itdatex-mailguard' ), 'mg_llm', 5, 120 );
 
 		add_settings_section( 'mg_safebrowsing', __( 'Google Safe Browsing', 'itdatex-mailguard' ), [ __CLASS__, 'safebrowsing_intro' ], self::PAGE_SLUG );
 		self::field_checkbox( 'safe_browsing_enabled', __( 'Safe Browsing aktivieren', 'itdatex-mailguard' ), 'mg_safebrowsing', __( 'URLs aus eingehenden Mails gegen Googles Phishing-/Malware-Liste pruefen (10.000 Lookups/Tag kostenlos). Treffer += 40 Score pro URL.', 'itdatex-mailguard' ) );
@@ -124,9 +124,12 @@ final class Settings {
 		) . '</p>';
 	}
 
-	public static function ollama_intro() : void {
-		echo '<p>' . esc_html__( 'Grauzone-Mails (Heuristik-Score 30-49) werden an eine lokale Ollama-Instanz geschickt fuer eine Zweitmeinung. Das Modell liefert verdict+confidence+reasons, der Score wird angepasst. Nur-lokal — keine Daten verlassen den Server, kein DSGVO-Consent noetig.', 'itdatex-mailguard' ) . '</p>';
-		echo '<p class="description">' . esc_html__( 'Modell-Download: ollama pull qwen2.5:7b-instruct-q4_K_M (4.7 GB, mein Pick). Latenz ~5-25 s/Mail bei Warmup, danach <5 s. Ollama muss am Endpoint erreichbar sein.', 'itdatex-mailguard' ) . '</p>';
+	public static function llm_intro() : void {
+		echo '<p>' . esc_html__( 'Grauzone-Mails (Heuristik-Score 30-49) werden an Anthropics Claude Haiku 4.5 geschickt fuer eine Zweitmeinung. Das Modell liefert verdict+confidence+reasons, der Score wird angepasst.', 'itdatex-mailguard' ) . '</p>';
+		echo '<p class="description">' . wp_kses(
+			__( 'API-Key: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com → Settings → API Keys</a>. Kosten: ~0.0004 € pro Mail bei Haiku 4.5. Bei 50 Grauzone-Mails/Tag = ~0.6 € pro Monat. Latenz ~1-2 s pro Call.', 'itdatex-mailguard' ),
+			[ 'a' => [ 'href' => [], 'target' => [], 'rel' => [] ] ]
+		) . '</p>';
 	}
 
 	public static function safebrowsing_intro() : void {
@@ -196,17 +199,20 @@ final class Settings {
 				$out['push_fcm_service_account'] = $json;
 			}
 		}
-		foreach ( [ 'allow_registration', 'require_email_verification', 'scan_deep', 'scan_auto_destroy_dangerous', 'av_clamav_enabled', 'av_notify_admin', 'safe_browsing_enabled', 'ollama_enabled' ] as $k ) {
+		foreach ( [ 'allow_registration', 'require_email_verification', 'scan_deep', 'scan_auto_destroy_dangerous', 'av_clamav_enabled', 'av_notify_admin', 'safe_browsing_enabled', 'llm_enabled' ] as $k ) {
 			$out[ $k ] = ! empty( $input[ $k ] ) ? 1 : 0;
 		}
-		if ( isset( $input['ollama_endpoint'] ) ) {
-			$out['ollama_endpoint'] = rtrim( esc_url_raw( trim( (string) $input['ollama_endpoint'] ) ), '/' );
+		if ( array_key_exists( 'llm_api_key', $input ) ) {
+			$key = trim( (string) $input['llm_api_key'] );
+			if ( $key !== '' ) {
+				$out['llm_api_key'] = $key;
+			}
 		}
-		if ( isset( $input['ollama_model'] ) ) {
-			$out['ollama_model'] = sanitize_text_field( (string) $input['ollama_model'] );
+		if ( isset( $input['llm_model'] ) ) {
+			$out['llm_model'] = sanitize_text_field( (string) $input['llm_model'] );
 		}
-		if ( isset( $input['ollama_timeout'] ) ) {
-			$out['ollama_timeout'] = max( 5, min( 120, (int) $input['ollama_timeout'] ) );
+		if ( isset( $input['llm_timeout'] ) ) {
+			$out['llm_timeout'] = max( 5, min( 120, (int) $input['llm_timeout'] ) );
 		}
 		if ( array_key_exists( 'safe_browsing_api_key', $input ) ) {
 			$key = trim( (string) $input['safe_browsing_api_key'] );

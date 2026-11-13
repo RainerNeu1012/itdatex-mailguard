@@ -348,11 +348,11 @@ final class ScanService {
 			}
 		}
 
-		// LLM-Zweitmeinung (Ollama, lokal) — nur Grauzone-Mails vor Attachments/AV
-		if ( ! $blacklist_hit && Ollama\OllamaClient::is_configured()
-			&& $score >= Ollama\OllamaClient::GRAY_MIN
-			&& $score <= Ollama\OllamaClient::GRAY_MAX ) {
-			$llm = Ollama\OllamaClient::second_opinion( [
+		// LLM-Zweitmeinung (Anthropic Claude) — nur Grauzone-Mails vor Attachments/AV
+		if ( ! $blacklist_hit && Anthropic\AnthropicClient::is_configured()
+			&& $score >= Anthropic\AnthropicClient::GRAY_MIN
+			&& $score <= Anthropic\AnthropicClient::GRAY_MAX ) {
+			$llm = Anthropic\AnthropicClient::second_opinion( [
 				'subject'   => (string) ( $row['subject']   ?? '' ),
 				'body'      => (string) ( $row['body_preview'] ?? '' ),
 				'from_name' => (string) ( $row['from_name'] ?? '' ),
