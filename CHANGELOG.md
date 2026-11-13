@@ -7,6 +7,17 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.73.1] – 2026-11-13
+
+### Fixed
+- **DNS-Check-Parser toleriert HTML-Entities + Non-Breaking-Space**:
+  `https://foo.com&nbsp;hoch` im Mail-Body wurde als Host
+  `foo.com&nbsp;hoch` gelesen, DNS-Lookup schlug fehl und gab +40
+  False-Positive-Score. Fix: `html_entity_decode` + U+00A0-Normalisierung
+  + striktere Hostname-Validierung (`^[a-z0-9.-]+$`). Entdeckt durch
+  Rescan einer Google-Search-Console-Verification-Mail
+  (msg_id 27626, Whitelist-Rescue hatte das Problem verdeckt).
+
 ## [0.73.0] – 2026-11-13
 
 ### Changed
