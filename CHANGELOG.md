@@ -7,6 +7,21 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.74.4] – 2026-11-14
+
+### Added
+- **Exponentieller IMAP-Backoff + Provider-Floor**: neue Spalte
+  `mg_imap_accounts.next_retry_after` (DB_VERSION 38→39). Nach Auth-Fail
+  setzt `Account::record_error` automatisch einen Backoff-Zeitpunkt:
+  5 min (count 1-2) / 15 min (3-5) / 30 min (6-10) / 2 h (11+). Fuer
+  bekannte Rate-Limiter (GMX/web.de/mail.de/1und1/kundenserver.de ≥30 min
+  floor; t-online.de ≥15 min floor) wird der Default nach oben korrigiert
+  damit wir das Server-seitige Lockout-Fenster nicht dauerhaft retriggern.
+  `PullService::pull_folder_once` ueberspringt Konten in Backoff komplett
+  (returnt `backoff_active` ohne Netzwerk-Call). `clear_error` beim
+  erfolgreichen Connect loest den Backoff auf. Portal-UI zeigt
+  "⏳ Naechster Pull-Versuch nicht vor &lt;ts&gt;" wenn Backoff aktiv.
+
 ## [0.74.3] – 2026-11-14
 
 ### Added
