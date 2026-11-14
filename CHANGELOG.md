@@ -7,6 +7,25 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.74.3] – 2026-11-14
+
+### Added
+- **"Verlauf nachtraeglich vernichten"**-Button bei bestehenden Eradicate-
+  Domain-Eintraegen. REST `POST /me/eradicate-domains/{id}/purge-history`
+  (Confirm-Guard "VERNICHTEN"). UI zeigt ein 🗑-Verlauf-Button neben dem
+  ×-Delete-Button in der Domain-Table; Confirm-Dialog + Alert mit
+  purged/skipped/failed-Count. Use-Case: Domain wurde initial ohne
+  `purge_history`-Checkbox angelegt, nachtraeglich soll auch der Altbestand
+  per IMAP EXPUNGE weggeraeumt werden.
+- **Automatische IMAP-Fail-Benachrichtigung**: beim Uebergang
+  `last_error_count` 2→3 UND bei 10 feuert `Account::record_error` jetzt
+  (a) eine In-Portal-Notification (Bell-Dropdown, route=accounts),
+  (b) eine Email an die Customer-Login-Adresse via
+  `Mailer::send_imap_fail_alert`, (c) ein AuditLog-Event
+  `imap.auth_failed_alert`. Dedup: nur exakt bei count 3 und 10, keine
+  Zwischen-Werte (vermeidet Spam bei lang-dauerndem Problem). Clear bei
+  erfolgreichem Connect → naechster 3er-Burst nach Clear feuert wieder.
+
 ## [0.74.2] – 2026-11-14
 
 ### Fixed
