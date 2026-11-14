@@ -120,6 +120,13 @@ final class PullService {
 			return [ 'folder_id' => $folder_id, 'ok' => false, 'error' => 'account_gone' ];
 		}
 
+		// Backoff-Check: wenn next_retry_after in der Zukunft liegt, skip den Connect.
+		// Schuetzt vor Provider-Rate-Limits (z.B. GMX blockt c-client nach vielen
+		// Fehlschlaegen temporaer) + vor eigenem CPU-Verschleiss.
+		if ( Account::is_in_backoff( (int) $account['id'] ) ) {
+			return [ 'folder_id' => $folder_id, 'ok' => false, 'error' => 'backoff_active', 'detail' => 'next_retry_after=' . ( $account['next_retry_after'] ?? '?' ) ];
+		}
+
 		// connect_with_retry: 1 Retry nach 5 s bei transient Hiccups, persistiert
 		// last_error auf dem Account-Row. Erspart Folder-record_test fuer den
 		// Auth-Fail-Path, weil der Fehler schon in mg_imap_accounts.last_error

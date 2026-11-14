@@ -180,6 +180,12 @@ export default function Accounts({ me }) {
                     </span>
                   </div>
                 )}
+                {it.next_retry_after && new Date(it.next_retry_after + 'Z').getTime() > Date.now() && (
+                  <div className="mg-muted mg-tiny" style={{marginTop:2}}>
+                    ⏳ Naechster Pull-Versuch nicht vor {fmtDate(it.next_retry_after)}
+                    {' '}(Backoff gegen Provider-Rate-Limit)
+                  </div>
+                )}
               </div>
               <div className="mg-account__actions">
                 <button className="mg-btn" disabled={!!busy[it.id]} onClick={() => test(it.id)}>{busy[it.id] === 'test' ? '…' : '↻ Test'}</button>

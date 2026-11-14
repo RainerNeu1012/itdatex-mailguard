@@ -112,10 +112,12 @@ final class Account {
 		if ( ! $row ) { return; }
 		$cur_count = (int) $row['last_error_count'];
 		$new_count = $cur_count + 1;
+		$backoff   = self::compute_backoff_seconds( $new_count );
 		$wpdb->update( self::table(), [
 			'last_error'       => mb_substr( $detail, 0, 500 ),
 			'last_error_at'    => gmdate( 'Y-m-d H:i:s' ),
 			'last_error_count' => $new_count,
+			'next_retry_after' => gmdate( 'Y-m-d H:i:s', time() + $backoff ),
 		], [ 'id' => $id ] );
 
 		// Eskalations-Benachrichtigung: beim Uebergang 2→3 (erster "kritischer" Punkt),
@@ -175,7 +177,43 @@ final class Account {
 			'last_error'       => null,
 			'last_error_at'    => null,
 			'last_error_count' => 0,
+			'next_retry_after' => null,
 		], [ 'id' => $id ] );
+	}
+
+	/**
+	 * Exponential-Backoff-Rezept fuer wiederholte Auth-Fehler. Schuetzt vor:
+	 *  - Provider-seitigem Rate-Limit nach vielen fehlgeschlagenen Logins
+	 *    (GMX blockt c-client temporaer nach ~5-10 Fehlschlaegen)
+	 *  - Eigenem Ressourcen-Verschleiss (jeder Cron-Pull-Zyklus waer sonst
+	 *    ein weiterer Fehlschlag mit 5 s Retry-Sleep)
+	 *
+	 * Timing:
+	 *   count 1-2  →  5 min  (frische Fehler, vermutlich transient — schnell retry)
+	 *   count 3-5  → 15 min  (naechster regulaerer Cron-Zyklus)
+	 *   count 6-10 → 30 min  (schon-mal-benachrichtigt, User informiert)
+	 *   count 11+  →  2 h    (dauerhaftes Problem, nur ab-und-zu retryen)
+	 */
+	public static function compute_backoff_seconds( int $count ) : int {
+		if ( $count <= 2 )  { return  5 * MINUTE_IN_SECONDS; }
+		if ( $count <= 5 )  { return 15 * MINUTE_IN_SECONDS; }
+		if ( $count <= 10 ) { return 30 * MINUTE_IN_SECONDS; }
+		return 2 * HOUR_IN_SECONDS;
+	}
+
+	/**
+	 * true wenn das Konto aktuell wegen vorheriger Fehlschlaege in Backoff
+	 * steht und der naechste Retry noch nicht erlaubt ist.
+	 */
+	public static function is_in_backoff( int $id ) : bool {
+		if ( $id <= 0 ) { return false; }
+		global $wpdb;
+		$next = $wpdb->get_var( $wpdb->prepare(
+			'SELECT next_retry_after FROM ' . self::table() . ' WHERE id = %d',
+			$id
+		) );
+		if ( ! $next ) { return false; }
+		return strtotime( (string) $next . ' UTC' ) > time();
 	}
 
 	private static function defaults() : array {
@@ -321,6 +359,7 @@ final class Account {
 			'last_error'       => $row['last_error']    ?? null,
 			'last_error_at'    => $row['last_error_at'] ?? null,
 			'last_error_count' => isset( $row['last_error_count'] ) ? (int) $row['last_error_count'] : 0,
+			'next_retry_after' => $row['next_retry_after'] ?? null,
 			'created_at'       => (string) $row['created_at'],
 			'has_password'     => ( $row['password_enc'] ?? '' ) !== '',
 			'auth_type'        => $auth_type,
