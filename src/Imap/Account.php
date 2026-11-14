@@ -105,15 +105,60 @@ final class Account {
 	public static function record_error( int $id, string $detail ) : void {
 		if ( $id <= 0 ) { return; }
 		global $wpdb;
-		$cur = (int) $wpdb->get_var( $wpdb->prepare(
-			'SELECT last_error_count FROM ' . self::table() . ' WHERE id = %d',
+		$row = $wpdb->get_row( $wpdb->prepare(
+			'SELECT customer_id, label, username, last_error_count FROM ' . self::table() . ' WHERE id = %d',
 			$id
-		) );
+		), ARRAY_A );
+		if ( ! $row ) { return; }
+		$cur_count = (int) $row['last_error_count'];
+		$new_count = $cur_count + 1;
 		$wpdb->update( self::table(), [
 			'last_error'       => mb_substr( $detail, 0, 500 ),
 			'last_error_at'    => gmdate( 'Y-m-d H:i:s' ),
-			'last_error_count' => $cur + 1,
+			'last_error_count' => $new_count,
 		], [ 'id' => $id ] );
+
+		// Eskalations-Benachrichtigung: beim Uebergang 2→3 (erster "kritischer" Punkt),
+		// dann nochmal bei 10 (dauerhaftes Problem — user hat 3er-Alert ignoriert).
+		// Dedup ueber genaue Transition-Zahl: wenn cur_count anders war, feuern wir.
+		if ( $new_count === 3 || $new_count === 10 ) {
+			self::notify_imap_fail(
+				(int) $row['customer_id'],
+				$id,
+				(string) ( $row['label'] ?: $row['username'] ),
+				$detail,
+				$new_count
+			);
+		}
+	}
+
+	private static function notify_imap_fail( int $customer_id, int $account_id, string $label, string $detail, int $count ) : void {
+		// In-Portal-Benachrichtigung (Bell-Dropdown im Portal)
+		\Itdatex\Mailguard\Notify\Notification::create( $customer_id, [
+			'event' => 'imap.auth_failed',
+			'title' => sprintf( 'IMAP-Konto "%s" nicht erreichbar', mb_substr( $label, 0, 60 ) ),
+			'body'  => sprintf(
+				"%dx hintereinander fehlgeschlagen.\n\nFehler: %s\n\nBitte Passwort im Portal unter Postfaecher neu eintragen.",
+				$count,
+				mb_substr( $detail, 0, 300 )
+			),
+			'route' => 'accounts',
+		] );
+
+		// E-Mail an die Login-Adresse des Customers — kritische Eskalation
+		$customer_email = (string) ( $GLOBALS['wpdb']->get_var( $GLOBALS['wpdb']->prepare(
+			'SELECT email FROM ' . $GLOBALS['wpdb']->prefix . 'mg_customers WHERE id = %d',
+			$customer_id
+		) ) ?? '' );
+		if ( $customer_email !== '' ) {
+			\Itdatex\Mailguard\Customer\Mailer::send_imap_fail_alert( $customer_email, $label, $detail, $count );
+		}
+		\Itdatex\Mailguard\Customer\AuditLog::emit(
+			$customer_id,
+			'imap.auth_failed_alert',
+			\Itdatex\Mailguard\Customer\AuditLog::SEV_WARN,
+			[ 'account_id' => $account_id, 'count' => $count ]
+		);
 	}
 
 	public static function clear_error( int $id ) : void {

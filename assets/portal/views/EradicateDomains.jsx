@@ -113,6 +113,34 @@ function DomainsList() {
     }
   };
 
+  const purgeHistory = async (id, domain) => {
+    if (!window.confirm(
+      `Alle bereits eingegangenen Mails von *@${domain} JETZT loeschen?\n\n` +
+      `Per IMAP EXPUNGE — kein Papierkorb, kein Undo.\n\n` +
+      `Dies erfasst Mails die vor Hinzufuegen des Filters schon in der Inbox waren.`
+    )) return;
+    setBusy((b) => ({ ...b, [id]: 'purge' }));
+    try {
+      const { status, body } = await apiPost(`me/eradicate-domains/${id}/purge-history`, {
+        confirm: 'VERNICHTEN',
+      });
+      if (status >= 400 || !body?.ok) {
+        alert('Verlauf-Loeschen fehlgeschlagen: ' + (body?.message || body?.error || ('HTTP ' + status)));
+        return;
+      }
+      const pr = body.purge || {};
+      alert(
+        `Verlauf-Loeschung fuer *@${domain}:\n\n` +
+        `${pr.purged || 0} geloescht` +
+        (pr.skipped ? ` · ${pr.skipped} uebersprungen` : '') +
+        (pr.failed  ? ` · ${pr.failed} fehlgeschlagen`  : '')
+      );
+      load();
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[id]; return n; });
+    }
+  };
+
   const remove = async (id, domain) => {
     if (!window.confirm(`Auto-Vernichten für *@${domain} wieder aufheben?\n\nZukünftige Mails der Domain landen dann wieder ganz normal in deiner Inbox.`)) return;
     setBusy((b) => ({ ...b, [id]: 'del' }));
@@ -206,13 +234,25 @@ function DomainsList() {
                         )}
                       </td>
                       <td>
-                        <button
-                          className="mg-btn"
-                          disabled={!!busy[r.id]}
-                          onClick={() => remove(r.id, r.domain)}
-                        >
-                          {busy[r.id] === 'del' ? '…' : '×'}
-                        </button>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button
+                            className="mg-btn mg-tiny"
+                            disabled={!!busy[r.id]}
+                            onClick={() => purgeHistory(r.id, r.domain)}
+                            title="Alle bereits eingegangenen Mails dieser Domain jetzt per IMAP EXPUNGE loeschen (unwiderruflich)"
+                            style={{ fontSize: '0.75rem' }}
+                          >
+                            {busy[r.id] === 'purge' ? '…' : '🗑 Verlauf'}
+                          </button>
+                          <button
+                            className="mg-btn"
+                            disabled={!!busy[r.id]}
+                            onClick={() => remove(r.id, r.domain)}
+                            title="Domain aus Auto-Vernichten-Liste entfernen"
+                          >
+                            {busy[r.id] === 'del' ? '…' : '×'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     {isOpen && hasSenders && (

@@ -868,6 +868,12 @@ final class Controller {
 			],
 		] );
 
+		register_rest_route( self::NAMESPACE, '/me/eradicate-domains/(?P<id>\d+)/purge-history', [
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => [ __CLASS__, 'eradicate_domains_purge_history' ],
+		] );
+
 		register_rest_route( self::NAMESPACE, '/me/eradicate-domains/(?P<id>\d+)', [
 			'methods'             => 'DELETE',
 			'permission_callback' => '__return_true',
@@ -2223,6 +2229,39 @@ final class Controller {
 			$out['purge'] = $purge;
 		}
 		return new WP_REST_Response( $out, 200 );
+	}
+
+	/**
+	 * POST /me/eradicate-domains/{id}/purge-history — nachtraeglich alle
+	 * bereits eingegangenen Mails der Domain per IMAP EXPUNGE loeschen.
+	 * Confirm-Guard analog zum add-Flow.
+	 */
+	public static function eradicate_domains_purge_history( WP_REST_Request $req ) {
+		$cid = self::require_customer();
+		if ( is_wp_error( $cid ) ) { return $cid; }
+		$id = (int) $req['id'];
+		global $wpdb;
+		$t = $wpdb->prefix . Installer::TABLE_ERADICATE_DOMAINS;
+		$row = $wpdb->get_row( $wpdb->prepare(
+			"SELECT id, domain FROM {$t} WHERE id = %d AND customer_id = %d LIMIT 1",
+			$id, $cid
+		), ARRAY_A );
+		if ( ! $row ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
+		$json = (array) $req->get_json_params();
+		$confirm = trim( (string) ( $json['confirm'] ?? '' ) );
+		if ( strtoupper( $confirm ) !== 'VERNICHTEN' ) {
+			return new WP_Error(
+				'confirm_missing',
+				__( 'Bestätigung fehlt — bitte "VERNICHTEN" eintippen, damit diese endgültige Aktion ausgeführt wird.', 'itdatex-mailguard' ),
+				[ 'status' => 422 ]
+			);
+		}
+		$res = \Itdatex\Mailguard\Antiphish\PurgeService::hard_purge_domain( $cid, (string) $row['domain'] );
+		return new WP_REST_Response( [
+			'ok'     => true,
+			'domain' => (string) $row['domain'],
+			'purge'  => $res,
+		], 200 );
 	}
 
 	/**

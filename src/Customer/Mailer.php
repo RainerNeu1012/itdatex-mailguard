@@ -115,6 +115,35 @@ final class Mailer {
 		return self::send( $email, $subject, $text, $html );
 	}
 
+	public static function send_imap_fail_alert( string $email, string $account_label, string $error_detail, int $count ) : bool {
+		$subject = sprintf( __( '[%s] IMAP-Konto "%s" nicht erreichbar', 'itdatex-mailguard' ), get_bloginfo( 'name' ), $account_label );
+		$portal  = self::portal_url( 'accounts' );
+		$text = sprintf(
+			__( "Dein IMAP-Konto \"%s\" konnte in den letzten %d MailGuard-Pull-Zyklen nicht erreicht werden.\n\nLetzter Fehler:\n  %s\n\nWas tun:\n1. Logge dich im Mail-Provider-Webmail ein und pruefe ob das Passwort noch aktiv ist.\n2. Oeffne das Portal und trage ggf. das neue Passwort ein:\n   %s\n3. Klick auf \"Test\" — sollte gruen werden.\n\nSolange das Konto nicht verbindet, werden keine neuen Mails gescannt oder auto-vernichtet.", 'itdatex-mailguard' ),
+			$account_label,
+			$count,
+			mb_substr( $error_detail, 0, 500 ),
+			$portal
+		);
+		$html = MailTemplate::render(
+			'MailGuard kann dein Postfach nicht erreichen — bitte Passwort pruefen.',
+			'IMAP-AUTH-FAIL',
+			'Verbindung verloren',
+			sprintf(
+				'Dein Konto <strong>%s</strong> konnte in den letzten <strong>%d</strong> Pull-Zyklen nicht erreicht werden. Wahrscheinlichste Ursache: Passwort wurde beim Provider geaendert oder App-Passwort wurde invalidiert.',
+				esc_html( $account_label ),
+				$count
+			),
+			[ 'label' => 'Postfach im Portal reparieren', 'url' => $portal ],
+			[
+				'FEHLER &middot; ' . esc_html( mb_substr( $error_detail, 0, 160 ) ),
+				'WIEDERHOLUNGEN &middot; ' . $count,
+			],
+			'Solange das Konto nicht verbindet, werden keine neuen Mails gescannt oder auto-vernichtet.'
+		);
+		return self::send( $email, $subject, $text, $html );
+	}
+
 	public static function send_2fa_reset( string $email, string $code ) : bool {
 		$subject = sprintf( __( '[%s] Zwei-Faktor-Reset — Code', 'itdatex-mailguard' ), get_bloginfo( 'name' ) );
 		$text = sprintf(
