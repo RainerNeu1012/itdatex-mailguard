@@ -2490,6 +2490,14 @@ final class Controller {
 			$client->select_folder( $folder );
 			if ( $want_html ) {
 				$result = $client->fetch_body_html( $uid, 500000 );
+				// Auto-Fallback: wenn kein HTML-Part existiert, probiere text
+				// damit DMARC-Reports / plain-text-only-Mails nicht leer bleiben.
+				if ( empty( $result['body'] ) ) {
+					$text = $client->fetch_body_text( $uid, 100000 );
+					if ( $text !== '' ) {
+						$result = [ 'format' => 'text', 'body' => $text ];
+					}
+				}
 			} else {
 				$result = [ 'format' => 'text', 'body' => $client->fetch_body_text( $uid, 100000 ) ];
 			}

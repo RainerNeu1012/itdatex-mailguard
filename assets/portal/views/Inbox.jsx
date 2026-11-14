@@ -1910,6 +1910,16 @@ function MessageBody({ messageId, preview, fromAddr, subject }) {
       </div>
       {err && <p className="mg-tiny" style={{ color: 'var(--mg-err)', margin: 0 }}>{err}</p>}
       {body === null && !err && <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{preview || <em className="mg-muted">…</em>}</p>}
+      {body === '' && !err && (
+        <div className="mg-muted" style={{ padding: 16, border: '1px dashed var(--mg-border)', borderRadius: 4, fontSize: 13, textAlign: 'center' }}>
+          <strong>Diese Mail enthaelt keinen Textinhalt.</strong>
+          <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
+            Moeglicherweise reine Binaer-/Report-Mail (z.B. DMARC-Report, Kalender-Invite, verschluesseltes Attachment).
+            {subject && <><br/>Betreff: <em>{subject}</em></>}
+            {fromAddr && <><br/>Absender: <code>{fromAddr}</code></>}
+          </div>
+        </div>
+      )}
       {body && format === 'html' && (
         <iframe
           key={String(loadImages)}
