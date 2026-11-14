@@ -7,6 +7,34 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.74.2] – 2026-11-14
+
+### Fixed
+- **Mobile Suggestion-Rows** (Pattern- und Auto-Vernichten-Vorschlaege):
+  3-Col-Flex quetschte die Content-Spalte auf Mobile auf ~20 px, Addressen +
+  Reason-Text wurden buchstabenweise vertikal gestackt (gleicher Bug-Pattern
+  wie HealthHero vorher). Fix: inline styles raus, CSS-Klasse
+  `.mg-suggestion-row` + `@media (max-width:640px) { flex-direction: column }`.
+- **Notifications-Popover** (Bell-Dropdown): `minWidth:360px` mit
+  `position:absolute right:0` clipped auf iPhone den linken Rand off-screen.
+  Fix: inline dropdownStyle raus, CSS-Klasse `.mg-notify-popover` mit
+  Mobile-Rule `position:fixed; left:0.75rem; right:0.75rem` fuer
+  Full-Width-minus-Margin.
+
+### Added
+- **IMAP-Retry + last_error-Transparenz** fuer robustere Connect-Chain:
+  - Neue Spalten `mg_imap_accounts.last_error`, `last_error_at`,
+    `last_error_count` (DB_VERSION 37→38).
+  - `Account::record_error` / `clear_error` Helper.
+  - `ClientFactory::connect_with_retry($row, $folder='')`-Wrapper: 1 Retry
+    nach 5 s bei transient Hiccups (503/Timeout/TLS-Reset).
+    `reauth_required`+`no_password_stored` werden nicht retryt (sinnlos).
+    Bei Erfolg wird `last_error` geloescht, bei Fail persistiert + rethrown.
+  - `PullService::pull_folder_once` + REST `/accounts/{id}/test` nutzen
+    den neuen Wrapper.
+  - Portal-Accounts-View zeigt `⚠ IMAP-Verbindung: &lt;msg&gt;` Hint
+    inkl. Count wenn mehrmals hintereinander failed.
+
 ## [0.74.1] – 2026-11-13
 
 ### Fixed
