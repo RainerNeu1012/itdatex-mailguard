@@ -7,6 +7,20 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.74.5] – 2026-11-14
+
+### Fixed
+- **Mail-Body Empty-State** fuer DMARC-Reports und Nur-Anhang-Mails
+  (Outlook Dmarcreport, Google Dmarc-Support, Kalender-Invites,
+  verschluesselte Attachments): statt leerer Flaeche zeigt der Portal
+  jetzt einen Empty-State-Block mit Subject + Absender und dem Hinweis
+  "Diese Mail enthaelt keinen Textinhalt. Moeglicherweise reine Binaer-
+  /Report-Mail".
+- **Backend HTML→Text Auto-Fallback**: wenn `inbox_message_body` mit
+  `format=html` angefragt wird aber kein HTML-Part existiert, probiert
+  der Server intern `fetch_body_text` als Fallback — loest ca. die
+  Haelfte der Faelle wo Mails text-only sind aber kein HTML haben.
+
 ## [0.74.4] – 2026-11-14
 
 ### Added
