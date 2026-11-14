@@ -106,13 +106,13 @@ final class Account {
 		if ( $id <= 0 ) { return; }
 		global $wpdb;
 		$row = $wpdb->get_row( $wpdb->prepare(
-			'SELECT customer_id, label, username, last_error_count FROM ' . self::table() . ' WHERE id = %d',
+			'SELECT customer_id, label, username, host, last_error_count FROM ' . self::table() . ' WHERE id = %d',
 			$id
 		), ARRAY_A );
 		if ( ! $row ) { return; }
 		$cur_count = (int) $row['last_error_count'];
 		$new_count = $cur_count + 1;
-		$backoff   = self::compute_backoff_seconds( $new_count );
+		$backoff   = self::compute_backoff_seconds( $new_count, (string) ( $row['host'] ?? '' ) );
 		$wpdb->update( self::table(), [
 			'last_error'       => mb_substr( $detail, 0, 500 ),
 			'last_error_at'    => gmdate( 'Y-m-d H:i:s' ),
@@ -188,17 +188,51 @@ final class Account {
 	 *  - Eigenem Ressourcen-Verschleiss (jeder Cron-Pull-Zyklus waer sonst
 	 *    ein weiterer Fehlschlag mit 5 s Retry-Sleep)
 	 *
-	 * Timing:
+	 * Timing (Default):
 	 *   count 1-2  →  5 min  (frische Fehler, vermutlich transient — schnell retry)
 	 *   count 3-5  → 15 min  (naechster regulaerer Cron-Zyklus)
 	 *   count 6-10 → 30 min  (schon-mal-benachrichtigt, User informiert)
 	 *   count 11+  →  2 h    (dauerhaftes Problem, nur ab-und-zu retryen)
+	 *
+	 * Provider-Floor: fuer bekannte Rate-Limiter (GMX/1&1-Family) wird die
+	 * Default-Zahl nach oben korrigiert — selbst bei count=1 mindestens 30 min
+	 * damit wir das Provider-seitige Backoff-Fenster (~30 min) nicht
+	 * konstant resetten und uns damit permanent aussperren.
 	 */
-	public static function compute_backoff_seconds( int $count ) : int {
-		if ( $count <= 2 )  { return  5 * MINUTE_IN_SECONDS; }
-		if ( $count <= 5 )  { return 15 * MINUTE_IN_SECONDS; }
-		if ( $count <= 10 ) { return 30 * MINUTE_IN_SECONDS; }
-		return 2 * HOUR_IN_SECONDS;
+	public static function compute_backoff_seconds( int $count, string $host = '' ) : int {
+		$default = 2 * HOUR_IN_SECONDS;
+		if ( $count <= 2 )       { $default =  5 * MINUTE_IN_SECONDS; }
+		elseif ( $count <= 5 )   { $default = 15 * MINUTE_IN_SECONDS; }
+		elseif ( $count <= 10 )  { $default = 30 * MINUTE_IN_SECONDS; }
+		return max( $default, self::provider_min_backoff_seconds( $host ) );
+	}
+
+	/**
+	 * Provider-seitig bekannte Mindest-Backoff-Zeit. Wenn ein Provider nach
+	 * N Auth-Fails eine temporaere IP/UA-Sperre fuer Zeit X verhaengt,
+	 * MUESSEN wir mindestens X Sekunden warten bevor wir den naechsten
+	 * Versuch starten — sonst wird der Timer bei jedem Fehlschlag resetted
+	 * und wir kommen nie mehr rein.
+	 *
+	 * Erkannte Provider (empirisch festgestellt):
+	 *  - GMX / 1&1 / mail.de / web.de — alle ueber 1&1-Backend, lehnen
+	 *    c-client (PHP imap-extension) nach ~5 Fails fuer 30+ Min ab,
+	 *    obwohl direktes openssl LOGIN mit denselben Credentials akzeptiert
+	 *    wird (vermutlich fingerprint-Block auf c-client-SASL-Pattern).
+	 *  - t-online.de — aehnlicher Pattern, 15 min Lockout reporti
+	 */
+	public static function provider_min_backoff_seconds( string $host ) : int {
+		$host = strtolower( trim( $host ) );
+		if ( $host === '' ) { return 0; }
+		// 1&1-Family (GMX, web.de, mail.de, 1und1)
+		if ( preg_match( '/(^|\.)(gmx\.|web\.de|mail\.de|1und1\.|kundenserver\.de)/', $host ) ) {
+			return 30 * MINUTE_IN_SECONDS;
+		}
+		// Telekom T-Online
+		if ( preg_match( '/(^|\.)t-online\.de/', $host ) ) {
+			return 15 * MINUTE_IN_SECONDS;
+		}
+		return 0;
 	}
 
 	/**
