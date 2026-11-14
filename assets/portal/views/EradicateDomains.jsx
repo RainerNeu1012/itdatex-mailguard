@@ -323,17 +323,8 @@ function EradicateSuggestionsCard({ onAdded }) {
         {err && <div className="mg-alert mg-alert-err" style={{ marginBottom: 8 }}>{err}</div>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {visible.map((sug) => (
-            <div
-              key={sug.id}
-              style={{
-                display: 'flex', alignItems: 'flex-start', gap: 10,
-                padding: '8px 10px',
-                background: 'var(--mg-surface-alt, rgba(0,0,0,0.03))',
-                border: '1px solid var(--mg-border)',
-                borderRadius: 'var(--mg-radius, 8px)',
-              }}
-            >
-              <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+            <div key={sug.id} className="mg-suggestion-row">
+              <div className="mg-suggestion-row__body">
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 11, padding: '2px 6px', border: '1px solid var(--mg-border)', borderRadius: 999 }}>Domain</span>
                   <strong className="mg-mono" style={{ fontSize: 13, wordBreak: 'break-all' }}>@{sug.domain}</strong>
@@ -351,7 +342,7 @@ function EradicateSuggestionsCard({ onAdded }) {
                   </div>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              <div className="mg-suggestion-row__actions">
                 <button className="mg-btn mg-btn--danger" onClick={() => { setPending(sug); setPendingAck(false); }} disabled={busy === sug.id}>
                   {busy === sug.id ? '…' : 'Auto-Vernichten'}
                 </button>
@@ -576,14 +567,8 @@ function PatternSuggestionsCard() {
       {err && <div className="mg-alert mg-alert-err" style={{ marginBottom: 8 }}><span>⚠</span> {err}</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {visible.map((sug) => (
-          <div key={sug.id} style={{
-            display: 'flex', alignItems: 'flex-start', gap: 10,
-            padding: '8px 10px',
-            background: 'var(--mg-surface-alt, rgba(0,0,0,0.03))',
-            border: '1px solid var(--mg-border)',
-            borderRadius: 'var(--mg-radius, 8px)',
-          }}>
-            <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+          <div key={sug.id} className="mg-suggestion-row">
+            <div className="mg-suggestion-row__body">
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 11, padding: '2px 6px', border: '1px solid var(--mg-border)', borderRadius: 999 }}>Betreff</span>
                 <strong className="mg-mono" style={{ fontSize: 13, wordBreak: 'break-all' }}>{sug.pattern}</strong>
@@ -591,7 +576,7 @@ function PatternSuggestionsCard() {
               </div>
               <div style={{ fontSize: 12, marginTop: 4, opacity: 0.85 }}>{sug.reason_text}</div>
             </div>
-            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <div className="mg-suggestion-row__actions">
               <button className="mg-btn mg-btn--danger" onClick={() => apply(sug)} disabled={busy === sug.id}>
                 {busy === sug.id ? '…' : '+ Inhalts-Regel'}
               </button>

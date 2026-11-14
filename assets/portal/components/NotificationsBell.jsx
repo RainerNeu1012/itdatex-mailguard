@@ -68,7 +68,7 @@ export default function NotificationsBell() {
       </button>
 
       {open && (
-        <div className="mg-card" style={dropdownStyle}>
+        <div className="mg-card mg-notify-popover">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', paddingBottom: '0.5rem', borderBottom: '1px solid var(--mg-border)' }}>
             <strong style={{ fontSize: '1rem' }}>Benachrichtigungen</strong>
             {unreadCount > 0 && (
@@ -105,18 +105,9 @@ export default function NotificationsBell() {
   );
 }
 
-const dropdownStyle = {
-  position: 'absolute',
-  right: 0,
-  top: 'calc(100% + 0.35rem)',
-  minWidth: 360,
-  maxWidth: 460,
-  maxHeight: '70vh',
-  overflowY: 'auto',
-  zIndex: 200,
-  padding: '0.9rem 1rem',
-  boxShadow: 'var(--mg-shadow-2, 0 8px 24px rgba(0,0,0,0.5))',
-};
+// Dropdown-Styles sind in styles.css unter .mg-notify-popover — Mobile-Breakpoint
+// bei 640px wechselt zu position:fixed mit left/right 0.75rem damit der Popover
+// nicht ueber den linken Viewport-Rand hinaus clipped.
 
 const itemStyle = (isRead) => ({
   display: 'block',

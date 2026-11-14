@@ -40,6 +40,49 @@ final class ClientFactory {
 		return self::build( $row, $folder_name ?: 'INBOX' );
 	}
 
+	/**
+	 * Convenience-Wrapper: client bauen + connect() mit 1 Retry + Backoff
+	 * + last_error-Persistierung in mg_imap_accounts.
+	 *
+	 * Transient-Hiccups (Microsoft 503, iCloud Timeout, TLS-Reset) sollen
+	 * nicht sofort einen User-Fehler erzeugen. Wir warten 5 s und versuchen
+	 * nochmal — faellt der zweite Call auch, wird die Fehlermeldung in
+	 * mg_imap_accounts.last_error gespeichert und die Exception rethrown.
+	 *
+	 * Bei Erfolg wird last_error geloescht (falls gesetzt).
+	 *
+	 * @throws \RuntimeException
+	 */
+	public static function connect_with_retry( array $row, string $folder_name = '' ) {
+		$account_id = (int) ( $row['id'] ?? 0 );
+		$folder     = $folder_name !== '' ? $folder_name : (string) ( $row['folder'] ?? 'INBOX' );
+		$last_err   = null;
+		for ( $attempt = 1; $attempt <= 2; $attempt++ ) {
+			try {
+				$client = self::build( $row, $folder );
+				$client->connect();
+				if ( $account_id > 0 ) {
+					Account::clear_error( $account_id );
+				}
+				return $client;
+			} catch ( \Throwable $e ) {
+				$last_err = $e;
+				$msg = $e->getMessage();
+				// reauth_required-Fehler nicht retryen — Token ist tot, zweiter Call bringt nichts.
+				if ( str_starts_with( $msg, 'reauth_required' ) ) { break; }
+				// no_password_stored etc. auch nicht
+				if ( $msg === 'no_password_stored' || str_starts_with( $msg, 'unsupported_auth_type' ) ) { break; }
+				if ( $attempt === 1 ) {
+					sleep( 5 );
+				}
+			}
+		}
+		if ( $account_id > 0 && $last_err ) {
+			Account::record_error( $account_id, $last_err->getMessage() );
+		}
+		throw $last_err ?: new \RuntimeException( 'connect_failed_unknown' );
+	}
+
 	private static function build( array $row, string $folder_name ) {
 		$auth = (string) ( $row['auth_type'] ?? 'basic' );
 

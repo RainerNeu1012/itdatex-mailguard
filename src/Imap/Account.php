@@ -94,6 +94,45 @@ final class Account {
 		], [ 'id' => $id, 'customer_id' => $customer_id ] );
 	}
 
+	/**
+	 * Persistiert einen transient-oder-echten IMAP-Fehler fuer UI-Transparenz.
+	 * last_error_count wird inkrementiert — ein wiederkehrender Fehler (mehrmals
+	 * hintereinander) deutet auf permanentes Problem (Passwort geaendert,
+	 * Refresh-Token revoked); ein 1er-Count ist meist ein transient Hiccup.
+	 * Account-id (nicht customer-id-gekoppelt) damit System-Jobs (Cron) das
+	 * auch aufrufen koennen.
+	 */
+	public static function record_error( int $id, string $detail ) : void {
+		if ( $id <= 0 ) { return; }
+		global $wpdb;
+		$cur = (int) $wpdb->get_var( $wpdb->prepare(
+			'SELECT last_error_count FROM ' . self::table() . ' WHERE id = %d',
+			$id
+		) );
+		$wpdb->update( self::table(), [
+			'last_error'       => mb_substr( $detail, 0, 500 ),
+			'last_error_at'    => gmdate( 'Y-m-d H:i:s' ),
+			'last_error_count' => $cur + 1,
+		], [ 'id' => $id ] );
+	}
+
+	public static function clear_error( int $id ) : void {
+		if ( $id <= 0 ) { return; }
+		global $wpdb;
+		// Nur loeschen wenn vorher ein Fehler gesetzt war — sonst sparen wir
+		// den UPDATE-Call auf jedem Successful-Connect.
+		$cur = $wpdb->get_var( $wpdb->prepare(
+			'SELECT last_error FROM ' . self::table() . ' WHERE id = %d',
+			$id
+		) );
+		if ( $cur === null ) { return; }
+		$wpdb->update( self::table(), [
+			'last_error'       => null,
+			'last_error_at'    => null,
+			'last_error_count' => 0,
+		], [ 'id' => $id ] );
+	}
+
 	private static function defaults() : array {
 		return [
 			'label'      => '',
@@ -234,6 +273,9 @@ final class Account {
 			'last_test_at'     => $row['last_test_at']     ?: null,
 			'last_test_ok'     => isset( $row['last_test_ok'] ) ? (int) $row['last_test_ok'] : null,
 			'last_test_detail' => $row['last_test_detail'] ?: null,
+			'last_error'       => $row['last_error']    ?? null,
+			'last_error_at'    => $row['last_error_at'] ?? null,
+			'last_error_count' => isset( $row['last_error_count'] ) ? (int) $row['last_error_count'] : 0,
 			'created_at'       => (string) $row['created_at'],
 			'has_password'     => ( $row['password_enc'] ?? '' ) !== '',
 			'auth_type'        => $auth_type,

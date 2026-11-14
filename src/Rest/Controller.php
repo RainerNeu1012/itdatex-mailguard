@@ -1078,7 +1078,7 @@ final class Controller {
 		$row = ImapAccount::find_for_customer( $id, $cid );
 		if ( ! $row ) { return new WP_Error( 'not_found', '', [ 'status' => 404 ] ); }
 		try {
-			$client = \Itdatex\Mailguard\Imap\ClientFactory::for_account( $row );
+			$client = \Itdatex\Mailguard\Imap\ClientFactory::connect_with_retry( $row );
 			$probe = $client->probe();
 			ImapAccount::record_test( $id, $cid, true, 'ok · messages=' . (int) $probe['messages'] );
 			return new WP_REST_Response( [ 'ok' => true, 'probe' => $probe ], 200 );

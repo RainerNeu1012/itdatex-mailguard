@@ -120,14 +120,12 @@ final class PullService {
 			return [ 'folder_id' => $folder_id, 'ok' => false, 'error' => 'account_gone' ];
 		}
 
+		// connect_with_retry: 1 Retry nach 5 s bei transient Hiccups, persistiert
+		// last_error auf dem Account-Row. Erspart Folder-record_test fuer den
+		// Auth-Fail-Path, weil der Fehler schon in mg_imap_accounts.last_error
+		// steht und im Portal unter Postfaecher sichtbar wird.
 		try {
-			$client = ClientFactory::for_account_folder( $account, (string) $folder['folder_name'] );
-		} catch ( \Throwable $e ) {
-			Folder::record_test( $folder_id, $customer_id, false, 'auth: ' . $e->getMessage() );
-			return [ 'folder_id' => $folder_id, 'ok' => false, 'error' => 'auth_failed', 'detail' => $e->getMessage() ];
-		}
-		try {
-			$client->connect();
+			$client = ClientFactory::connect_with_retry( $account, (string) $folder['folder_name'] );
 		} catch ( \Throwable $e ) {
 			Folder::record_test( $folder_id, $customer_id, false, 'connect: ' . $e->getMessage() );
 			return [ 'folder_id' => $folder_id, 'ok' => false, 'error' => 'connect_failed', 'detail' => $e->getMessage() ];

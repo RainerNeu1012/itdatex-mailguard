@@ -172,6 +172,14 @@ export default function Accounts({ me }) {
                 ) : (
                   <span className="mg-muted">noch nicht getestet</span>
                 )}
+                {it.last_error && (
+                  <div className="mg-err-inline" style={{marginTop:4,fontSize:'0.85rem'}}>
+                    ⚠ IMAP-Verbindung: {it.last_error}
+                    <span className="mg-muted mg-tiny" style={{marginLeft:6}}>
+                      ({fmtDate(it.last_error_at)}{it.last_error_count > 1 ? ' · ' + it.last_error_count + '× hintereinander' : ''})
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="mg-account__actions">
                 <button className="mg-btn" disabled={!!busy[it.id]} onClick={() => test(it.id)}>{busy[it.id] === 'test' ? '…' : '↻ Test'}</button>

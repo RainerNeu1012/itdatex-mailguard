@@ -1826,16 +1826,8 @@ function PortalSuggestionRow({ sug, busy, onApply, onDismiss }) {
               : sug.match_type === 'subject_contains' ? 'Betreff'
               : sug.match_type;
   return (
-    <div
-      style={{
-        display: 'flex', alignItems: 'flex-start', gap: 10,
-        padding: '8px 10px',
-        background: 'var(--mg-surface-alt, rgba(0,0,0,0.03))',
-        border: '1px solid var(--mg-border)',
-        borderRadius: 'var(--mg-radius, 8px)',
-      }}
-    >
-      <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+    <div className="mg-suggestion-row">
+      <div className="mg-suggestion-row__body">
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, padding: '2px 6px', border: '1px solid var(--mg-border)', borderRadius: 999 }}>{badge}</span>
           <strong className="mg-mono" style={{ fontSize: 13, wordBreak: 'break-all' }}>{sug.pattern}</strong>
@@ -1843,7 +1835,7 @@ function PortalSuggestionRow({ sug, busy, onApply, onDismiss }) {
         </div>
         <div style={{ fontSize: 12, marginTop: 4, opacity: 0.85 }}>{sug.reason_text}</div>
       </div>
-      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+      <div className="mg-suggestion-row__actions">
         <button className="mg-btn" onClick={onApply} disabled={busy}>{busy ? '…' : 'Regel anlegen'}</button>
         <button className="mg-btn" onClick={onDismiss} disabled={busy}>Ignorieren</button>
       </div>
