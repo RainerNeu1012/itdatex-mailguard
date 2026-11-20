@@ -7,6 +7,31 @@ based on [Semantic Versioning](https://semver.org/).
 Tagged releases live at
 <https://github.com/RainerNeu1012/itdatex-mailguard/releases>.
 
+## [0.74.6] – 2026-11-20
+
+### Added
+- **Pure-PHP IMAP-Fallback** (`src/Imap/SocketImapClient.php`) fuer
+  Provider deren Backend PHP's imap-Extension (c-client) nach ~5 Auth-
+  Fails per SASL-Fingerprint temporaer sperrt — konkret die 1&amp;1-
+  Familie (GMX, web.de, mail.de, 1und1, kundenserver.de). In diesem
+  Zustand liefert `imap_open()` reproduzierbar "authentication failed"
+  obwohl die Credentials korrekt sind; direktes `A001 LOGIN` ueber einen
+  simplen PHP-Socket funktioniert. `ClientFactory::build()` routed
+  betroffene Hosts automatisch auf den SocketImapClient; alle anderen
+  Provider laufen unveraendert ueber die battle-tested c-client-Variante.
+
+  Implementiert RFC-3501 Subset (LOGIN, LIST, SELECT, STATUS, UID
+  SEARCH, UID FETCH, UID STORE, UID COPY, UID MOVE (RFC 6851), EXPUNGE,
+  CREATE, SUBSCRIBE, APPEND, NOOP, LOGOUT) inkl. Literal-Handling
+  (`{N}\r\n<bytes>`), BODYSTRUCTURE-Parser (Multipart + Attachment-
+  Metadaten), Quoted-String + Paren-Group-Tokenizer. API-kompatibel zu
+  `ImapClient` (24 Methoden) — Drop-in-Replacement, PullService/
+  QuarantineService/Resend-Reply-Flow bleiben unveraendert.
+
+  **Resultat live gegen cid=21 GMX**: 45 Mails gezogen nach 6 Tagen
+  Blockade, 13 Eradicate-Domains getroffen, 19 Mails per EXPUNGE
+  vernichtet — ohne Passwort-Aenderung, ohne manuellen Eingriff.
+
 ## [0.74.5] – 2026-11-14
 
 ### Fixed

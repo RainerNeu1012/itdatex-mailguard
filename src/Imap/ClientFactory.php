@@ -91,8 +91,10 @@ final class ClientFactory {
 			if ( $plain === '' ) {
 				throw new \RuntimeException( 'no_password_stored' );
 			}
-			return new ImapClient(
-				(string) $row['host'],
+			$host = (string) $row['host'];
+			$class = self::host_uses_socket_client( $host ) ? SocketImapClient::class : ImapClient::class;
+			return new $class(
+				$host,
 				(int)    $row['port'],
 				(string) $row['encryption'],
 				$folder_name,
@@ -126,6 +128,31 @@ final class ClientFactory {
 		}
 
 		throw new \RuntimeException( 'unsupported_auth_type:' . $auth );
+	}
+
+	/**
+	 * Hosts bei denen PHP's c-client (imap-Extension) nach ~5 Auth-Fails per
+	 * SASL-Fingerprint temporaer gesperrt wird — fuer die routen wir auf den
+	 * pure-PHP {@see SocketImapClient}. Alles andere laeuft weiter ueber die
+	 * battle-tested c-client-Variante.
+	 *
+	 * Bekannte Problem-Hosts (1&1-Familie): imap.gmx.net, imap.gmx.com,
+	 * imap.web.de, imap.mail.de, imap.1und1.de, imap.kundenserver.de.
+	 */
+	public static function host_uses_socket_client( string $host ) : bool {
+		$h = strtolower( trim( $host ) );
+		if ( $h === '' ) { return false; }
+		$suffixes = [
+			'gmx.net', 'gmx.com', 'gmx.de',
+			'web.de',
+			'mail.de',
+			'1und1.de',
+			'kundenserver.de',
+		];
+		foreach ( $suffixes as $suffix ) {
+			if ( str_ends_with( $h, $suffix ) ) { return true; }
+		}
+		return false;
 	}
 
 	/**
